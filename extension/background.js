@@ -58,7 +58,15 @@ async function scrapeUrl(url) {
   try {
     await waitForLoad(tab.id);
     await sleep(1500);
-    const resp = await sendToTab(tab.id, { type: "detail" });
+    let resp = await sendToTab(tab.id, { type: "detail", waitMs: 12000 });
+    if (resp.ok && resp.detail && resp.detail.blocked) {
+      // Bot walls often only clear while the tab is visible. Foreground it briefly.
+      log(`bot wall on ${url}; foregrounding the tab for a moment`);
+      try { await chrome.tabs.update(tab.id, { active: true }); } catch (e) {}
+      await sleep(4000);
+      resp = await sendToTab(tab.id, { type: "detail", waitMs: 15000 });
+      if (resp.ok && resp.detail && !resp.detail.blocked) log(`cleared: ${url}`);
+    }
     return resp.ok ? resp.detail : { error: resp.error };
   } finally {
     try { await chrome.tabs.remove(tab.id); } catch (e) {}
@@ -132,6 +140,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
         try {
           it.detail = await scrapeUrl(it.url);
           if (it.detail && it.detail.error) log(`! ${it.title || it.url}: ${it.detail.error}`);
+          else if (it.detail && it.detail.blocked) { log(`! blocked by a bot wall: ${it.title || it.url} (re-run the sync later)`); totals.errors.push(`blocked: ${it.url}`); }
         } catch (e) { log(`! ${it.url}: ${e.message}`); }
         await sleep(jitter());
       }

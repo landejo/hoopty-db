@@ -9,6 +9,16 @@ from scout.config import AUCTION_SITES, CONFIG
 from scout.profiles import match_profile, suggest_key
 from scout.scoring import locality_hint, weighted_score
 
+CHALLENGE_RE = re.compile(r"just a moment|verify you are human|verifying you are human|checking your browser|security verification|press and hold|cf-chl|attention required|enable javascript and cookies to continue", re.I)
+
+
+def is_blocked(detail: dict) -> bool:
+    if detail.get("blocked"):
+        return True
+    text = (detail.get("text") or "")[:4000]
+    return bool(text) and len(detail.get("text") or "") < 4000 and bool(CHALLENGE_RE.search(text))
+
+
 SOLD_RE = re.compile(r"\b(sold|sold for|no longer available|this listing has ended|listing ended)\b", re.I)
 ENDED_RE = re.compile(r"\b(bid to|reserve not met|auction ended|ended)\b", re.I)
 PRICE_RE = re.compile(r"\$\s?([\d,]{3,})")
@@ -81,7 +91,11 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
                 db.update_listing(existing["id"], {"last_seen": db.now()})
             continue
         detail = item.get("detail") or {}
-        raw_text = (detail.get("text") or item.get("card_text") or "")[:120_000]
+        blocked = is_blocked(detail)
+        if blocked:
+            detail = {k: v for k, v in detail.items() if k not in {"text", "status_text", "photos"}}
+            detail["blocked"] = True
+        raw_text = ("" if blocked else (detail.get("text") or ""))[:120_000] or (item.get("card_text") or "")
         role = "comp" if availability in {"sold", "ended"} else "candidate"
         if existing and existing.get("role") == "comp":
             role = "comp"  # never promote a comp back to candidate
@@ -101,12 +115,17 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
         lid, created = db.upsert_listing(values)
         stats["created" if created else "updated"] += 1
 
+        if blocked:
+            stats.setdefault("blocked", 0)
+            stats["blocked"] += 1
+            db.log_event("blocked", lid, url)
         if run_ai and CONFIG.ai_enabled and _needs_normalize(existing, raw_text, availability) and raw_text:
             try:
                 from scout.ai.normalize import normalize_listing  # lazy
                 hints = {"title": item.get("title"), "price_text": item.get("price_text"),
                          "card_text": item.get("card_text"), "url": url,
-                         "scraper_availability": availability}
+                         "scraper_availability": availability,
+                         "note": "Detail page was blocked by a bot wall; only the saved-list card is available. Extract what the card states and leave the rest unknown." if blocked else None}
                 norm = normalize_listing(raw_text, hints, site, profiles)
                 _apply_normalization(lid, norm, availability, profiles, stats, raw_text)
                 stats["normalized"] += 1

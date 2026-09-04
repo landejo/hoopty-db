@@ -102,8 +102,25 @@
     return Array.from(items.values());
   };
 
+  // Bot walls (Cloudflare "Just a moment", "Verify you are human", PerimeterX, etc.).
+  S.CHALLENGE_RE = /just a moment|verify you are human|verifying you are human|checking your browser|security verification|press and hold|access denied|cf-chl|attention required|enable javascript and cookies to continue/i;
+  S.isChallenge = function () {
+    const t = (document.body && document.body.innerText || "").slice(0, 4000);
+    return t.length < 4000 && S.CHALLENGE_RE.test(t) || /^just a moment/i.test(document.title);
+  };
+  // Wait for a challenge to clear on its own (real browser, real session).
+  S.waitForChallenge = async function (maxMs = 20000) {
+    const start = Date.now();
+    while (S.isChallenge() && Date.now() - start < maxMs) await S.sleep(1500);
+    return !S.isChallenge();
+  };
+
   // Generic detail scrape: main text + photos + a few regex facts.
   S.genericDetail = function (extra = {}) {
+    if (S.isChallenge()) {
+      return Object.assign({ blocked: true, title: document.title, text: "", status_text: "", photos: [], page_url: location.href,
+                             scraped_at: new Date().toISOString() }, extra.blockedExtra || {});
+    }
     const main = document.querySelector("main") || document.body;
     const text = S.text(main).slice(0, 120000);
     const h1 = document.querySelector("h1");
@@ -123,12 +140,13 @@
   if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.onMessage) return; // injected for testing
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const A = window.__scoutAdapter;
-    if (!A || !["ping", "collect", "detail"].includes(msg.type)) return false;
+    if (!A || !["ping", "collect", "detail", "challenge"].includes(msg.type)) return false;
     (async () => {
       try {
         if (msg.type === "ping") sendResponse({ ok: true, site: A.site, saved: !!A.isSavedPage(), detail: !!A.isDetailPage() });
         else if (msg.type === "collect") sendResponse({ ok: true, items: await A.collectSaved() });
-        else if (msg.type === "detail") sendResponse({ ok: true, detail: await A.scrapeDetail() });
+        else if (msg.type === "detail") { await S.waitForChallenge(msg.waitMs || 20000); sendResponse({ ok: true, detail: await A.scrapeDetail() }); }
+        else if (msg.type === "challenge") sendResponse({ ok: true, challenge: S.isChallenge() });
       } catch (e) {
         sendResponse({ ok: false, error: String(e && e.stack || e) });
       }

@@ -1,7 +1,7 @@
 key: z3_m
-label: BMW Z3 M (M roadster & M coupe)
+label: BMW M Roadster & M Coupe (Z3 M, E36/7 & E36/8, 1998-2002)
 make: BMW
-models: [Z3 M roadster, Z3 M coupe, M roadster, M coupe]
+models: [M roadster, M coupe, Z3 M roadster, Z3 M coupe, Z3 M, M Roadster, M Coupe]
 years: [1998, 2002]
 source: seed
 verified: true

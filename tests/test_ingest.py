@@ -89,3 +89,16 @@ def test_vanished_listing_takes_result_from_its_page_or_becomes_removed():
     y = db.get_listing_by_url("https://bringatrailer.com/listing/y/")
     assert x["availability"] == "sold" and x["role"] == "comp"
     assert y["availability"] == "removed" and y["role"] == "candidate"
+
+
+def test_bot_wall_page_is_never_stored_as_listing_text():
+    from scout.ingest import is_blocked
+    wall = {"text": "www.cars.com\nVerify you are human by completing the action below.\nJust a moment..."}
+    assert is_blocked(wall) and is_blocked({"blocked": True}) and not is_blocked({"text": "2000 BMW M Roadster " * 50})
+    item = _item("https://www.cars.com/vehicledetail/w/", title="2000 BMW M Roadster", text=wall["text"])
+    stats = ingest_items("carscom", [item], run_ai=False)
+    row = db.get_listing_by_url("https://www.cars.com/vehicledetail/w/")
+    assert stats["blocked"] == 1
+    assert "Verify you are human" not in (row["raw_text"] or "")
+    assert row["raw_text"].startswith("2000 BMW M Roadster")  # card text kept as the fallback
+    assert row["raw"].get("blocked") is True
