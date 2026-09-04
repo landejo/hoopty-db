@@ -243,6 +243,7 @@
     const flags = l.normalized?.red_flags?.length || 0;
     const v = verdictOf(l);
     const qg = (l.normalized?.quick_gates || []).concat((l.provenance?.flags || []).map((f) => f.replace(/_/g, " ")));
+    const drops = (l.normalized?.price_drops || []).reduce((a, d) => a + (d.amount || 0), 0) + (l.history || []).filter((s) => s.price).reduce((a, s, i, arr) => a + (i && arr[i - 1].price > s.price ? arr[i - 1].price - s.price : 0), 0);
     const el = h(`
       <article class="card ${l.role}" data-id="${l.id}">
         <div class="photo">${p ? `<img loading="lazy" src="${esc(p)}" alt="">` : `<div class="nophoto">⌁</div>`}
@@ -253,7 +254,7 @@
           <div class="meta"><span class="mono">${l.mileage ? num(l.mileage) + " mi" : "— mi"}</span><span>${esc(l.location || "—")}</span><span>${listedAge(l)}</span>${l.transmission ? `<span>${esc(l.transmission)}</span>` : ""}</div>
           ${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
           <div class="foot">
-            <div class="row" style="gap:6px">${v ? `<span class="chip ${verdictTone(v)}">${esc(v)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
+            <div class="row" style="gap:6px">${v ? `<span class="chip ${verdictTone(v)}">${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
             <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label><span class="pill-status">${esc(l.status || "New")}</span></span>
           </div>
         </div>

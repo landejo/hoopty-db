@@ -152,6 +152,20 @@ def normalized_listing(data: dict[str, Any]) -> dict[str, Any]:
     out["price_kind"] = pk if pk in {"asking", "current_bid", "sold", "reserve_not_met", "no_reserve"} else None
     out["sold_price"] = to_int(data.get("sold_price"), *PRICE_RANGE)
     out["options"] = str_list(data.get("options"), cap=30)
+    drops = []
+    for d in (data.get("price_drops") if isinstance(data.get("price_drops"), list) else [])[:6]:
+        if not isinstance(d, dict):
+            continue
+        prior = to_int(d.get("prior_price"), 1, 2_000_000)
+        amt = to_int(d.get("amount"), 1, 500_000)
+        if prior is None and amt is not None and out.get("price"):
+            prior = out["price"] + amt
+        if amt is None and prior is not None and out.get("price") and prior > out["price"]:
+            amt = prior - out["price"]
+        if prior and amt:
+            drops.append({"prior_price": prior, "amount": amt, "note": str(d.get("note") or "").strip()[:200]})
+    out["price_drops"] = drops
+    out["days_listed"] = to_int(data.get("days_listed"), 0, 3650)
     out["red_flags"] = str_list(data.get("red_flags"), cap=12)
     out["highlights"] = str_list(data.get("highlights"), cap=12)
     out["prelim_scores"] = scores(data.get("scores"))

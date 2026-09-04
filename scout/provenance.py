@@ -72,6 +72,13 @@ def record_listing_events(l: dict[str, Any], vehicle_id: int, path=None) -> int:
                                                    "status": "Price reduced", "evidence": f"Asking reduced from ${prev:,} to ${p:,}"}, path)
         if p:
             prev = p
+    # Drops the site or seller reported before we first saw the car (date unknown;
+    # tied to the listing so they never count as a separate sighting).
+    for d in (l.get("normalized") or {}).get("price_drops") or []:
+        n += db.add_vehicle_event(vehicle_id, {**base, "event_date": listed_date, "price": l.get("price"), "price_type": "asking",
+                                               "status": "Price reduced", "source": "site_reported",
+                                               "evidence": f"Site/seller reports a ${d['amount']:,} reduction from ${d['prior_price']:,}"
+                                                           + (f" ({d['note']})" if d.get("note") else "") + "; date of the drop not stated"}, path)
     av = l.get("availability")
     last_date = (l.get("auction_end") or l.get("last_seen") or "")[:10]
     if av == "sold":

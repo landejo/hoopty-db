@@ -124,6 +124,7 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
                 from scout.ai.normalize import normalize_listing  # lazy
                 hints = {"title": item.get("title"), "price_text": item.get("price_text"),
                          "card_text": item.get("card_text"), "url": url,
+                         "price_drop_text": item.get("price_drop_text"),
                          "scraper_availability": availability,
                          "note": "Detail page was blocked by a bot wall; only the saved-list card is available. Extract what the card states and leave the rest unknown." if blocked else None}
                 norm = normalize_listing(raw_text, hints, site, profiles)
@@ -159,7 +160,7 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     if norm.get("availability") in {"sold", "ended"} and scraper_availability == "active":
         updates["availability"] = norm["availability"]
         updates["role"] = "comp"
-    updates["normalized"] = {k: norm.get(k) for k in ("highlights", "red_flags", "summary" if False else "prelim_summary", "prelim_scores", "profile_confidence")}
+    updates["normalized"] = {k: norm.get(k) for k in ("highlights", "red_flags", "prelim_summary", "prelim_scores", "profile_confidence", "price_drops", "days_listed")}
     updates["normalized_at"] = db.now()
 
     # Profile: deterministic match first, then the model's pick, then generate.
