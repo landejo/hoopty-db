@@ -8,10 +8,10 @@
   const num = (n) => (n == null ? "—" : Number(n).toLocaleString());
   const STATUSES = ["New", "Pursue", "Verify", "Contacted", "PPI Scheduled", "Offer Made", "Pass", "Purchased"];
 
-  const state = { data: null, local: false, filters: load("filters", { profile: "", site: "", avail: "active", status: "", analyzed: false, sort: "score", role: "candidate", view: "cards", max_price: "", max_mileage: "" }),
+  const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "score", role: "candidate", view: "cards", max_price: "", max_mileage: "" }),
                   q: "", compare: load("compare", []), theme: load("theme", null) };
 
-  function load(k, d) { try { const v = localStorage.getItem("scout." + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+  function load(k, d) { try { const v = localStorage.getItem("scout." + k); const out = v ? JSON.parse(v) : d; if (k === "filters" && out && !Array.isArray(out.profiles)) out.profiles = out.profile ? [out.profile] : []; return out; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem("scout." + k, JSON.stringify(v)); } catch (e) {} }
 
   // ---------- theme ----------
@@ -98,7 +98,7 @@
     const f = state.filters, q = state.q.trim().toLowerCase();
     let rows = state.data.listings.filter((l) => {
       if (f.role && l.role !== f.role) return false;
-      if (f.profile && l.profile_key !== f.profile) return false;
+      if (f.profiles.length && !f.profiles.includes(l.profile_key || "__none__")) return false;
       if (f.site && l.site !== f.site) return false;
       if (f.avail && l.availability !== f.avail) return false;
       if (f.status && l.status !== f.status) return false;
@@ -146,7 +146,7 @@
     const bar = h(`
       <div class="filters">
         <span class="seg" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span>
-        <select id="f-profile"><option value="">All profiles</option>${state.data.profiles.map((p) => `<option value="${p.key}" ${f.profile === p.key ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select>
+        <span class="chips" id="f-profiles" title="Click to toggle · Option-click for only this one"><button data-k="" class="${f.profiles.length ? "" : "on"}">All</button>${profileChips(f)}</span>
         <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
         <select id="f-avail"><option value="">Any availability</option>${["active", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
         <select id="f-status"><option value="">Any status</option>${STATUSES.map((s) => `<option ${f.status === s ? "selected" : ""}>${s}</option>`).join("")}</select>
@@ -159,17 +159,28 @@
         <span class="seg" id="view"><button data-v="cards" class="${f.view === "cards" ? "on" : ""}">Cards</button><button data-v="table" class="${f.view === "table" ? "on" : ""}">Table</button></span>
       </div>`);
     app.appendChild(bar);
-    const rerender = () => { save("filters", f); renderList(); };
+    const bindChips = () => {
+      const box = $("#f-profiles", bar);
+      box.innerHTML = `<button data-k="" class="${f.profiles.length ? "" : "on"}">All</button>` + profileChips(f);
+      box.querySelectorAll("button").forEach((b) => (b.onclick = (e) => {
+        const k = b.dataset.k;
+        if (!k) f.profiles = [];
+        else if (e.altKey) f.profiles = [k];
+        else f.profiles = f.profiles.includes(k) ? f.profiles.filter((x) => x !== k) : f.profiles.concat([k]);
+        rerender();
+      }));
+    };
+    const rerender = () => { save("filters", f); bindChips(); renderList(); };
     bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp") f.avail = ""; if (f.role === "candidate") f.avail = f.avail || "active"; route(); }));
     bar.querySelectorAll("#view button").forEach((b) => (b.onclick = () => { f.view = b.dataset.v; route(); }));
-    $("#f-profile", bar).onchange = (e) => { f.profile = e.target.value; rerender(); };
+    bindChips();
     $("#f-site", bar).onchange = (e) => { f.site = e.target.value; rerender(); };
     $("#f-avail", bar).onchange = (e) => { f.avail = e.target.value; rerender(); };
     $("#f-status", bar).onchange = (e) => { f.status = e.target.value; rerender(); };
     $("#f-sort", bar).onchange = (e) => { f.sort = e.target.value; rerender(); };
     $("#f-analyzed", bar).onchange = (e) => { f.analyzed = e.target.checked; rerender(); };
     let limitTimer;
-    const onLimit = (key) => (e) => { clearTimeout(limitTimer); limitTimer = setTimeout(() => { f[key] = e.target.value; save("filters", f); renderList(); const cl = $("#f-clear-limits", bar); if (!cl && (f.max_price || f.max_mileage)) route(); }, 250); };
+    const onLimit = (key) => (e) => { clearTimeout(limitTimer); limitTimer = setTimeout(() => { f[key] = e.target.value; rerender(); const cl = $("#f-clear-limits", bar); if (!cl && (f.max_price || f.max_mileage)) route(); }, 250); };
     $("#f-max-price", bar).oninput = onLimit("max_price");
     $("#f-max-mileage", bar).oninput = onLimit("max_mileage");
     const clearBtn = $("#f-clear-limits", bar);
@@ -193,6 +204,18 @@
     renderList();
     renderTray(app);
   }
+
+  function profileChips(f) {
+    // Counts respect every other filter (role, site, availability, status, limits) so a chip never promises cards it cannot show.
+    const saved = f.profiles; f.profiles = [];
+    const counts = {};
+    for (const l of filtered()) { const k = l.profile_key || "__none__"; counts[k] = (counts[k] || 0) + 1; }
+    f.profiles = saved;
+    const items = state.data.profiles.filter((p) => counts[p.key]).map((p) => [p.key, shortLabel(p.label), counts[p.key]]);
+    if (counts.__none__) items.push(["__none__", "unprofiled", counts.__none__]);
+    return items.map(([k, label, n]) => `<button data-k="${esc(k)}" class="${f.profiles.includes(k) ? "on" : ""}">${esc(label)} <span class="n">${n}</span></button>`).join("");
+  }
+  function shortLabel(label) { return label.replace(/\s*\(.*?\)\s*/g, " ").replace(/\s+/g, " ").trim().slice(0, 28); }
 
   function emptyState() {
     return h(`<div class="empty"><h2>No listings yet</h2>
@@ -420,7 +443,7 @@
   // ---------- market ----------
   function renderMarket(app, pkey) {
     const profiles = state.data.profiles;
-    const key = pkey || state.filters.profile || profiles[0]?.key;
+    const key = pkey || state.filters.profiles[0] || profiles[0]?.key;
     const prof = state.profiles.get(key);
     app.appendChild(h(`<div class="hero"><div><h1>State of the market</h1><p>Sold listings and ended auctions become comps; active candidates plot against them.</p></div>
       <select id="mp">${profiles.map((p) => `<option value="${p.key}" ${p.key === key ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select></div>`));
