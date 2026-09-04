@@ -1,0 +1,54 @@
+key: z3_m
+label: BMW Z3 M (M roadster & M coupe)
+make: BMW
+models: [Z3 M roadster, Z3 M coupe, M roadster, M coupe]
+years: [1998, 2002]
+source: seed
+verified: true
+framing: >
+  A characterful fair-weather weekend and daily driver, NOT a collector or
+  investment car. The buyer values reliability, condition, driving engagement,
+  value, and proximity to Carmel / Monterey / Bay Area. All Z3 M cars are
+  factory manual. Identify the engine: 1998-2000 = S52 (more robust);
+  2001-2002 = S54 (rod-bearing design flaw, VANOS failures common and costly).
+weak_points: >
+  REAR SUBFRAME / trunk-floor differential-mount cracking or tearing (worst on
+  the M; inspect from below AND the trunk spot welds; reinforcement plates are
+  the fix). S54: rod bearings (preventive replacement with upgraded bearings +
+  oil analysis), double-VANOS failures. S52: cooling system, VANOS rattle.
+  Finned differential mounts. Valve-cover and oil filter housing leaks.
+  Rear trailing-arm bushings. Window regulators. Convertible-top mechanism
+  (roadster). Cluster pixels. Cracked dashboard. Rust at rockers/floors.
+immediate_repairs: cooling-system refresh, tires, fluids, oil analysis (S54)
+repairs_12mo: rod bearings (S54, if not documented), VANOS service, rear subframe reinforcement, clutch if worn
+market_notes: >
+  M coupes are the most valuable Z3 variant by a wide margin, with S54 coupes at
+  the top. Documented rod-bearing and subframe work materially raises value.
+  Mileage matters less than documentation on these cars.
+weights:
+  reliability: 0.20
+  condition: 0.24
+  engagement: 0.18
+  value: 0.14
+  ownership_cost: 0.10
+  locality: 0.07
+  desirability: 0.07
+dealbreaker_rules:
+  - Salvage or rebuilt title
+  - Unrepaired rear subframe cracking
+  - S54 with no rod-bearing history AND no PPI possible
+checks:
+  - {key: rear_subframe, label: "Rear subframe mounts / floor reinforcement (chassis cracking; critical on M coupe)"}
+  - {key: s54_rod_bearings, label: "Rod bearings — preventive replacement & records (S54)"}
+  - {key: vanos, label: "VANOS operation — rattle / seals (S52 single; S54 double)"}
+  - {key: cooling_overhaul, label: "Cooling overhaul — radiator, expansion tank, water pump, thermostat, hoses"}
+  - {key: differential_mounts, label: "Differential & finned-mount condition"}
+  - {key: convertible_top, label: "Convertible top operation, hydraulics/motor, rear window (roadster)"}
+  - {key: window_regulators, label: "Window regulator operation"}
+  - {key: cluster_pixels, label: "Instrument cluster / OBC pixel fade"}
+  - {key: clutch_rms, label: "Clutch / flywheel wear & rear main seal leak"}
+  - {key: oil_leaks, label: "Oil leaks — valve cover, oil filter housing, oil pan"}
+  - {key: rust_floors, label: "Rust at rockers / floors / subframe mounts"}
+  - {key: tire_age_condition, label: "Tire age, match, and condition"}
+  - {key: mods_quality, label: "Modifications / suspension quality"}
+  - {key: records_major, label: "Documented service history (bearings, VANOS, cooling)"}

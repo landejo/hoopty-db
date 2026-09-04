@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Hoopty Scout",
+  "version": "0.1.0",
+  "description": "Sync saved vehicle listings (Facebook Marketplace, CarGurus, Cars.com, Cars & Bids, Bring a Trailer) to the local Hoopty Scout workbench.",
+  "permissions": ["activeTab", "tabs", "scripting", "storage"],
+  "host_permissions": [
+    "*://*.facebook.com/*",
+    "*://*.cargurus.com/*",
+    "*://*.cars.com/*",
+    "*://*.carsandbids.com/*",
+    "*://*.bringatrailer.com/*",
+    "http://127.0.0.1:8765/*",
+    "http://localhost:8765/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    { "matches": ["*://*.facebook.com/*"],       "js": ["common.js", "adapters/facebook.js"],    "run_at": "document_idle" },
+    { "matches": ["*://*.cargurus.com/*"],       "js": ["common.js", "adapters/cargurus.js"],    "run_at": "document_idle" },
+    { "matches": ["*://*.cars.com/*"],           "js": ["common.js", "adapters/carscom.js"],     "run_at": "document_idle" },
+    { "matches": ["*://*.carsandbids.com/*"],    "js": ["common.js", "adapters/carsandbids.js"], "run_at": "document_idle" },
+    { "matches": ["*://*.bringatrailer.com/*"],  "js": ["common.js", "adapters/bat.js"],         "run_at": "document_idle" }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Hoopty Scout",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" }
+  },
+  "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" }
+}
