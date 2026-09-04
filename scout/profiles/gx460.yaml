@@ -48,3 +48,21 @@ checks:
   - {key: ac_function, label: "A/C function (cold, both zones)"}
   - {key: leaks, label: "Visible engine / drivetrain leaks"}
   - {key: tire_age_condition, label: "Tire age and condition"}
+mission_default: utility_capability
+risk_reserve: 2000
+automatic_ok: true
+catchup_notes: >
+  Overlaps the household RX 350; recommend only for capability or character the RX lacks.
+critical_evidence:
+  - key: secondary_air_injection
+    label: Secondary air injection status (P2440/P2442 history or repair)
+    severity: conditional
+  - key: kdss_status
+    label: KDSS leak / lean status
+    severity: conditional
+  - key: rust_evaluation
+    label: Frame / underbody rust evaluated
+    severity: conditional
+  - key: warning_lights
+    label: No warning lights
+    severity: conditional

@@ -1,0 +1,38 @@
+key: porsche_987_2_boxster
+label: Porsche 987.2 Boxster 2.9 (2009-2012)
+make: Porsche
+models: [Boxster, 987.2 Boxster, Boxster 2.9]
+years: [2009, 2012]
+source: seed
+verified: true
+mission_default: future_keeper
+risk_reserve: 3000
+automatic_ok: false
+framing: >
+  Future-keeper candidate. The 9A1 engine avoids the earlier IMS architecture and
+  has very low bore-scoring concern. Manual preferred.
+weak_points: >
+  Water pump, coolant pipes, AOS, convertible-top hydraulics, clutch, suspension
+  bushings, age-related rubber. PDK cars do not fit the manual brief.
+immediate_repairs: fluids, tires by date, top inspection
+repairs_12mo: water pump, AOS, clutch if worn, bushings
+market_notes: A good example was expected around $25,000-$30,000; outside the current bridge budget.
+weights:
+  reliability: 0.22
+  condition: 0.22
+  engagement: 0.18
+  value: 0.14
+  ownership_cost: 0.10
+  locality: 0.07
+  desirability: 0.07
+dealbreaker_rules: [PDK for the enthusiast brief, Salvage or rebuilt title]
+critical_evidence:
+  - key: service_history
+    label: Documented major service (water pump, AOS, clutch as applicable)
+    severity: conditional
+checks:
+  - {key: water_pump_coolant_pipes, label: "Water pump and coolant pipes"}
+  - {key: aos, label: "Air-oil separator"}
+  - {key: convertible_top, label: "Top operation and hydraulics"}
+  - {key: clutch_flywheel, label: "Clutch / flywheel"}
+  - {key: tire_age_condition, label: "Tire age, match, and condition"}

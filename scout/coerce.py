@@ -212,9 +212,26 @@ def profile(data: dict[str, Any]) -> dict[str, Any] | None:
             chk.append({"key": ck, "label": lbl})
     years = data.get("years") if isinstance(data.get("years"), list) else []
     yrs = [y for y in (to_int(x, *YEAR_RANGE) for x in years[:2]) if y is not None]
+    crit = []
+    seen_c = set()
+    for c in (data.get("critical_evidence") if isinstance(data.get("critical_evidence"), list) else []):
+        if not isinstance(c, dict):
+            continue
+        ck = re.sub(r"[^a-z0-9_]", "", str(c.get("key") or "").lower().replace(" ", "_"))
+        lbl = str(c.get("label") or "").strip()[:200]
+        sev = "hard" if str(c.get("severity") or "").lower() == "hard" else "conditional"
+        if ck and lbl and ck not in seen_c:
+            seen_c.add(ck)
+            crit.append({"key": ck, "label": lbl, "severity": sev})
+    md = str(data.get("mission_default") or "").strip()
     return {
         "key": key,
         "label": label,
+        "critical_evidence": crit[:6],
+        "mission_default": md if md in {"enthusiast_bridge", "pragmatic_bridge", "future_keeper", "utility_capability"} else None,
+        "risk_reserve": to_int(data.get("risk_reserve"), 0, 50000),
+        "automatic_ok": bool(data.get("automatic_ok")) if isinstance(data.get("automatic_ok"), bool) else False,
+        "catchup_notes": str(data.get("catchup_notes") or "").strip()[:600],
         "make": str(data.get("make") or "").strip()[:60],
         "models": str_list(data.get("models"), cap=12, maxlen=60),
         "years": yrs if len(yrs) == 2 else [],

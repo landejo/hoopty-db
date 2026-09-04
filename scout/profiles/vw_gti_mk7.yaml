@@ -1,0 +1,45 @@
+key: vw_gti_mk7
+label: Volkswagen GTI Mk7 / Mk7.5 (2015-2021)
+make: Volkswagen
+models: [GTI, Golf GTI, GTI SE, GTI S, GTI Autobahn]
+years: [2015, 2021]
+source: seed
+verified: true
+mission_default: enthusiast_bridge
+risk_reserve: 1200
+automatic_ok: false
+framing: >
+  Strong bridge concept: engagement, hatchback usefulness, parts availability, and
+  Jason's mechanic works on VWs. Manual, stock or very lightly modified, no unknown tune.
+weak_points: >
+  Water pump / thermostat housing leaks; clutch slip (especially if tuned); current
+  or removed ECU tune; cooling system; suspension modifications and uneven tire wear;
+  sunroof leaks; low-quality cosmetic modifications.
+immediate_repairs: fluids, tires, water-pump housing if weeping
+repairs_12mo: clutch if slipping, thermostat housing, suspension
+market_notes: Manual SE/Autobahn cars with records hold value; DSG cars are cheaper but do not fit the brief.
+catchup_notes: Evidence of a tune (current or removed) changes clutch and emissions risk.
+weights:
+  reliability: 0.24
+  condition: 0.22
+  engagement: 0.15
+  value: 0.15
+  ownership_cost: 0.10
+  locality: 0.08
+  desirability: 0.06
+dealbreaker_rules: [DSG for the enthusiast brief, Undocumented tune, Salvage or rebuilt title]
+critical_evidence:
+  - key: tune_status
+    label: Evidence of a current or removed ECU tune (and California smog readiness)
+    severity: conditional
+  - key: cooling_history
+    label: Water pump / thermostat housing and cooling-system records
+    severity: conditional
+checks:
+  - {key: water_pump_thermostat_housing, label: "Water pump / thermostat housing leakage"}
+  - {key: clutch_slip, label: "Clutch slip"}
+  - {key: tune_evidence, label: "Current or removed tune"}
+  - {key: suspension_tires, label: "Suspension mods and uneven tire wear"}
+  - {key: sunroof_leaks, label: "Sunroof leaks (if equipped)"}
+  - {key: smog_readiness, label: "California smog readiness"}
+  - {key: tire_age_condition, label: "Tire age, match, and condition"}

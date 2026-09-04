@@ -173,4 +173,25 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
             scores["locality"] = loc
         updates["prelim_score"] = weighted_score(scores, prof.get("weights") or {})
         updates["normalized"]["prelim_scores"] = scores
+
+    # Free VIN decode (NHTSA) + deterministic identity checks, and the sync-time
+    # policy flags shown on cards. None of this needs the paid model.
+    from scout.policy.engine import default_mission  # lazy: policy imports pydantic
+    from scout.policy.gates import quick_gates
+    from scout.policy.state import load_state
+    from scout.vin import compare_decode, decode_vin
+    current = db.get_listing(lid) or {}
+    merged = {**current, **{k: v for k, v in updates.items() if k != "normalized"}}
+    if norm.get("vin"):
+        decoded = decode_vin(norm["vin"])
+        if decoded:
+            updates["normalized"]["vin_decode"] = {k: decoded.get(k) for k in
+                ("year", "make", "model", "series", "trim", "engine_liters", "cylinders", "body_class", "plant_country")}
+            updates["normalized"]["vin_recall_count"] = len(decoded.get("recalls") or [])
+            updates["normalized"]["vin_contradictions"] = compare_decode(decoded, merged)
+    state = load_state()
+    mission = current.get("mission") or default_mission(prof)
+    if not current.get("mission"):
+        updates["mission"] = mission
+    updates["normalized"]["quick_gates"] = quick_gates(merged, prof, mission, state)
     db.update_listing(lid, updates)

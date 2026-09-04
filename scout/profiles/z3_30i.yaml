@@ -51,3 +51,16 @@ checks:
   - {key: tire_age_condition, label: "Tire age, match, and condition"}
   - {key: mods_quality, label: "Modifications / suspension quality"}
   - {key: records_major, label: "Documented service history (cooling, VANOS)"}
+mission_default: enthusiast_bridge
+risk_reserve: 1500
+automatic_ok: false
+catchup_notes: >
+  Low mileage does not cancel age: tires by date code, cooling plastics, hoses,
+  bushings, fluids, brakes, battery, top and rear window, A/C, seals.
+critical_evidence:
+  - key: rear_structure
+    label: Trunk-floor spot welds (esp. left) and differential mount/ear inspected with photos or a specialist PPI; reinforcement desirable, not mandatory on a sound stock 3.0
+    severity: conditional
+  - key: cooling_history
+    label: Cooling-system age and documentation (water pump, thermostat, radiator, expansion tank)
+    severity: conditional
