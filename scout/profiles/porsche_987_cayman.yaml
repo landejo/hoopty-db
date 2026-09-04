@@ -1,0 +1,60 @@
+key: porsche_987_cayman
+label: Porsche 987 Cayman (2006-2008; 2.7 and 3.4 S)
+make: Porsche
+models: [Cayman, Cayman S, 987 Cayman]
+years: [2006, 2008]
+source: seed
+verified: true
+mission_default: future_keeper
+risk_reserve: 4000
+automatic_ok: false
+framing: >
+  Mainly a future-keeper at current prices. The 2007-2008 Cayman 2.7 manual is
+  the comfortable choice from a bore-scoring standpoint; the 3.4 Cayman S is the
+  most exciting but is bought ONLY with unusually strong engine due diligence.
+weak_points: >
+  M97 3.4 (Cayman S): cylinder bore scoring, especially cylinders 4-6; IMS-era
+  concerns; AOS; water pump; coolant pipes; clutch/flywheel. 2.7: much lower
+  bore-scoring exposure but same cooling, AOS, clutch, and age items. Seller
+  reports of no oil use or smoke are NOT evidence of clean cylinder walls.
+immediate_repairs: fluids, tires by date, AOS if unknown, cooling inspection
+repairs_12mo: clutch/flywheel if worn, water pump, coolant pipes, suspension bushings
+market_notes: >
+  Good 2.7 manuals were expected around $22-26k for 40-65k miles; S cars carry a
+  premium that the borescope requirement must justify. Tiptronic cars trade well below.
+catchup_notes: >
+  Require DME over-rev report; compression/leakdown interpreted with, never instead
+  of, the borescope. Verify California smog with the exact installed modifications.
+weights:
+  reliability: 0.20
+  condition: 0.24
+  engagement: 0.18
+  value: 0.14
+  ownership_cost: 0.10
+  locality: 0.07
+  desirability: 0.07
+dealbreaker_rules:
+  - Cayman S without a satisfactory specialist borescope (cylinders 4-6 photographed)
+  - Automatic (Tiptronic) for the enthusiast brief
+  - Salvage or rebuilt title
+critical_evidence:
+  - key: borescope
+    label: Independent Porsche-specialist borescope with retained photos, especially cylinders 4-6 (no scope, no Cayman S)
+    severity: hard
+    applies_when: {min_engine_liters: 3.3, or_trim_contains: "S"}
+  - key: dme_overrev
+    label: DME over-rev report
+    severity: conditional
+  - key: cooling_aos_service
+    label: Cooling-system, AOS, water-pump and major-service documentation
+    severity: conditional
+checks:
+  - {key: borescope, label: "Borescope photos cylinders 1-6 (S)"}
+  - {key: dme_overrev, label: "DME over-rev report"}
+  - {key: compression_leakdown, label: "Compression / leakdown (with the scope)"}
+  - {key: aos, label: "Air-oil separator condition"}
+  - {key: water_pump_coolant_pipes, label: "Water pump and coolant pipes"}
+  - {key: clutch_flywheel, label: "Clutch / dual-mass flywheel wear"}
+  - {key: oil_consumption_smoke, label: "Oil consumption, startup smoke, soot pattern (not a substitute for the scope)"}
+  - {key: smog_mods, label: "California smog compliance with installed modifications"}
+  - {key: tire_age_condition, label: "Tire age, match, and condition"}

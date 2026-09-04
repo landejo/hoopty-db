@@ -57,11 +57,15 @@
   function listedAge(l) { return l.listing_date ? ago(l.listing_date) : l.first_seen ? "seen " + ago(l.first_seen) : "—"; }
   function siteName(k) { return (state.data.sites || {})[k] || k; }
   function siteChip(k) { const c = { facebook: "teal", cargurus: "olive", carscom: "mustard", autotrader: "slate", carsandbids: "orange", bat: "rose" }[k] || ""; return `<span class="chip ${c}">${esc(siteName(k))}</span>`; }
-  function scoreOf(l) { return l.analysis?.deal_score ?? null; }
+  function scoreOf(l) { return l.assessment?.score?.total ?? null; }
+  function verdictOf(l) { return l.assessment?.verdict || null; }
+  function verdictTone(v) { return { "Pursue": "olive", "Pursue conditionally": "olive", "Maybe / verify": "mustard", "Reject": "rose", "Do not pursue": "rose" }[v] || ""; }
+  const MISSIONS = ["enthusiast_bridge", "pragmatic_bridge", "future_keeper", "utility_capability"];
+  const missionLabel = (m) => ({ enthusiast_bridge: "enthusiast bridge", pragmatic_bridge: "pragmatic bridge", future_keeper: "future keeper", utility_capability: "utility / capability" }[m] || m || "—");
   function prelimOf(l) { return l.prelim_score ?? null; }
   function badge(l) {
     const s = scoreOf(l);
-    if (s != null) return `<span class="badge ${s >= 70 ? "hi" : s >= 45 ? "mid" : "lo"}" title="Deal score (Opus)">${s}</span>`;
+    if (s != null) return `<span class="badge ${s >= 75 ? "hi" : s >= 60 ? "mid" : "lo"}" title="Score /100 · policy ${esc(l.assessment.policy_version)}">${s}</span>`;
     const p = prelimOf(l);
     if (p != null) return `<span class="badge prelim ${p >= 3.8 ? "hi" : p >= 2.8 ? "mid" : "lo"}" title="Preliminary score (Haiku, 1–5)">${p.toFixed(1)}</span>`;
     return `<span class="badge none">n/a</span>`;
@@ -83,6 +87,7 @@
     if (parts[0] === "l" && parts[1]) return renderDetail(app, Number(parts[1]));
     if (parts[0] === "market") return renderMarket(app, params.get("p"));
     if (parts[0] === "profiles") return renderProfiles(app);
+    if (parts[0] === "settings") return renderSettings(app);
     if (parts[0] === "compare") return renderCompare(app);
     return renderBoard(app);
   }
@@ -97,7 +102,7 @@
       if (f.site && l.site !== f.site) return false;
       if (f.avail && l.availability !== f.avail) return false;
       if (f.status && l.status !== f.status) return false;
-      if (f.analyzed && !l.analysis) return false;
+      if (f.analyzed && !l.assessment) return false;
       if (q) {
         const hay = [title(l), l.location, l.model, l.trim, l.engine, l.exterior_color, l.notes, l.normalized?.prelim_summary, (l.options || []).join(" ")].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -120,9 +125,9 @@
   function renderBoard(app) {
     const L = state.data.listings;
     const cands = L.filter((l) => l.role === "candidate" && l.availability === "active");
-    const analyzed = cands.filter((l) => l.analysis).length;
+    const analyzed = cands.filter((l) => l.assessment).length;
     const comps = L.filter((l) => l.role === "comp").length;
-    const pursue = cands.filter((l) => l.status === "Pursue" || l.analysis?.verdict === "Pursue").length;
+    const pursue = cands.filter((l) => l.status === "Pursue" || /^Pursue/.test(verdictOf(l) || "")).length;
     app.appendChild(h(`
       <div class="hero">
         <div><h1>The board</h1><p>Everything you've saved, normalized and scored. Sold and ended listings feed the <a href="#/market">market view</a>.</p></div>
@@ -185,7 +190,8 @@
   function card(l) {
     const p = photo(l);
     const flags = l.normalized?.red_flags?.length || 0;
-    const v = l.analysis?.verdict;
+    const v = verdictOf(l);
+    const qg = l.normalized?.quick_gates || [];
     const el = h(`
       <article class="card ${l.role}" data-id="${l.id}">
         <div class="photo">${p ? `<img loading="lazy" src="${esc(p)}" alt="">` : `<div class="nophoto">⌁</div>`}
@@ -195,7 +201,7 @@
           <div class="price">${l.role === "comp" && (l.sold_price || l.price) ? money(l.sold_price || l.price) + `<small>${l.availability === "sold" ? "sold" : esc(l.price_kind || "")}</small>` : money(l.price) + (l.price_kind && l.price_kind !== "asking" ? `<small>${esc(l.price_kind.replace("_", " "))}</small>` : "")}</div>
           <div class="meta"><span class="mono">${l.mileage ? num(l.mileage) + " mi" : "— mi"}</span><span>${esc(l.location || "—")}</span><span>${listedAge(l)}</span>${l.transmission ? `<span>${esc(l.transmission)}</span>` : ""}</div>
           <div class="foot">
-            <div class="row" style="gap:6px">${v ? `<span class="chip ${v === "Pursue" ? "olive" : v === "Pass" ? "rose" : "mustard"}">${v}</span>` : ""}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
+            <div class="row" style="gap:6px">${v ? `<span class="chip ${verdictTone(v)}">${esc(v)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
             <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label><span class="pill-status">${esc(l.status || "New")}</span></span>
           </div>
         </div>
@@ -208,7 +214,7 @@
   function tableView(rows) {
     const cols = [["", (l) => badge(l)], ["Listing", (l) => `<a href="#/l/${l.id}">${esc(title(l))}</a>`], ["Price", (l) => `<span class="mono">${money(l.sold_price || l.price)}</span>`],
       ["Miles", (l) => `<span class="mono">${num(l.mileage)}</span>`], ["Year", (l) => l.year ?? "—"], ["Trans.", (l) => esc(l.transmission || "—")], ["Location", (l) => esc(l.location || "—")],
-      ["Site", (l) => siteChip(l.site)], ["Listed", (l) => listedAge(l)], ["Verdict", (l) => esc(l.analysis?.verdict || "—")], ["Status", (l) => esc(l.status || "New")]];
+      ["Site", (l) => siteChip(l.site)], ["Listed", (l) => listedAge(l)], ["Verdict", (l) => esc(verdictOf(l) || "—")], ["Mission", (l) => esc(missionLabel(l.mission))], ["Status", (l) => esc(l.status || "New")]];
     return h(`<div class="tablewrap"><table class="data"><thead><tr>${cols.map(([c]) => `<th>${c}</th>`).join("")}</tr></thead>
       <tbody>${rows.map((l) => `<tr>${cols.map(([, f]) => `<td>${f(l)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
   }
@@ -233,65 +239,82 @@
   function renderDetail(app, id) {
     const l = state.byId.get(id);
     if (!l) return app.appendChild(h(`<div class="empty"><h2>Not found</h2></div>`));
-    const A = l.analysis, N = l.normalized || {}, prof = state.profiles.get(l.profile_key);
+    const A = l.assessment, N = l.normalized || {}, prof = state.profiles.get(l.profile_key);
+    const E = A?.evidence, S = A?.score, C = A?.costs;
     const photos = l.photos && l.photos.length ? l.photos : l.thumb ? [l.thumb] : [];
     const peers = state.data.listings.filter((x) => x.profile_key === l.profile_key && x.role === "candidate" && x.availability === "active" && x.id !== l.id);
     const comps = state.data.listings.filter((x) => x.profile_key === l.profile_key && x.role === "comp");
     const market = state.data.markets?.[l.profile_key] || {};
-    const scoreRows = (scores, weights, cls = "") => Object.entries(scores || {}).sort((a, b) => (weights?.[b[0]] || 0) - (weights?.[a[0]] || 0))
-      .map(([k, v]) => `<div class="score-row"><span>${esc(k.replace("_", " "))}${weights?.[k] ? ` <span class="muted small">×${weights[k].toFixed(2)}</span>` : ""}</span><span class="bar"><i class="${cls}" style="width:${v * 20}%"></i></span><span class="mono">${v}</span></div>`).join("");
+    const CATS = [["documentation", "Documentation & verifiability", 30], ["condition", "Condition", 25], ["price_value", "Price & risk-adjusted value", 15], ["mission_fit", "Mission fit", 15], ["logistics", "Logistics & inspectability", 10], ["emotional_spec_fit", "Emotional / spec fit", 5]];
+    const factChip = (f) => `<span class="chip ${f.status === "verified" ? "olive" : f.status === "claimed" ? "mustard" : f.status === "inferred" ? "teal" : ""}" title="${esc(f.source)}${f.note ? " · " + esc(f.note) : ""}">${esc(f.status)}</span>`;
+    const list = (arr) => `<ul class="list">${(arr || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
 
     app.appendChild(h(`<div>
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <a href="#/" class="btn sm ghost">← Board</a>
-        <div class="row">${siteChip(l.site)}${availChip(l.availability)}${l.role === "comp" ? `<span class="chip dark">market comp</span>` : ""}<a class="btn sm" href="${esc(l.url)}" target="_blank" rel="noopener">Open listing ↗</a></div>
+        <div class="row">${siteChip(l.site)}${availChip(l.availability)}${l.role === "comp" ? `<span class="chip dark">market comp</span>` : ""}<span class="chip" title="mission">${esc(missionLabel(l.mission))}</span><a class="btn sm" href="${esc(l.url)}" target="_blank" rel="noopener">Open listing ↗</a></div>
       </div>
       <div class="headline">
         <div><h1>${esc(title(l))}</h1><div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>
         <div class="row" style="gap:18px">
           <div><div class="price">${money(l.sold_price || l.price)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
-          ${A?.deal_score != null ? `<div class="dial" style="--pct:${A.deal_score}"><span>${A.deal_score}</span><small>deal</small></div>` : ""}
-          ${A?.verdict ? `<div><div class="verdict ${esc(A.verdict)}">${esc(A.verdict)}</div><div class="muted small">confidence ${A.confidence ?? "—"}/5</div></div>` : ""}
+          ${S ? `<div class="dial" style="--pct:${S.total}"><span>${S.total}</span><small>/100</small></div>` : ""}
+          ${A ? `<div><div class="verdict ${esc(A.verdict.split(" ")[0])}">${esc(A.verdict)}</div><div class="muted small">confidence ${A.confidence}/100 · policy ${esc(A.policy_version)}</div></div>` : ""}
         </div>
       </div></div>`));
 
     const main = h(`<div></div>`), side = h(`<div></div>`);
     const grid = h(`<div class="detail"></div>`); grid.append(main, side); app.appendChild(grid);
 
-    // gallery
     if (photos.length) {
       const g = h(`<div class="gallery"><div class="main"><img src="${esc(photos[0])}" alt=""></div><div class="thumbs">${photos.map((p, i) => `<img src="${esc(p)}" class="${i === 0 ? "on" : ""}" alt="">`).join("")}</div></div>`);
       g.querySelectorAll(".thumbs img").forEach((im) => (im.onclick = () => { $(".main img", g).src = im.src; g.querySelectorAll(".thumbs img").forEach((x) => x.classList.toggle("on", x === im)); }));
-      main.appendChild(g);
-      main.appendChild(h(`<div style="height:16px"></div>`));
+      main.appendChild(g); main.appendChild(h(`<div style="height:16px"></div>`));
     }
 
-    // analysis or quick read
     if (A) {
-      main.appendChild(h(`<div class="panel accent-teal"><h3>Deep analysis <span class="chip teal">Opus</span><span class="muted small">${ago(l.analyzed_at)}</span></h3>
-        <p>${esc(A.summary)}</p>${A.verdict_reasoning ? `<p><b>Why ${esc(A.verdict)}:</b> ${esc(A.verdict_reasoning)}</p>` : ""}${A.market_position ? `<h3 style="margin-top:12px">Market position</h3><p>${esc(A.market_position)}</p>` : ""}</div>`));
-      if (A.dealbreakers?.length) main.appendChild(h(`<div class="panel accent-rose"><h3>Dealbreakers</h3><ul class="list">${A.dealbreakers.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`));
-      main.appendChild(h(`<div class="panel accent-olive"><h3>Positives</h3><ul class="list">${(A.positives || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`));
-      main.appendChild(h(`<div class="panel accent-mustard"><h3>Concerns</h3><ul class="list">${(A.concerns || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`));
-      if (A.checks?.length) main.appendChild(h(`<div class="panel"><h3>Model-specific checks (from the listing's evidence)</h3><table class="checks">${A.checks.map((c) => `<tr><td class="st-${c.status}">${esc(c.status)}</td><td><b>${esc(prof?.checks?.find((k) => k.key === c.key)?.label || c.key)}</b>${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ""}</td></tr>`).join("")}</table></div>`));
-      if (A.inspection_focus?.length) main.appendChild(h(`<div class="panel accent-walnut"><h3>PPI focus</h3><ul class="list">${A.inspection_focus.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`));
-      if (A.seller_questions?.length) main.appendChild(h(`<div class="panel accent-teal"><h3>Ask the seller</h3><ol class="list">${A.seller_questions.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>`));
-      if (A.negotiation?.length) main.appendChild(h(`<div class="panel accent-orange"><h3>Negotiation plays</h3><ul class="list">${A.negotiation.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`));
+      const hard = A.gates.filter((g) => g.kind === "hard" || g.kind === "strategy" || g.kind === "configuration");
+      const cond = A.gates.filter((g) => g.kind === "conditional");
+      main.appendChild(h(`<div class="panel ${verdictTone(A.verdict) === "rose" ? "accent-rose" : verdictTone(A.verdict) === "mustard" ? "accent-mustard" : "accent-olive"}">
+        <h3>Verdict: ${esc(A.verdict)} <span class="muted small">${ago(A.assessed_at)} · ${esc(A.mission.replace("_", " "))} · ${esc(A.urgency_mode.replace("_", " "))}</span></h3>
+        <p><b>${esc(A.verdict_reason)}</b></p>
+        ${E.mission_note ? `<p><b>Jason fit:</b> ${esc(E.mission_note)}</p>` : ""}
+        <p>${esc(E.rationale)}</p>
+        ${E.next_action ? `<p class="small" style="margin:8px 0 0"><b>Next action:</b> ${esc(E.next_action)}</p>` : ""}</div>`));
+      if (hard.length) main.appendChild(h(`<div class="panel accent-rose"><h3>Hard gates (override the score)</h3>${list(hard.map((g) => g.reason))}</div>`));
+      if (cond.length) main.appendChild(h(`<div class="panel accent-mustard"><h3>Unresolved conditions (cap the verdict)</h3>${list(cond.map((g) => g.reason))}</div>`));
+      if (E.contradictions?.length) main.appendChild(h(`<div class="panel accent-rose"><h3>Contradictions</h3>${list(E.contradictions.map((c) => `${c.severity}: ${c.topic} — ${c.detail}`))}</div>`));
+      main.appendChild(h(`<div class="panel accent-olive"><h3>Why it works</h3>${list(E.positives)}</div>`));
+      main.appendChild(h(`<div class="panel accent-mustard"><h3>Main risks</h3>${list(E.concerns)}</div>`));
+      main.appendChild(h(`<div class="panel"><h3>Missing evidence <span class="muted small">unknown is not good</span></h3>${list(E.unknowns)}</div>`));
+      if (E.critical_evidence?.length) main.appendChild(h(`<div class="panel accent-walnut"><h3>Model-critical evidence</h3><table class="checks">${E.critical_evidence.map((c) => { const req = (prof?.critical_evidence || []).find((r) => r.key === c.key); return `<tr><td class="st-${c.status === "satisfied" ? "pass" : c.status === "failed" ? "fail" : c.status === "claimed_only" ? "concern" : "unknown"}">${esc(c.status.replace("_", " "))}</td><td><b>${esc(req?.label || c.key)}</b>${req?.severity === "hard" ? ` <span class="chip rose">hard</span>` : ""}${c.evidence ? `<div class="muted small">${esc(c.evidence)} <i>(${esc(c.source)})</i></div>` : ""}</td></tr>`; }).join("")}</table></div>`));
+      main.appendChild(h(`<div class="panel accent-teal"><h3>Ask the seller</h3><ol class="list">${(E.seller_questions || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>`));
+      main.appendChild(h(`<div class="panel accent-walnut"><h3>PPI focus</h3>${list(E.ppi_focus)}</div>`));
+      if (E.what_would_change_verdict?.length) main.appendChild(h(`<div class="panel"><h3>What would change the verdict</h3>${list(E.what_would_change_verdict)}</div>`));
+      if (E.facts?.length) main.appendChild(h(`<details class="panel"><summary class="muted">Facts with provenance (${E.facts.length})</summary><table class="checks">${E.facts.map((f) => `<tr><td>${factChip(f)}</td><td><b>${esc(f.key)}</b> ${esc(f.value ?? "—")}<div class="muted small">${esc(f.source)}${f.note ? " · " + esc(f.note) : ""}</div></td></tr>`).join("")}</table></details>`));
+      const vh = A.vin_history || {};
+      if ((vh.prior_listings || []).length || vh.vin_decode || (vh.recalls || []).length) main.appendChild(h(`<details class="panel" open><summary class="muted">VIN history &amp; decode</summary>
+        ${vh.vin_decode ? `<p class="small"><b>NHTSA decode:</b> ${esc([vh.vin_decode.year, vh.vin_decode.make, vh.vin_decode.model, vh.vin_decode.trim || vh.vin_decode.series, vh.vin_decode.engine_liters ? vh.vin_decode.engine_liters + "L" : "", vh.vin_decode.body_class].filter(Boolean).join(" · "))}</p>` : ""}
+        ${(vh.vin_decode_contradictions || []).length ? `<p class="small" style="color:var(--rose)"><b>Decode vs listing:</b> ${vh.vin_decode_contradictions.map((c) => esc(c.detail)).join("; ")}</p>` : ""}
+        ${vh.markup_vs_last_sale != null ? `<p class="small"><b>Relist markup vs last sale:</b> <span class="mono">${(vh.markup_vs_last_sale * 100).toFixed(0)}%</span></p>` : ""}
+        ${(vh.prior_listings || []).length ? `<table class="checks">${vh.prior_listings.map((p) => `<tr><td class="mono small">${esc((p.first_seen || "").slice(0, 10))}</td><td>${siteChip(p.site)} <span class="mono">${money(p.sold_price || p.price)}</span> ${esc(p.availability)} ${p.mileage ? "· " + num(p.mileage) + " mi" : ""} <a href="${esc(p.url)}" target="_blank" rel="noopener">↗</a></td></tr>`).join("")}</table>` : `<p class="muted small">No other listings with this VIN in the tracker.</p>`}
+        ${(vh.recalls || []).length ? `<p class="small"><b>NHTSA campaigns for this make/model/year:</b> ${vh.recalls.length} (completion unknown)</p>` : ""}</details>`));
     } else {
-      main.appendChild(h(`<div class="panel accent-mustard"><h3>Quick read <span class="chip mustard">Haiku</span></h3>
+      main.appendChild(h(`<div class="panel accent-mustard"><h3>Quick read <span class="chip mustard">sync-time</span></h3>
         <p>${esc(N.prelim_summary || "Not normalized yet. Run a sync with the server's API key set.")}</p>
-        ${N.highlights?.length ? `<b>Highlights</b><ul class="list">${N.highlights.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-        ${N.red_flags?.length ? `<b>Red flags</b><ul class="list">${N.red_flags.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`));
+        ${N.highlights?.length ? `<b>Highlights</b>${list(N.highlights)}` : ""}
+        ${N.red_flags?.length ? `<b>Red flags</b>${list(N.red_flags)}` : ""}
+        ${N.vin_decode ? `<p class="small"><b>NHTSA decode:</b> ${esc([N.vin_decode.year, N.vin_decode.make, N.vin_decode.model, N.vin_decode.trim || N.vin_decode.series, N.vin_decode.engine_liters ? N.vin_decode.engine_liters + "L" : ""].filter(Boolean).join(" · "))}</p>` : ""}
+        ${(N.vin_contradictions || []).length ? `<p class="small" style="color:var(--rose)"><b>Decode vs listing:</b> ${N.vin_contradictions.map((c) => esc(c.detail)).join("; ")}</p>` : ""}
+        <p class="muted small">No deep assessment yet${state.local ? "; run one from Actions." : "."}</p></div>`));
     }
-    if (A && (N.red_flags?.length || N.highlights?.length)) main.appendChild(h(`<details class="panel"><summary class="muted">Quick read from sync (Haiku)</summary><p>${esc(N.prelim_summary || "")}</p>${N.red_flags?.length ? `<b>Red flags</b><ul class="list">${N.red_flags.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</details>`));
-
-    // description
-    main.appendChild(h(`<details class="panel"><summary class="muted">Listing text as captured (${num((l.raw?.text_len) || 0) !== "0" ? "" : ""}${l.options?.length ? l.options.length + " options" : "raw"})</summary>${l.options?.length ? `<p><b>Options:</b> ${l.options.map(esc).join(", ")}</p>` : ""}<p class="muted small">Full raw text stays on the local server and is not published.</p></details>`));
+    main.appendChild(h(`<details class="panel"><summary class="muted">Listing as captured${l.options?.length ? ` · ${l.options.length} options` : ""}</summary>${l.options?.length ? `<p><b>Options:</b> ${l.options.map(esc).join(", ")}</p>` : ""}<p class="muted small">Raw listing text stays on the local server and is not published. The assessment above is stored separately from it.</p></details>`));
 
     // ----- side -----
     if (state.local) {
       const act = h(`<div class="panel"><h3>Actions</h3>
-        <div class="row"><button class="btn primary" id="analyze">${A ? "Re-analyze" : "Analyze"} with Opus <span class="muted small" style="color:inherit;opacity:.8">~$0.50–1.50</span></button><button class="btn sm ghost" id="renorm" title="Re-run Haiku normalization">Re-normalize</button></div>
+        <div class="row"><button class="btn primary" id="analyze">${A ? "Re-assess" : "Assess"} <span class="muted small" style="color:inherit;opacity:.8">Opus · ~$0.50–1.50</span></button><button class="btn sm ghost" id="renorm" title="Re-run sync-time normalization">Re-normalize</button></div>
+        <label style="display:block;margin-top:10px">Mission <select id="mission">${MISSIONS.map((m) => `<option value="${m}" ${l.mission === m ? "selected" : ""}>${missionLabel(m)}</option>`).join("")}</select> <span class="muted small">pragmatic bridge lifts the manual gate</span></label>
         <div class="row" style="margin-top:10px"><label>Status <select id="status">${STATUSES.map((s) => `<option ${l.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
         <label><input type="checkbox" id="pin" ${l.pinned ? "checked" : ""}> pinned</label>
         <label>Role <select id="role"><option value="candidate" ${l.role === "candidate" ? "selected" : ""}>candidate</option><option value="comp" ${l.role === "comp" ? "selected" : ""}>comp</option></select></label></div>
@@ -299,44 +322,55 @@
         <textarea class="notes" id="notes" placeholder="Your notes (saved on blur)">${esc(l.notes || "")}</textarea></div>`);
       side.appendChild(act);
       $("#analyze", act).onclick = async (e) => {
-        e.target.disabled = true; e.target.textContent = "Analyzing… (30–90s)";
-        try { await api(`/api/listings/${l.id}/analyze`, "POST"); await loadData(); route(); toast("Analysis complete"); }
-        catch (err) { toast("Analysis failed: " + err.message, 5000); e.target.disabled = false; e.target.textContent = "Analyze with Opus"; }
+        e.target.disabled = true; e.target.textContent = "Assessing… (30–90s)";
+        try { await api(`/api/listings/${l.id}/assess`, "POST"); await loadData(); route(); toast("Assessment stored"); }
+        catch (err) { toast("Assessment failed: " + err.message, 6000); e.target.disabled = false; e.target.textContent = "Assess"; }
       };
       $("#renorm", act).onclick = async (e) => { e.target.disabled = true; try { await api(`/api/listings/${l.id}/renormalize`, "POST"); await loadData(); route(); toast("Re-normalized"); } catch (err) { toast(err.message, 4000); e.target.disabled = false; } };
       const patch = async (body) => { try { await api(`/api/listings/${l.id}`, "PATCH", body); Object.assign(l, body); toast("Saved"); } catch (err) { toast(err.message, 4000); } };
+      $("#mission", act).onchange = (e) => patch({ mission: e.target.value });
       $("#status", act).onchange = (e) => patch({ status: e.target.value });
       $("#pin", act).onchange = (e) => patch({ pinned: e.target.checked });
       $("#role", act).onchange = (e) => patch({ role: e.target.value });
       $("#prof", act).onchange = (e) => patch({ profile_key: e.target.value });
       $("#notes", act).onblur = (e) => { if (e.target.value !== (l.notes || "")) patch({ notes: e.target.value }); };
     } else {
-      side.appendChild(h(`<div class="panel"><div class="row" style="justify-content:space-between"><span class="pill-status">${esc(l.status || "New")}</span>${l.pinned ? `<span class="chip mustard">★ pinned</span>` : ""}</div>${l.notes ? `<p style="white-space:pre-wrap">${esc(l.notes)}</p>` : `<p class="muted small">Notes and status are edited on the local workbench.</p>`}</div>`));
+      side.appendChild(h(`<div class="panel"><div class="row" style="justify-content:space-between"><span class="pill-status">${esc(l.status || "New")}</span>${l.pinned ? `<span class="chip mustard">★ pinned</span>` : ""}</div>${l.notes ? `<p style="white-space:pre-wrap">${esc(l.notes)}</p>` : `<p class="muted small">Notes, mission, and status are edited on the local workbench.</p>`}</div>`));
     }
 
+    if (C) {
+      side.appendChild(h(`<div class="panel accent-orange"><h3>Price discipline</h3><div class="kv">
+        <span class="k">${esc(C.price_basis.replace("_", " "))}</span><span class="mono">${money(C.price)}</span>
+        <span class="k">Buyer fee</span><span class="mono">${money(C.buyer_fee)}</span>
+        <span class="k">Transport / travel</span><span class="mono">${money(C.transport)}</span>
+        <span class="k">Immediate work</span><span class="mono">${money(C.immediate_service_low)}–${money(C.immediate_service_high)}</span>
+        <span class="k">Overdue allowance</span><span class="mono">${money(C.overdue_allowance)}</span>
+        <span class="k">Risk reserve</span><span class="mono">${money(C.risk_reserve)}</span>
+        <span class="k">Tax &amp; registration</span><span class="mono">${money(C.tax_and_registration)}</span>
+        <span class="k"><b>All-in</b></span><span class="mono"><b>${money(C.all_in_low)}–${money(C.all_in_high)}</b></span>
+        <span class="k">Recommended offer</span><span class="mono">${money(C.offer_low)}–${money(C.offer_high)}</span>
+        <span class="k"><b>Maximum price / hammer</b></span><span class="mono"><b>${money(C.max_price)}</b></span></div>
+        ${C.notes?.length ? `<ul class="list small" style="margin-top:8px">${C.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}</div>`));
+    }
+    if (S) {
+      side.appendChild(h(`<div class="panel accent-teal"><h3>Score ${S.total}/100 <span class="muted small">confidence ${A.confidence}</span></h3><div class="scores">${CATS.map(([k, label, max]) => `<div class="score-row"><span title="${esc(E.ratings?.[k]?.rationale || "")}">${label}</span><span class="bar"><i style="width:${(S[k] / max) * 100}%"></i></span><span class="mono">${S[k]}/${max}</span></div>`).join("")}</div>
+        ${S.caps_applied?.length ? `<p class="muted small" style="margin:8px 0 0">Caps: ${S.caps_applied.map(esc).join("; ")}</p>` : ""}</div>`));
+    } else if (N.prelim_scores && Object.keys(N.prelim_scores).length) {
+      side.appendChild(h(`<div class="panel accent-mustard"><h3>Preliminary scores <span class="muted small">${prelimOf(l) != null ? prelimOf(l).toFixed(2) + " weighted" : ""}</span></h3><div class="scores">${Object.entries(N.prelim_scores).map(([k, v]) => `<div class="score-row"><span>${esc(k.replace("_", " "))}</span><span class="bar"><i class="prelim" style="width:${v * 20}%"></i></span><span class="mono">${v}</span></div>`).join("")}</div></div>`));
+    }
     side.appendChild(h(`<div class="panel"><h3>Facts</h3><div class="facts">${[["Year", l.year], ["Mileage", l.mileage ? num(l.mileage) + " mi" : null], ["Engine", l.engine || (l.engine_liters ? l.engine_liters + "L" : null)], ["Transmission", l.transmission], ["Drivetrain", l.drivetrain], ["Body", l.body_style], ["Exterior", l.exterior_color], ["Interior", l.interior_color], ["Title", l.title_status], ["Accidents", l.accidents], ["Owners", l.num_owners], ["Seller", [l.seller_type, l.seller_name].filter(Boolean).join(" · ")], ["Listed", l.listing_date], ["Auction ends", l.auction_end || l.raw?.time_left]].filter(([, v]) => v != null && v !== "").map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join("")}</div></div>`));
 
-    if (A?.pricing && Object.keys(A.pricing).length) {
-      const P = A.pricing;
-      side.appendChild(h(`<div class="panel accent-orange"><h3>Pricing</h3><div class="kv">${[["Fair value", P.fair_value], ["Target offer", P.target_offer], ["Walk away", P.walk_away], ["Immediate repairs", P.immediate_repairs], ["12-month repairs", P.twelve_month_repairs]].filter(([, v]) => v != null).map(([k, v]) => `<span class="k">${k}</span><span class="mono">${money(v)}</span>`).join("")}${P.target_offer && P.immediate_repairs != null ? `<span class="k">All-in year one</span><span class="mono"><b>${money((P.target_offer || 0) + (P.immediate_repairs || 0) + (P.twelve_month_repairs || 0))}</b></span>` : ""}</div></div>`));
-    }
-    if (A?.scores && Object.keys(A.scores).length) side.appendChild(h(`<div class="panel accent-teal"><h3>Scores <span class="muted small">weighted by profile</span></h3><div class="scores">${scoreRows(A.scores, prof?.weights)}</div></div>`));
-    else if (N.prelim_scores && Object.keys(N.prelim_scores).length) side.appendChild(h(`<div class="panel accent-mustard"><h3>Preliminary scores <span class="muted small">${prelimOf(l) != null ? prelimOf(l).toFixed(2) + " weighted" : ""}</span></h3><div class="scores">${scoreRows(N.prelim_scores, prof?.weights, "prelim")}</div></div>`));
-
-    // price history
     const hist = (l.history || []).filter((s) => s.price);
     const hp = h(`<div class="panel"><h3>Price &amp; availability</h3><div class="spark" id="spark"></div><table class="checks">${(l.history || []).slice().reverse().slice(0, 8).map((s) => `<tr><td class="mono small">${s.t.slice(0, 10)}</td><td><span class="mono">${money(s.price)}</span> <span class="muted small">${esc(s.kind || "")} ${esc(s.availability || "")}${s.bids != null ? " · " + s.bids + " bids" : ""}</span></td></tr>`).join("") || `<tr><td class="muted">no history yet</td></tr>`}</table></div>`);
     side.appendChild(hp);
-    if (hist.length >= 2) sparkline($("#spark", hp), hist.map((s) => ({ x: new Date(s.t).getTime(), y: s.price })));
-    else $("#spark", hp).remove();
+    if (hist.length >= 2) sparkline($("#spark", hp), hist.map((s) => ({ x: new Date(s.t).getTime(), y: s.price }))); else $("#spark", hp).remove();
 
-    // market context
     if (l.profile_key) {
       side.appendChild(h(`<div class="panel accent-walnut"><h3>Market context</h3><div class="kv">
         <span class="k">Sold comps</span><span class="mono">${market.sold_count ?? 0}${market.sold_median ? " · median " + money(market.sold_median) : ""}</span>
         <span class="k">Active peers</span><span class="mono">${peers.length}${market.asking_median ? " · median " + money(market.asking_median) : ""}</span>
         ${market.mileage_median ? `<span class="k">Median miles</span><span class="mono">${num(market.mileage_median)}</span>` : ""}</div>
-        <p class="small" style="margin-bottom:0"><a href="#/market?p=${esc(l.profile_key)}">Open market view →</a>${comps.length ? "" : " (no comps yet: sync sold listings and ended auctions)"}</p></div>`));
+        <p class="small" style="margin-bottom:0"><a href="#/market?p=${esc(l.profile_key)}">Open market view →</a>${comps.length ? "" : " (no comps yet)"}</p></div>`));
     }
   }
 
@@ -388,6 +422,8 @@
         <h3>Weak points</h3><p style="white-space:pre-wrap">${esc(p.weak_points || "")}</p>
         ${p.market_notes ? `<h3>Market notes</h3><p>${esc(p.market_notes)}</p>` : ""}
         <h3>Weights</h3><div class="weights">${Object.entries(p.weights || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<span class="chip teal">${esc(k.replace("_", " "))} <span class="mono">${v.toFixed(2)}</span></span>`).join("")}</div>
+        ${p.mission_default ? `<p class="small"><b>Default mission:</b> ${esc(missionLabel(p.mission_default))}${p.risk_reserve ? ` · <b>risk reserve</b> ${money(p.risk_reserve)}` : ""}${p.automatic_ok ? " · automatic OK" : ""}</p>` : ""}
+        ${p.critical_evidence?.length ? `<h3 style="margin-top:10px">Model-critical evidence</h3><ul class="list">${p.critical_evidence.map((c) => `<li>${esc(c.label)} ${c.severity === "hard" ? `<span class="chip rose">hard gate</span>` : `<span class="chip mustard">conditional</span>`}</li>`).join("")}</ul>` : ""}
         ${p.dealbreakers?.length ? `<h3 style="margin-top:10px">Dealbreaker rules</h3><ul class="list">${p.dealbreakers.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
         <h3 style="margin-top:10px">Checklist</h3><ul class="list">${(p.checks || []).map((c) => `<li>${esc(c.label)}</li>`).join("")}</ul>
         <p class="muted small">Immediate: ${esc(p.immediate_repairs || "—")}<br>12-month: ${esc(p.repairs_12mo || "—")}</p></details>`);
@@ -397,17 +433,31 @@
     });
   }
 
+  // ---------- settings (temporary state; durable preferences live in code) ----------
+  async function renderSettings(app) {
+    app.appendChild(h(`<div class="hero"><div><h1>Policy state</h1><p>Temporary preferences and thresholds: budget, urgency mode, current vehicles, exclusions, fees, transport, tax. Durable preferences and the scoring model are versioned in code with the guide.</p></div></div>`));
+    if (!state.local) return app.appendChild(h(`<div class="empty"><h2>Local only</h2><p>Edit policy state on the local workbench. Published policy version: ${esc(state.data.policy_version || "—")}</p></div>`));
+    let cfg;
+    try { cfg = await api("/api/settings"); } catch (e) { return app.appendChild(h(`<div class="empty"><h2>${esc(e.message)}</h2></div>`)); }
+    const panel = h(`<div class="panel"><div class="row" style="justify-content:space-between"><h3>Policy ${esc(cfg.policy_version)}</h3><div class="row"><button class="btn sm" id="save">Save</button><button class="btn sm ghost" id="reset">Reset to defaults</button></div></div>
+      <p class="muted small">JSON. Unknown keys are kept; nested objects merge. Urgency mode must be one of accelerated_bridge, emergency, casual_search.</p>
+      <textarea class="notes mono" id="json" style="min-height:420px">${esc(JSON.stringify(cfg.state, null, 2))}</textarea></div>`);
+    app.appendChild(panel);
+    $("#save", panel).onclick = async () => { try { const body = JSON.parse($("#json", panel).value); const r = await api("/api/settings", "PUT", body); $("#json", panel).value = JSON.stringify(r.state, null, 2); toast("Saved"); } catch (e) { toast("Not saved: " + e.message, 5000); } };
+    $("#reset", panel).onclick = async () => { if (!confirm("Reset policy state to code defaults?")) return; const r = await api("/api/settings/reset", "POST"); $("#json", panel).value = JSON.stringify(r.state, null, 2); toast("Reset"); };
+  }
+
   // ---------- compare ----------
   function renderCompare(app) {
     const rows = state.compare.map((id) => state.byId.get(id)).filter(Boolean);
     app.appendChild(h(`<div class="hero"><div><h1>Compare</h1><p>Side by side. Pick up to four from the board.</p></div><a class="btn sm ghost" href="#/">← Board</a></div>`));
     if (!rows.length) return app.appendChild(h(`<div class="empty"><h2>Nothing selected</h2></div>`));
     const facts = [["Price", (l) => money(l.sold_price || l.price)], ["Mileage", (l) => l.mileage ? num(l.mileage) + " mi" : "—"], ["Year", (l) => l.year ?? "—"], ["Trim", (l) => l.trim || "—"], ["Engine", (l) => l.engine || "—"], ["Transmission", (l) => l.transmission || "—"], ["Location", (l) => l.location || "—"], ["Listed", listedAge], ["Site", (l) => siteName(l.site)],
-      ["Deal score", (l) => scoreOf(l) ?? "—"], ["Verdict", (l) => l.analysis?.verdict || "—"], ["Prelim", (l) => prelimOf(l)?.toFixed(2) ?? "—"], ["Target offer", (l) => money(l.analysis?.pricing?.target_offer)], ["Year-one repairs", (l) => l.analysis?.pricing ? money((l.analysis.pricing.immediate_repairs || 0) + (l.analysis.pricing.twelve_month_repairs || 0)) : "—"],
+      ["Score", (l) => scoreOf(l) ?? "—"], ["Confidence", (l) => l.assessment?.confidence ?? "—"], ["Verdict", (l) => verdictOf(l) || "—"], ["Mission", (l) => missionLabel(l.mission)], ["Max price", (l) => money(l.assessment?.costs?.max_price)], ["All-in", (l) => l.assessment ? money(l.assessment.costs.all_in_low) + "–" + money(l.assessment.costs.all_in_high) : "—"], ["Hard gates", (l) => (l.assessment?.gates || []).filter((g) => g.kind !== "conditional").length], ["Unresolved", (l) => (l.assessment?.gates || []).filter((g) => g.kind === "conditional").length],
       ["Red flags", (l) => (l.normalized?.red_flags || []).length], ["Status", (l) => l.status || "New"]];
     const c = h(`<div class="compare">${rows.map((l) => `<div class="col">${photo(l) ? `<img src="${esc(photo(l))}" alt="">` : ""}<h3 style="margin:10px 0 6px"><a href="#/l/${l.id}">${esc(title(l))}</a></h3>
       <div class="kv">${facts.map(([k, f]) => `<span class="k">${k}</span><span class="mono">${esc(f(l))}</span>`).join("")}</div>
-      ${l.analysis ? `<h3 style="margin-top:12px">Concerns</h3><ul class="list small">${(l.analysis.concerns || []).slice(0, 5).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`).join("")}</div>`);
+      ${l.assessment ? `<h3 style="margin-top:12px">Main risks</h3><ul class="list small">${(l.assessment.evidence.concerns || []).slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`).join("")}</div>`);
     app.appendChild(c);
   }
 

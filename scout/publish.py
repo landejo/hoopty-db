@@ -10,6 +10,7 @@ from typing import Any
 
 from scout import db
 from scout.config import DOCS_DIR, ROOT, SITE_DATA_DIR, SITES
+from scout.policy import POLICY_VERSION
 from scout.scoring import market_stats, price_percentile
 
 PUBLIC_LISTING_FIELDS = [
@@ -18,7 +19,7 @@ PUBLIC_LISTING_FIELDS = [
     "transmission", "drivetrain", "body_style", "exterior_color", "interior_color", "mileage",
     "price", "price_kind", "sold_price", "location", "seller_type", "title_status", "accidents",
     "num_owners", "listing_date", "auction_end", "options", "profile_key", "profile_confidence",
-    "normalized", "prelim_score", "analysis", "analyzed_at", "status", "notes", "pinned", "raw",
+    "normalized", "prelim_score", "analyzed_at", "status", "notes", "pinned", "raw", "mission",
 ]
 PRIVATE_FIELDS = {"seller_contact", "raw_text", "vin"}
 
@@ -35,10 +36,25 @@ def scrub_listing(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def scrub_assessment(a: dict[str, Any]) -> dict[str, Any]:
+    """Drop the VIN itself and seller-identifying facts; keep everything else."""
+    out = dict(a)
+    vh = dict(out.get("vin_history") or {})
+    vh.pop("vin", None)
+    out["vin_history"] = vh
+    ev = dict(out.get("evidence") or {})
+    ev["facts"] = [f for f in ev.get("facts") or [] if f.get("key") not in {"vin", "seller_name", "seller_contact"}]
+    out["evidence"] = ev
+    return out
+
+
 def build_export() -> dict[str, Any]:
     listings = [scrub_listing(r) for r in db.list_listings()]
     snaps = db.all_snapshots()
+    assessments = db.latest_assessments()
     for l in listings:
+        a = assessments.get(l["id"])
+        l["assessment"] = scrub_assessment(a) if a else None
         l["history"] = [
             {"t": s["seen_at"], "price": s.get("price"), "kind": s.get("price_kind"),
              "availability": s.get("availability"), "bids": s.get("bid_count")}
@@ -57,6 +73,7 @@ def build_export() -> dict[str, Any]:
         markets[p["key"]] = stats
     return {
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "policy_version": POLICY_VERSION,
         "sites": SITES,
         "profiles": profiles,
         "markets": markets,

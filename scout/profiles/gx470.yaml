@@ -50,3 +50,29 @@ checks:
   - {key: leaks, label: "Visible engine / drivetrain leaks"}
   - {key: tire_age_condition, label: "Tire age and condition"}
   - {key: mods_lift, label: "Modifications / lift quality"}
+mission_default: utility_capability
+risk_reserve: 2000
+automatic_ok: true
+catchup_notes: >
+  A GX overlaps the household RX 350; recommend only when body-on-frame V8 /
+  off-road capability is itself wanted. Recent parts do not erase collision,
+  corrosion, transmission-history, warning-light, or modification concerns.
+critical_evidence:
+  - key: timing_belt_water_pump
+    label: Documented timing-belt and water-pump service (date and mileage)
+    severity: conditional
+  - key: suspension_condition
+    label: Sorted suspension; rear air suspension not sagging (or quality delete), no cheap lift
+    severity: conditional
+  - key: rust_evaluation
+    label: Frame / underbody rust evaluated (light surface rust acceptable, heavy rust is a hard reject)
+    severity: conditional
+  - key: warning_lights
+    label: No warning lights (including suspension / AVS)
+    severity: conditional
+  - key: matching_tires
+    label: Matching quality tires
+    severity: conditional
+  - key: leaks_cooling_history
+    label: No unexplained coolant loss, oil leaks, brake or radiator concerns
+    severity: conditional

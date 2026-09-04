@@ -74,6 +74,33 @@ CREATE TABLE IF NOT EXISTS profiles (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER NOT NULL,
+    policy_version TEXT NOT NULL,
+    mission TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    score INTEGER,
+    confidence INTEGER,
+    model TEXT,
+    assessment_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(listing_id) REFERENCES listings(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_assessments_listing ON assessments(listing_id, id);
+
+CREATE TABLE IF NOT EXISTS vin_decodes (
+    vin TEXT PRIMARY KEY,
+    decode_json TEXT NOT NULL,
+    fetched_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,
@@ -84,7 +111,8 @@ CREATE TABLE IF NOT EXISTS events (
 """
 
 JSON_COLS = {"raw_json": {}, "photos_json": [], "options_json": [], "normalized_json": {}, "analysis_json": None}
-PROFILE_JSON_COLS = {"models_json": [], "years_json": [], "weights_json": {}, "checks_json": [], "dealbreakers_json": []}
+PROFILE_JSON_COLS = {"models_json": [], "years_json": [], "weights_json": {}, "checks_json": [], "dealbreakers_json": [],
+                     "critical_evidence_json": []}
 
 
 def now() -> str:
@@ -103,9 +131,22 @@ def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+_ADDITIVE_COLUMNS = {
+    "listings": [("mission", "TEXT")],
+    "profiles": [("critical_evidence_json", "TEXT DEFAULT '[]'"), ("mission_default", "TEXT"),
+                 ("risk_reserve", "INTEGER"), ("automatic_ok", "INTEGER DEFAULT 0"),
+                 ("catchup_notes", "TEXT")],
+}
+
+
 def init_db(path: Path | None = None) -> None:
     with connect(path) as c:
         c.executescript(SCHEMA)
+        for table, cols in _ADDITIVE_COLUMNS.items():
+            have = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
+            for name, decl in cols:
+                if name not in have:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 def _row_to_dict(row: sqlite3.Row, json_cols: dict) -> dict[str, Any]:
@@ -266,6 +307,9 @@ def upsert_profile(p: dict[str, Any], path: Path | None = None) -> None:
         "market_notes": p.get("market_notes"), "weights": p["weights"],
         "checks": p.get("checks", []), "dealbreakers": p.get("dealbreaker_rules", p.get("dealbreakers", [])),
         "source": p.get("source", "ai"), "verified": 1 if p.get("verified") else 0,
+        "critical_evidence": p.get("critical_evidence", []), "mission_default": p.get("mission_default"),
+        "risk_reserve": p.get("risk_reserve"), "automatic_ok": 1 if p.get("automatic_ok") else 0,
+        "catchup_notes": p.get("catchup_notes"),
         "updated_at": ts,
     }
     prepared = _prep(values, PROFILE_JSON_COLS)
@@ -289,6 +333,19 @@ def set_profile_verified(key: str, verified: bool, path: Path | None = None) -> 
 
 # ---------- events ----------
 
+def get_vin_decode(vin: str, path: Path | None = None) -> dict[str, Any] | None:
+    with connect(path) as c:
+        row = c.execute("SELECT decode_json FROM vin_decodes WHERE vin=?", (vin,)).fetchone()
+    return json.loads(row["decode_json"]) if row else None
+
+
+def set_vin_decode(vin: str, decoded: dict[str, Any], path: Path | None = None) -> None:
+    with connect(path) as c:
+        c.execute("INSERT INTO vin_decodes (vin, decode_json, fetched_at) VALUES (?, ?, ?) "
+                  "ON CONFLICT(vin) DO UPDATE SET decode_json=excluded.decode_json, fetched_at=excluded.fetched_at",
+                  (vin, json.dumps(decoded, ensure_ascii=False), now()))
+
+
 def log_event(kind: str, listing_id: int | None = None, detail: str = "", path: Path | None = None) -> None:
     with connect(path) as c:
         c.execute("INSERT INTO events (ts, kind, listing_id, detail) VALUES (?, ?, ?, ?)",
@@ -299,3 +356,109 @@ def recent_events(limit: int = 50, path: Path | None = None) -> list[dict[str, A
     with connect(path) as c:
         rows = c.execute("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------- settings ----------
+
+def get_setting(key: str, path: Path | None = None) -> Any:
+    with connect(path) as c:
+        row = c.execute("SELECT value_json FROM settings WHERE key=?", (key,)).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(row["value_json"])
+    except json.JSONDecodeError:
+        return None
+
+
+def set_setting(key: str, value: Any, path: Path | None = None) -> None:
+    with connect(path) as c:
+        c.execute("INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?) "
+                  "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at",
+                  (key, json.dumps(value, ensure_ascii=False), now()))
+
+
+# ---------- assessments ----------
+
+def add_assessment(listing_id: int, assessment: dict[str, Any], path: Path | None = None) -> int:
+    with connect(path) as c:
+        cur = c.execute(
+            "INSERT INTO assessments (listing_id, policy_version, mission, verdict, score, confidence, model, assessment_json, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (listing_id, assessment["policy_version"], assessment["mission"], assessment["verdict"],
+             (assessment.get("score") or {}).get("total"), assessment.get("confidence"), assessment.get("model"),
+             json.dumps(assessment, ensure_ascii=False), now()),
+        )
+        return cur.lastrowid
+
+
+def latest_assessment(listing_id: int, path: Path | None = None) -> dict[str, Any] | None:
+    with connect(path) as c:
+        row = c.execute("SELECT assessment_json FROM assessments WHERE listing_id=? ORDER BY id DESC LIMIT 1", (listing_id,)).fetchone()
+    return json.loads(row["assessment_json"]) if row else None
+
+
+def latest_assessments(path: Path | None = None) -> dict[int, dict[str, Any]]:
+    out: dict[int, dict[str, Any]] = {}
+    with connect(path) as c:
+        for r in c.execute("SELECT listing_id, assessment_json FROM assessments ORDER BY id"):
+            out[r["listing_id"]] = json.loads(r["assessment_json"])
+    return out
+
+
+def list_assessments(listing_id: int, path: Path | None = None) -> list[dict[str, Any]]:
+    with connect(path) as c:
+        rows = c.execute("SELECT id, policy_version, mission, verdict, score, confidence, model, created_at "
+                         "FROM assessments WHERE listing_id=? ORDER BY id DESC", (listing_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------- VIN history ----------
+
+def vin_history(vin: str | None, exclude_listing_id: int | None = None, path: Path | None = None) -> dict[str, Any]:
+    """Every listing in this database sharing the VIN, with price/mileage/disclosure
+    deltas. Internal only: no external VIN service is wired."""
+    out: dict[str, Any] = {"vin": vin, "prior_listings": [], "prior_sales": [], "price_changes": [],
+                           "mileage_changes": [], "disclosure_changes": [], "markup_vs_last_sale": None}
+    if not vin:
+        return out
+    with connect(path) as c:
+        rows = [_row_to_dict(r, JSON_COLS) for r in c.execute(
+            "SELECT * FROM listings WHERE vin=? ORDER BY first_seen, id", (vin,)).fetchall()]
+        snaps = {r["id"]: [dict(s) for s in c.execute(
+            "SELECT * FROM snapshots WHERE listing_id=? ORDER BY seen_at", (r["id"],)).fetchall()] for r in rows}
+    current = next((r for r in rows if r["id"] == exclude_listing_id), None)
+    others = [r for r in rows if r["id"] != exclude_listing_id]
+    for r in others:
+        entry = {"listing_id": r["id"], "site": r["site"], "url": r["url"], "first_seen": r["first_seen"],
+                 "last_seen": r["last_seen"], "availability": r["availability"], "price": r.get("price"),
+                 "sold_price": r.get("sold_price"), "mileage": r.get("mileage"), "title_status": r.get("title_status"),
+                 "red_flags": (r.get("normalized") or {}).get("red_flags") or []}
+        out["prior_listings"].append(entry)
+        if r.get("sold_price") or r.get("availability") == "sold":
+            out["prior_sales"].append({"date": r.get("listing_date") or r["last_seen"][:10],
+                                       "price": r.get("sold_price") or r.get("price"), "site": r["site"]})
+    for r in rows:
+        prices = [s for s in snaps.get(r["id"], []) if s.get("price")]
+        for a, b in zip(prices, prices[1:]):
+            if a["price"] != b["price"]:
+                out["price_changes"].append({"listing_id": r["id"], "from": a["price"], "to": b["price"], "at": b["seen_at"][:10]})
+    miles = [(r["first_seen"][:10], r.get("mileage")) for r in rows if r.get("mileage")]
+    for (d1, m1), (d2, m2) in zip(miles, miles[1:]):
+        if m1 != m2:
+            out["mileage_changes"].append({"from": m1, "to": m2, "between": [d1, d2],
+                                           "note": "mileage went DOWN" if m2 < m1 else ""})
+    if current and others:
+        prev = others[-1]
+        pf = set((prev.get("normalized") or {}).get("red_flags") or [])
+        cf = set((current.get("normalized") or {}).get("red_flags") or [])
+        for gone in sorted(pf - cf):
+            out["disclosure_changes"].append({"previously_disclosed": gone, "now": "not mentioned"})
+        if (prev.get("title_status") or "").lower() != (current.get("title_status") or "").lower() and prev.get("title_status"):
+            out["disclosure_changes"].append({"previously_disclosed": f"title: {prev['title_status']}",
+                                              "now": f"title: {current.get('title_status') or 'not stated'}"})
+    if current and out["prior_sales"] and current.get("price"):
+        last = out["prior_sales"][-1]["price"]
+        if last:
+            out["markup_vs_last_sale"] = round((current["price"] - last) / last, 3)
+    return out

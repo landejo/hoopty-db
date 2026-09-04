@@ -1,0 +1,47 @@
+key: mini_f56_cooper_s
+label: MINI Cooper S F56 (2017-2019)
+make: MINI
+models: [Cooper S, Cooper S Hardtop, F56 Cooper S, Cooper S 2 Door]
+years: [2014, 2021]
+source: seed
+verified: true
+mission_default: enthusiast_bridge
+risk_reserve: 1500
+automatic_ok: false
+framing: >
+  Primary bridge candidate, preferred band 2017-2019. Distinctive, playful, small,
+  practical, manual available. The F56/B46-B48 generation is materially better
+  than earlier MINIs but is still BMW-derived; do not represent it as Toyota-like.
+weak_points: >
+  Cooling leaks; engine mounts and vibration; oil leaks; clutch take-up/slip and
+  gearbox; suspension noise and alignment; electronics, infotainment, windows, A/C;
+  accident repairs; ECU tune or removed tune; California emissions compliance.
+immediate_repairs: fluids, tires, engine mounts if vibrating
+repairs_12mo: clutch if worn, cooling components, suspension
+market_notes: 2017-2019 manual cars with records are the target; tuned or heavily modified cars trade down.
+weights:
+  reliability: 0.22
+  condition: 0.22
+  engagement: 0.16
+  value: 0.15
+  ownership_cost: 0.10
+  locality: 0.08
+  desirability: 0.07
+dealbreaker_rules: [Automatic for the enthusiast brief, Undocumented tune, Salvage or rebuilt title]
+critical_evidence:
+  - key: cooling_history
+    label: Cooling-leak and service history
+    severity: conditional
+  - key: tune_status
+    label: Evidence of a current or removed ECU tune (and California emissions compliance)
+    severity: conditional
+checks:
+  - {key: cooling_leaks, label: "Cooling leaks and service history"}
+  - {key: engine_mounts, label: "Engine mounts / vibration"}
+  - {key: oil_leaks, label: "Oil leaks"}
+  - {key: clutch_gearbox, label: "Clutch take-up / slip and gearbox"}
+  - {key: suspension_alignment, label: "Suspension noise and alignment"}
+  - {key: electronics, label: "Electronics, infotainment, windows, A/C"}
+  - {key: accident_repairs, label: "Accident repairs"}
+  - {key: tune_evidence, label: "ECU tune or removed tune"}
+  - {key: tire_age_condition, label: "Tire age, match, and condition"}

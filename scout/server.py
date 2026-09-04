@@ -16,6 +16,9 @@ from scout.config import CONFIG, DOCS_DIR, SITES, STATUSES
 from scout.ingest import ingest_items
 from scout.profiles import sync_seed_profiles
 from scout.publish import build_export, git_publish, write_export
+from scout.policy import POLICY_VERSION
+from scout.policy.preferences import MISSIONS
+from scout.policy.state import load_state, reset_state, save_state
 
 app = FastAPI(title="Hoopty Scout")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -32,7 +35,7 @@ def _startup() -> None:
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "ai": CONFIG.ai_enabled, "models": {"deep": CONFIG.model_deep, "fast": CONFIG.model_fast},
-            "skip_sold": CONFIG.skip_sold}
+            "skip_sold": CONFIG.skip_sold, "policy_version": POLICY_VERSION}
 
 
 class IngestPayload(BaseModel):
@@ -62,6 +65,7 @@ def get_listing(listing_id: int) -> dict[str, Any]:
     if not row:
         raise HTTPException(404, "not found")
     row["history"] = db.list_snapshots(listing_id)
+    row["assessment"] = db.latest_assessment(listing_id)
     return row
 
 
@@ -71,6 +75,7 @@ class ListingPatch(BaseModel):
     pinned: bool | None = None
     role: str | None = None
     profile_key: str | None = None
+    mission: str | None = None
 
 
 @app.patch("/api/listings/{listing_id}")
@@ -92,13 +97,20 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         if patch.profile_key and not db.get_profile(patch.profile_key):
             raise HTTPException(400, "unknown profile")
         updates["profile_key"] = patch.profile_key or None
+    if patch.mission is not None:
+        if patch.mission not in MISSIONS:
+            raise HTTPException(400, f"mission must be one of {MISSIONS}")
+        updates["mission"] = patch.mission
     db.update_listing(listing_id, updates)
     db.log_event("edit", listing_id, str(updates))
     return {"ok": True, **updates}
 
 
-@app.post("/api/listings/{listing_id}/analyze")
-async def analyze(listing_id: int) -> dict[str, Any]:
+@app.post("/api/listings/{listing_id}/assess")
+@app.post("/api/listings/{listing_id}/analyze")  # back-compat alias
+async def assess_listing(listing_id: int) -> dict[str, Any]:
+    """Deep assessment: the model interprets evidence; the policy engine gates,
+    scores, costs, and decides. Stored with the policy version."""
     row = db.get_listing(listing_id)
     if not row:
         raise HTTPException(404, "not found")
@@ -107,20 +119,72 @@ async def analyze(listing_id: int) -> dict[str, Any]:
     prof = db.get_profile(row["profile_key"]) if row.get("profile_key") else None
     if not prof:
         raise HTTPException(400, "listing has no profile yet; run a sync or assign one")
-    from scout.ai.analyze import analyze_listing  # lazy
+    from scout.ai.assess import interpret_listing  # lazy
+    from scout.policy.engine import assess, default_mission
+    from scout.vin import compare_decode, decode_vin, decoded_facts
+    state = load_state()
+    mission = row.get("mission") or default_mission(prof)
     peers = [p for p in db.list_listings(role="candidate", profile_key=prof["key"])
              if p["id"] != listing_id and p["availability"] == "active"]
     comps = db.list_listings(role="comp", profile_key=prof["key"])
+    pool = sorted(c.get("sold_price") or c.get("price") for c in comps if (c.get("sold_price") or c.get("price")))
+    comps_median = pool[len(pool) // 2] if pool else None
     snaps = db.list_snapshots(listing_id)
+    history = db.vin_history(row.get("vin"), exclude_listing_id=listing_id)
+    decoded = await asyncio.to_thread(decode_vin, row.get("vin")) if row.get("vin") else None
+    history["vin_decode"] = decoded and {k: decoded.get(k) for k in ("year", "make", "model", "series", "trim", "engine_liters", "cylinders", "body_class")}
+    history["vin_decode_contradictions"] = compare_decode(decoded, row)
+    history["recalls"] = (decoded or {}).get("recalls") or []
     async with _ai_lock:
         try:
-            result = await asyncio.to_thread(analyze_listing, row, prof, snaps, peers, comps)
+            evidence = await asyncio.to_thread(interpret_listing, row, prof, mission, state, history, snaps, peers, comps)
         except Exception as e:
-            db.log_event("analyze_error", listing_id, str(e))
-            raise HTTPException(500, f"analysis failed: {e}")
-    db.update_listing(listing_id, {"analysis": result, "analyzed_at": db.now(), "analysis_model": CONFIG.model_deep})
-    db.log_event("analyzed", listing_id, result.get("verdict", ""))
-    return {"ok": True, "analysis": result}
+            db.log_event("assess_error", listing_id, str(e))
+            raise HTTPException(500, f"assessment failed: {e}")
+    # External VIN facts + deterministic decode contradictions join the model's interpretation.
+    from scout.policy.schema import Contradiction, Fact
+    evidence.facts.extend(Fact(**f) for f in decoded_facts(decoded))
+    for c in history["vin_decode_contradictions"]:
+        evidence.contradictions.append(Contradiction(**c))
+    result = assess(row, prof, evidence, state, vin_history=history, comps_median=comps_median,
+                    mission=mission, model=CONFIG.model_deep)
+    data = result.model_dump()
+    db.add_assessment(listing_id, data)
+    db.update_listing(listing_id, {"analyzed_at": db.now(), "analysis_model": CONFIG.model_deep, "mission": mission})
+    db.log_event("assessed", listing_id, f"{result.verdict} {result.score.total}/100 c{result.confidence}")
+    return {"ok": True, "assessment": data}
+
+
+@app.get("/api/listings/{listing_id}/assessments")
+def assessment_history(listing_id: int) -> list[dict[str, Any]]:
+    return db.list_assessments(listing_id)
+
+
+@app.get("/api/settings")
+def get_settings() -> dict[str, Any]:
+    return {"policy_version": POLICY_VERSION, "state": load_state(), "missions": MISSIONS}
+
+
+@app.put("/api/settings")
+def put_settings(update: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return {"ok": True, "state": save_state(update)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/settings/reset")
+def reset_settings() -> dict[str, Any]:
+    return {"ok": True, "state": reset_state()}
+
+
+@app.post("/api/vin/{vin}/decode")
+async def vin_decode(vin: str) -> dict[str, Any]:
+    from scout.vin import decode_vin
+    d = await asyncio.to_thread(decode_vin, vin, None, True)
+    if not d:
+        raise HTTPException(404, "VIN did not decode")
+    return d
 
 
 @app.post("/api/listings/{listing_id}/renormalize")

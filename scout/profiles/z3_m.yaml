@@ -52,3 +52,22 @@ checks:
   - {key: tire_age_condition, label: "Tire age, match, and condition"}
   - {key: mods_quality, label: "Modifications / suspension quality"}
   - {key: records_major, label: "Documented service history (bearings, VANOS, cooling)"}
+mission_default: future_keeper
+risk_reserve: 2500
+automatic_ok: false
+catchup_notes: >
+  Cooling regardless of mileage; S54 rod bearings; VANOS; motor/trans mounts;
+  rear shock mounts; tires by date; soft top; A/C. Salvage cars need pre/post-loss
+  photos, invoices, the branding reason, measurements, airbag confirmation, CA smog
+  feasibility, and a specialist PPI covering collision repair and the rear structure.
+critical_evidence:
+  - key: rear_structure
+    label: Trunk-floor spot welds and differential mount/ear inspected with photos or a specialist PPI (reinforcement a strong positive on M cars)
+    severity: conditional
+  - key: cooling_history
+    label: Cooling-system documentation regardless of mileage
+    severity: conditional
+  - key: s54_rod_bearings
+    label: Rod-bearing replacement records or oil analysis (2001-2002 S54 cars only)
+    severity: conditional
+    applies_when: {min_year: 2001}

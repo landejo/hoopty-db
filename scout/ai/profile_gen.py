@@ -33,6 +33,16 @@ Return ONE JSON object:
 - checks: 8-16 objects {{key: snake_case, label: short inspection item}}
   covering the weak points (these become a PPI checklist)
 - dealbreaker_rules: 2-6 short rules (e.g. "Salvage title", "Automatic")
+- critical_evidence: 1-5 objects {{key: snake_case, label, severity: hard|conditional}}
+  for the model-specific evidence a buyer must see before purchase. "hard"
+  ONLY for catastrophic engine/structure risks where no evidence means no
+  purchase (e.g. a Porsche M97 borescope); otherwise "conditional".
+- mission_default: one of enthusiast_bridge, pragmatic_bridge, future_keeper,
+  utility_capability (SUVs/trucks -> utility_capability; expensive collector
+  specs -> future_keeper; manual compact fun cars -> enthusiast_bridge)
+- risk_reserve: USD reserve for this model's low-frequency high-cost failures
+- automatic_ok: true only for vehicle classes where an automatic is normal (SUVs)
+- catchup_notes: 1-3 sentences on age-related catch-up work for a typical example
 
 Be specific to the generation. No prose outside the JSON."""
 

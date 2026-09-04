@@ -146,7 +146,8 @@ textarea.notes { width: 100%; min-height: 110px; border: 1px solid var(--line); 
 .dial span { position: relative; font-family: var(--mono); font-weight: 700; font-size: 24px; }
 .dial small { position: absolute; bottom: 12px; font-size: 10px; color: var(--muted); }
 .verdict { font-family: var(--display); font-size: 26px; font-weight: 700; }
-.verdict.Pursue { color: var(--olive); } .verdict.Verify { color: #A0631A; } .verdict.Maybe { color: var(--walnut); } .verdict.Pass { color: var(--rose); }
+.verdict.Pursue { color: var(--olive); } .verdict.Maybe { color: #A0631A; } .verdict.Reject, .verdict.Do { color: var(--rose); }
+textarea.mono { font-family: var(--mono); font-size: 12px; }
 .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
 .empty h2 { color: var(--ink); margin-bottom: 8px; }
 .empty ol { text-align: left; display: inline-block; }

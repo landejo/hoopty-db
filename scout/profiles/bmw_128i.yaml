@@ -1,0 +1,47 @@
+key: bmw_128i
+label: BMW 128i (E82/E88, 2008-2013)
+make: BMW
+models: [128i, 128i Coupe, 128i Convertible, 1 Series 128i]
+years: [2008, 2013]
+source: seed
+verified: true
+mission_default: enthusiast_bridge
+risk_reserve: 1500
+automatic_ok: false
+framing: >
+  Primary bridge candidate: compact rear-drive BMW character with the naturally
+  aspirated N52 six and none of the 335i's turbo complexity. Manual, Sport or
+  M Sport, stock powertrain.
+weak_points: >
+  Electric water pump and thermostat; oil-filter-housing, valve-cover and oil-pan
+  leaks; cooling hoses and expansion tank; suspension bushings and shocks; clutch
+  wear; window regulators/electronics; convertible top and water ingress.
+immediate_repairs: fluids, tires, expansion tank / hoses if aged
+repairs_12mo: electric water pump + thermostat if undocumented, oil-filter-housing gasket, bushings
+market_notes: Manual Sport/M Sport cars carry a premium; automatics are plentiful and cheaper but do not fit the brief.
+catchup_notes: Cooling-system and oil-leak records matter more than mileage.
+weights:
+  reliability: 0.24
+  condition: 0.22
+  engagement: 0.16
+  value: 0.15
+  ownership_cost: 0.10
+  locality: 0.08
+  desirability: 0.05
+dealbreaker_rules: [Automatic for the enthusiast brief, Salvage or rebuilt title, Undocumented tune]
+critical_evidence:
+  - key: cooling_history
+    label: Electric water pump / thermostat / expansion tank history
+    severity: conditional
+  - key: oil_leaks
+    label: Oil-filter-housing, valve-cover, oil-pan leak status
+    severity: conditional
+checks:
+  - {key: water_pump_thermostat, label: "Electric water pump and thermostat history"}
+  - {key: oil_leaks, label: "Oil-filter-housing, valve-cover, oil-pan leaks"}
+  - {key: cooling_hoses_tank, label: "Cooling hoses and expansion tank"}
+  - {key: suspension_alignment, label: "Suspension bushings, shocks, alignment"}
+  - {key: clutch, label: "Clutch wear"}
+  - {key: window_regulators, label: "Window regulators / electronics"}
+  - {key: convertible_top, label: "Convertible top and water ingress (E88)"}
+  - {key: tire_age_condition, label: "Tire age, match, and condition"}
