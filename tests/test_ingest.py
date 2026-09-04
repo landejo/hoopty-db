@@ -73,3 +73,19 @@ def test_single_add_never_marks_others_removed():
     assert stats["marked_removed"] == 1
     rows = {r["url"][-2]: r["availability"] for r in db.list_listings()}
     assert rows == {"1": "active", "2": "removed", "3": "active"}
+
+
+def test_vanished_listing_takes_result_from_its_page_or_becomes_removed():
+    ingest_items("bat", [_item("https://bringatrailer.com/listing/x/", price="$30,000")], run_ai=False, full_sync=True)
+    ingest_items("bat", [_item("https://bringatrailer.com/listing/y/", price="$10,000")], run_ai=False)
+    # Sync: x is gone from the watchlist but its page says Sold for; y's page shows nothing useful.
+    sold = _item("https://bringatrailer.com/listing/x/", price="")
+    sold["_vanished"] = True
+    sold["detail"]["status_text"] = "Sold for USD $31,500 on 9/3/2026"
+    gone = _item("https://bringatrailer.com/listing/y/", price="")
+    gone["_vanished"] = True
+    ingest_items("bat", [sold, gone], run_ai=False)
+    x = db.get_listing_by_url("https://bringatrailer.com/listing/x/")
+    y = db.get_listing_by_url("https://bringatrailer.com/listing/y/")
+    assert x["availability"] == "sold" and x["role"] == "comp"
+    assert y["availability"] == "removed" and y["role"] == "candidate"

@@ -88,23 +88,29 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
     const col = await sendToTab(tabId, { type: "collect" });
     if (!col.ok) throw new Error("Collect failed: " + col.error);
     let items = col.items || [];
+    const allUrls = items.map((i) => i.url);
     log(`${site}: found ${items.length} saved listing(s)`);
     if (!includeSold) {
       const before = items.length;
       items = items.filter((i) => !i.sold && !i.ended);
       totals.skipped_sold = before - items.length;
     }
-    if (onlyNew) {
-      // Ask the server which URLs it already has fully scraped; skip re-scraping those unless they were active.
-      try {
-        const api = await getApi();
-        const r = await fetch(api + "/api/export");
-        const data = await r.json();
-        const known = new Map((data.listings || []).map((l) => [l.url, l]));
-        items = items.map((i) => Object.assign(i, { _known: known.get(i.url) }));
-      } catch (e) { log("Could not fetch known listings; scraping everything."); }
-    }
-    const allUrls = (col.items || []).map((i) => i.url);
+    // Ask the server what it already has for this site: lets us skip re-scraping
+    // comps, and find listings that vanished from the saved page (ended auctions,
+    // sold cars) so their final result can be captured from the listing page.
+    let vanished = [];
+    try {
+      const api = await getApi();
+      const r = await fetch(api + "/api/export");
+      const data = await r.json();
+      const known = new Map((data.listings || []).map((l) => [l.url, l]));
+      if (onlyNew) items = items.map((i) => Object.assign(i, { _known: known.get(i.url) }));
+      const present = new Set(allUrls);
+      vanished = (data.listings || []).filter((l) => l.site === site && l.availability === "active" && !present.has(l.url))
+        .map((l) => ({ site, url: l.url, title: l.title, _vanished: true }));
+      if (vanished.length) log(`${vanished.length} previously active listing(s) are gone from the saved page; checking their pages.`);
+    } catch (e) { log("Could not fetch known listings; scraping everything."); }
+    if (scrapeDetails) items = items.concat(vanished);
     await setProgress({ state: "scraping", done: 0, total: items.length, message: `Scraping ${items.length} listing(s)…` });
 
     let batch = [];

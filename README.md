@@ -1,7 +1,7 @@
 # Hoopty Scout
 
 Point it at your **saved** vehicle listings on Facebook Marketplace, CarGurus, Cars.com,
-Cars & Bids, and Bring a Trailer. It pulls every listing into a local database, normalizes
+Autotrader, Cars & Bids, and Bring a Trailer. It pulls every listing into a local database, normalizes
 it with a fast model, scores it against a per-model buyer profile, and runs a deep Opus
 analysis on demand. Sold listings and ended auctions become market comps. A static viewer
 publishes to GitHub Pages so the board is readable anywhere.
@@ -27,8 +27,12 @@ Load the extension: `chrome://extensions` → Developer mode → **Load unpacked
 
 1. Start the server: `.venv/bin/python run.py` (http://127.0.0.1:8765).
 2. In Chrome, open a saved-listings page:
-   - Facebook: Marketplace → You → Saved
-   - CarGurus: Saved cars · Cars.com: Saved · Cars & Bids: Watch list · BaT: Account → Watch list
+   - Facebook: https://www.facebook.com/marketplace/you/saved
+   - CarGurus: https://www.cargurus.com/Cars/myAccount/saved-listings (the Sold cars tab is read too)
+   - Cars.com: https://www.cars.com/profile/saved-cars/
+   - Autotrader: https://www.autotrader.com/account/cars
+   - Cars & Bids: https://carsandbids.com/watch-list/ (live auctions; ended ones are re-checked on the next sync)
+   - Bring a Trailer: https://bringatrailer.com/watchlist/ (live auctions; ended ones re-checked on the next sync)
 3. Click the Hoopty Scout toolbar icon → **Sync saved listings**. Leave *Include sold / ended* on
    so those rows become comps. The popup can be closed; progress continues.
 4. Open the workbench (http://127.0.0.1:8765). Cards show a preliminary Haiku score. Open a

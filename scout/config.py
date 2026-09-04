@@ -49,6 +49,7 @@ SITES = {
     "facebook": "Facebook Marketplace",
     "cargurus": "CarGurus",
     "carscom": "Cars.com",
+    "autotrader": "Autotrader",
     "carsandbids": "Cars & Bids",
     "bat": "Bring a Trailer",
 }
