@@ -116,6 +116,9 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
         row = db.get_listing(lid)
         db.add_snapshot(lid, row.get("price"), row.get("price_kind"), row.get("availability"),
                         (detail.get("bid_count") if isinstance(detail.get("bid_count"), int) else None))
+        if row.get("vin") or (row.get("year") and row.get("make") and row.get("model")):
+            from scout.provenance import link_listing_vehicle  # lazy
+            link_listing_vehicle(lid)
         stats["comps" if row["role"] == "comp" else "candidates"] += 1
 
     if full_sync and items:
@@ -195,3 +198,5 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
         updates["mission"] = mission
     updates["normalized"]["quick_gates"] = quick_gates(merged, prof, mission, state)
     db.update_listing(lid, updates)
+    from scout.provenance import link_listing_vehicle  # lazy
+    link_listing_vehicle(lid)

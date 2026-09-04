@@ -22,10 +22,27 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
     vin_history = vin_history or {}
     mission = mission or listing.get("mission") or default_mission(profile)
     # First pass without the cost gate, then costs, then the cost gate.
-    gates = evaluate_gates(listing, profile, evidence, mission, state)
+    prov = vin_history.get("provenance") or {}
+    gates = evaluate_gates(listing, profile, evidence, mission, state, provenance=prov)
     costs = compute_costs(listing, profile, evidence, gates, state, comps_median)
-    gates = evaluate_gates(listing, profile, evidence, mission, state, all_in_high=costs.all_in_high)
+    gates = evaluate_gates(listing, profile, evidence, mission, state, all_in_high=costs.all_in_high, provenance=prov)
     costs = compute_costs(listing, profile, evidence, gates, state, comps_median)
+    # Price ceiling anchors to the last documented price when the car was
+    # recently resold/relisted at a markup (guide: transaction costs are not
+    # improvements; only documented post-sale work moves the ceiling).
+    pp = prov.get("price_progression") or {}
+    ref_price = (pp.get("reference") or {}).get("price")
+    if ref_price and any(f in (prov.get("flags") or []) for f in ("material_markup", "major_markup")):
+        allowance = 0.20 if (prov.get("what_changed") or {}).get("work_after_prior_sale") else 0.10
+        ceiling = int(ref_price * (1 + allowance))
+        capped = costs.max_price > ceiling
+        if capped:
+            costs.max_price = ceiling
+            costs.offer_high = min(costs.offer_high, ceiling)
+            costs.offer_low = min(costs.offer_low, int(ceiling * 0.92))
+        costs.notes.append(f"Ceiling anchored to the last documented price ${ref_price:,} plus {int(allowance * 100)}% "
+                           f"({'documented post-sale work' if allowance > 0.1 else 'no documented post-sale work'}) = ${ceiling:,}; "
+                           f"the new ${listing.get('price') or 0:,} ask is not the anchor" + (" (cap applied)." if capped else "."))
     score = compute_score(evidence, gates, listing, mission, state, vin_history)
     confidence = compute_confidence(evidence, gates, listing)
     verdict, reason = verdict_from(score, confidence, gates)

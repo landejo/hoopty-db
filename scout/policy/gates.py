@@ -36,9 +36,17 @@ def is_excluded(make: str | None, model: str | None, active_exclusions: list[str
 
 
 def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceInterpretation,
-                   mission: str, state: dict[str, Any], all_in_high: int | None = None) -> list[Gate]:
+                   mission: str, state: dict[str, Any], all_in_high: int | None = None,
+                   provenance: dict[str, Any] | None = None) -> list[Gate]:
     gates: list[Gate] = []
     flags = evidence.flags
+
+    # Provenance: a seller who says the car is not for sale ends the evaluation.
+    cs = (provenance or {}).get("current_status") or {}
+    if provenance and cs.get("available") is False:
+        gates.append(Gate(kind="strategy", key="not_actively_available", reason=cs.get("note") or "Seller indicates the car is no longer for sale"))
+    if "mileage_decreased" in ((provenance or {}).get("flags") or []):
+        gates.append(Gate(kind="hard", key="odometer_inconsistency", reason="Reported mileage is lower than an earlier same-car listing (odometer inconsistency unresolved)"))
 
     ex = is_excluded(listing.get("make"), listing.get("model"), state.get("active_exclusions", []))
     if ex:

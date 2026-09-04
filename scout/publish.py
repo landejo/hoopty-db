@@ -19,7 +19,7 @@ PUBLIC_LISTING_FIELDS = [
     "transmission", "drivetrain", "body_style", "exterior_color", "interior_color", "mileage",
     "price", "price_kind", "sold_price", "location", "seller_type", "title_status", "accidents",
     "num_owners", "listing_date", "auction_end", "options", "profile_key", "profile_confidence",
-    "normalized", "prelim_score", "analyzed_at", "status", "notes", "pinned", "raw", "mission",
+    "normalized", "prelim_score", "analyzed_at", "status", "notes", "pinned", "raw", "mission", "provenance", "vehicle_id",
 ]
 PRIVATE_FIELDS = {"seller_contact", "raw_text", "vin"}
 
@@ -52,7 +52,12 @@ def build_export() -> dict[str, Any]:
     listings = [scrub_listing(r) for r in db.list_listings()]
     snaps = db.all_snapshots()
     assessments = db.latest_assessments()
+    timelines: dict[int, list] = {}
     for l in listings:
+        if l.get("vehicle_id"):
+            if l["vehicle_id"] not in timelines:
+                timelines[l["vehicle_id"]] = [{k: e.get(k) for k in ("event_date", "venue", "url", "mileage", "price", "price_type", "status", "evidence", "identity_confidence", "listing_id")} for e in db.vehicle_events(l["vehicle_id"])]
+            l["timeline"] = timelines[l["vehicle_id"]]
         a = assessments.get(l["id"])
         l["assessment"] = scrub_assessment(a) if a else None
         l["history"] = [

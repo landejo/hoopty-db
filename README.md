@@ -76,6 +76,43 @@ listed; decode-versus-listing mismatches become contradictions. VIN history
 across listings in this database (prior sales, relist markup, mileage and
 disclosure changes) feeds the assessment. No paid history service is wired.
 
+## Provenance: the same car, not the model
+
+Every listing attaches to one **vehicle record per VIN** (`vehicles`), with a
+`vehicle_events` timeline (Listed, Price reduced, Sold, Bid to / reserve not
+met, Withdrawn, Relisted, Seller decided to keep, Dealer acquisition). Listings
+without a VIN get a provisional record on a year/make/model/color fingerprint
+that merges into the VIN record when the VIN appears. Sync data alone builds
+the timeline; an **investigation** extends it across the web.
+
+1. On a listing page click **Investigate provenance**. The server writes the
+   guide's query set (quoted VIN, VIN + model, title + mileage, listing id,
+   seller + model, distinctive combinations) for DuckDuckGo, Bing, Google,
+   BaT, eBay sold, Classic.com, Reddit, Facebook posts and Marketplace.
+2. Open the extension popup and click **Run queued investigations**. Searches
+   run in background tabs in your own browser (so Facebook posts and groups
+   are visible), known listing pages among the hits are opened and read, and
+   everything posts to the server. No paid search service is used.
+3. The deep model classifies each hit: `confirmed` (exact VIN), `strongly_likely`
+   (plate, or identical photos plus coherent mileage/color/equipment/location/
+   chronology), `possible`, or `not_established`; extracts events with a
+   price type (`verified_sale`, `winning_bid`, `high_bid_reserve_not_met`,
+   `advertised_sold`, `asking`, `estimated`); pulls seller statements (sold,
+   withdrawn, decided to keep, reasons, problems, PPI, track use, earlier
+   prices); and splits work before versus after the prior sale.
+4. Code computes the price progression from the last documented price
+   (transaction-grade first), dollar and percent change, elapsed time, mileage
+   added, and flags: very recent resale (≤6 months), recent resale (≤24
+   months), rapid relisting (≤90 days), material markup (>10%), major markup
+   (>20%), and not actively available when a withdrawal post-dates the listing.
+   Only confirmed and strongly-likely events count; possible matches are shown
+   separately and never used.
+
+Findings sit at the top of the listing page and feed the assessment: a
+withdrawal is a `Do not pursue`, a markup caps price/value and anchors the
+price ceiling to the last documented price plus documented post-sale work.
+Asking prices are never described as sale prices.
+
 ## What the AI does
 
 | Step | Model | When | Cost (approx.) |

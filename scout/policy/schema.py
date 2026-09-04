@@ -106,6 +106,66 @@ class EvidenceInterpretation(BaseModel):
         return [str(x).strip()[:400] for x in v if str(x).strip()]
 
 
+# ---------- provenance (same-car investigation) ----------
+
+PriceType = Literal["verified_sale", "winning_bid", "high_bid_reserve_not_met", "advertised_sold", "asking", "estimated"]
+EventStatus = Literal["Listed", "Sold", "Bid to / reserve not met", "Withdrawn", "Relisted", "Price reduced",
+                      "Seller decided to keep", "Dealer acquisition", "Auction or wholesale movement", "Unknown"]
+Identity = Literal["confirmed", "strongly_likely", "possible", "not_established"]
+StatementKind = Literal["withdrawn", "keep", "sold", "reason_for_selling", "recent_purchase", "problem", "ppi",
+                        "track_use", "failed_sale", "earlier_price", "condition_opinion", "contradiction", "other"]
+
+
+class ProvenanceEvent(BaseModel):
+    date: str | None = None
+    venue: str = Field(default="", max_length=80)
+    url: str = Field(default="", max_length=1000)
+    mileage: int | None = Field(default=None, ge=0, le=999999)
+    price: int | None = Field(default=None, ge=0, le=2000000)
+    price_type: PriceType = "estimated"
+    status: EventStatus = "Unknown"
+    evidence: str = Field(default="", max_length=600)
+    identity_confidence: Identity = "not_established"
+    identity_basis: str = Field(default="", max_length=400)
+    seller: str | None = Field(default=None, max_length=120)
+
+    @field_validator("date")
+    @classmethod
+    def _iso(cls, v):
+        if v in (None, ""):
+            return None
+        import re as _re
+        return v[:10] if _re.match(r"^\d{4}-\d{2}-\d{2}", str(v)) else None
+
+
+class SellerStatement(BaseModel):
+    date: str | None = None
+    url: str = Field(default="", max_length=1000)
+    venue: str = Field(default="", max_length=80)
+    kind: StatementKind = "other"
+    quote: str = Field(max_length=600)
+    factual: bool = True
+
+    @field_validator("date")
+    @classmethod
+    def _iso(cls, v):
+        if v in (None, ""):
+            return None
+        import re as _re
+        return v[:10] if _re.match(r"^\d{4}-\d{2}-\d{2}", str(v)) else None
+
+
+class ProvenanceInterpretation(BaseModel):
+    events: list[ProvenanceEvent] = Field(default_factory=list, max_length=40)
+    seller_statements: list[SellerStatement] = Field(default_factory=list, max_length=25)
+    work_before_prior_sale: list[str] = Field(default_factory=list, max_length=15)
+    work_after_prior_sale: list[str] = Field(default_factory=list, max_length=15)
+    cosmetic_or_preference: list[str] = Field(default_factory=list, max_length=10)
+    repairs_correcting_faults: list[str] = Field(default_factory=list, max_length=10)
+    identity_notes: str = Field(default="", max_length=800)
+    summary: str = Field(default="", max_length=2000)
+
+
 class Gate(BaseModel):
     kind: Literal["hard", "conditional", "configuration", "strategy"]
     key: str
