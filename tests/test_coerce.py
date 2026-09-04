@@ -56,3 +56,8 @@ def test_profile_coerce_requires_weights_over_known_axes():
     assert abs(sum(p["weights"].values()) - 1) < 1e-6
     assert p["checks"] == [{"key": "ims_bearing", "label": "IMS"}]
     assert p["years"] == [2005, 2012]
+
+
+def test_price_drops_derive_missing_side():
+    out = coerce.normalized_listing({"price": 21353, "price_drops": [{"amount": 5000}, {"prior_price": 22000}, {"note": "junk"}]})
+    assert out["price_drops"] == [{"prior_price": 26353, "amount": 5000, "note": ""}, {"prior_price": 22000, "amount": 647, "note": ""}]

@@ -16,6 +16,7 @@
         const lines = it.card_text.split("\n").map((s) => s.trim()).filter(Boolean);
         it.title = lines.find((l) => /\b(19|20)\d{2}\b/.test(l) && !/saved on|\$/i.test(l)) || it.title;
         it.sold = /\bsold\b|no longer available/i.test(it.card_text);
+        it.price_drop_text = (it.card_text.match(/\$[\d,]+\s*price drop|price drop[^\n]*/i) || [""])[0];
       }
       return items;
     },

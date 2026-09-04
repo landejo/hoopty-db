@@ -24,6 +24,7 @@
         title: lines.slice(0, 2).join(" "), price_text: priceEl ? S.text(priceEl) : S.priceIn(cardText),
         card_text: cardText, thumb: img ? img.currentSrc || img.src : null,
         sold: markSold || /^\s*Sold\b/i.test(cardText), ended: false,
+        price_drop_text: (cardText.match(/price drop[^\n]*/i) || [""])[0],
       });
     }
     return out;

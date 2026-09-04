@@ -34,6 +34,12 @@ Fields (omit anything you cannot determine; never guess a VIN):
   num_owners (int)
 - listing_date: ISO date. TODAY IS {today}. Convert "Listed 3 weeks ago" to
   today minus 21 days. For auctions use the auction END date if shown.
+- price_drops: array of {{prior_price (int), amount (int), note}} for price
+  reductions the SITE or SELLER states (e.g. "Price drop -$5,000",
+  "$300 price drop", "was $19,995 now $18,995", "reduced from"). Derive
+  prior_price = current price + amount when only the amount is given. Ignore
+  currency conversions such as "CA$24,400". Empty array if none.
+- days_listed: integer days on market if the site states it (omit otherwise)
 - options: array of factory options / packages / notable equipment
 - highlights: 2-6 short concrete positives (documented work, rare spec, records)
 - red_flags: 0-6 short concrete concerns (salvage, rust, mods, gaps, vague

@@ -139,3 +139,15 @@ def test_repair_splits_old_fingerprint_merges():
     r = repair_vehicle_links()
     assert r["split"] == 1
     assert db.get_listing(a)["vehicle_id"] != db.get_listing(b)["vehicle_id"]
+
+
+def test_site_reported_drop_becomes_an_event_without_a_fake_date():
+    a, _ = db.upsert_listing({"site": "cargurus", "url": "https://www.cargurus.com/details/9/", "year": 1998, "make": "BMW", "model": "Z3 M roadster",
+                              "price": 21353, "availability": "active", "role": "candidate", "listing_date": "2026-08-20",
+                              "normalized": {"price_drops": [{"prior_price": 26353, "amount": 5000, "note": "Price drop -$5,000"}]}})
+    db.add_snapshot(a, 21353, "asking", "active")
+    vid = link_listing_vehicle(a)
+    ev = [e for e in db.vehicle_events(vid) if e["status"] == "Price reduced"]
+    assert len(ev) == 1 and ev[0]["source"] == "site_reported" and "26,353" in ev[0]["evidence"] and "date of the drop not stated" in ev[0]["evidence"]
+    link_listing_vehicle(a)
+    assert len([e for e in db.vehicle_events(vid) if e["status"] == "Price reduced"]) == 1
