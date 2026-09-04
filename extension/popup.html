@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Hoopty Scout</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <div class="mark"></div>
+    <div>
+      <div class="brand">Hoopty Scout</div>
+      <div class="sub" id="site-label">Detecting page…</div>
+    </div>
+  </header>
+
+  <section id="status" class="status info">Checking…</section>
+
+  <section class="controls">
+    <label class="check"><input type="checkbox" id="include-sold" checked> Include sold / ended listings as market comps</label>
+    <label class="check"><input type="checkbox" id="scrape-details" checked> Open each listing for full text & photos (slower, better)</label>
+    <label class="check"><input type="checkbox" id="only-new" checked> Skip re-scraping comps already in the workbench</label>
+    <div class="row">
+      <button id="sync" class="primary" disabled>Sync saved listings</button>
+      <button id="add" disabled>Add this listing</button>
+      <button id="cancel" class="ghost" hidden>Stop</button>
+    </div>
+  </section>
+
+  <section id="progress" hidden>
+    <div class="bar"><div id="bar-fill"></div></div>
+    <div id="progress-msg" class="mono"></div>
+  </section>
+
+  <section>
+    <pre id="log" class="log"></pre>
+  </section>
+
+  <footer>
+    <button id="open" class="ghost">Open workbench</button>
+    <span class="mono" id="api-base"></span>
+  </footer>
+  <script src="popup.js"></script>
+</body>
+</html>

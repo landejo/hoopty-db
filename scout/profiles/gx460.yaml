@@ -1,0 +1,50 @@
+key: gx460
+label: Lexus GX460
+make: Lexus
+models: [GX460, GX 460]
+years: [2010, 2023]
+source: seed
+verified: true
+framing: >
+  A capable daily/family hauler for dogs, gear, light camping and off-road use.
+  The buyer values reliability, value, cargo/dog/gear space, family use,
+  proximity to Carmel / Bay Area, adventure capability, and overall feel.
+weak_points: >
+  KDSS hydraulic leaks or lean. Secondary air injection pump failures
+  (P2440/P2442; expensive). Valley-plate coolant leak and timing-cover
+  seepage on the 1UR-FE. Transfer case actuator. Suspension bushing and shock
+  wear. Cheap lifts and questionable modifications. Towing history.
+  Frame rust on non-western cars.
+immediate_repairs: worn tires, due fluids, secondary air injection if codes present
+repairs_12mo: KDSS service, suspension bushings, brake hardware, transmission service
+market_notes: >
+  Later years (2014+ refresh, 2020+ with updated infotainment) carry premiums.
+  Luxury and Premium trims with records sell fastest. Air-injection and KDSS
+  history are the questions that move price.
+weights:
+  reliability: 0.22
+  value: 0.15
+  condition: 0.15
+  practicality: 0.15
+  capability: 0.10
+  locality: 0.10
+  ownership_cost: 0.08
+  desirability: 0.05
+dealbreaker_rules:
+  - Salvage or rebuilt title
+  - Frame rust described or visible
+  - Active secondary air injection fault with no price adjustment
+checks:
+  - {key: kdss_leaks, label: "KDSS leaks or lean"}
+  - {key: valley_plate_coolant, label: "Valley plate coolant leak"}
+  - {key: timing_cover_seepage, label: "Timing cover seepage"}
+  - {key: secondary_air_injection, label: "Secondary air injection system (P2440/P2442)"}
+  - {key: transfer_case_actuator, label: "Transfer case actuator function"}
+  - {key: drivetrain_fluids, label: "Transmission / transfer case / differential fluid history"}
+  - {key: rust_frame, label: "Rust / frame condition"}
+  - {key: suspension_wear, label: "Suspension wear (bushings, shocks)"}
+  - {key: cheap_lift_mods, label: "Cheap lift / questionable modifications"}
+  - {key: towing_history, label: "Towing history"}
+  - {key: ac_function, label: "A/C function (cold, both zones)"}
+  - {key: leaks, label: "Visible engine / drivetrain leaks"}
+  - {key: tire_age_condition, label: "Tire age and condition"}

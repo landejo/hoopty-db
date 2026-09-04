@@ -1,0 +1,52 @@
+key: gx470
+label: Lexus GX470
+make: Lexus
+models: [GX470, GX 470]
+years: [2003, 2009]
+source: seed
+verified: true
+framing: >
+  A capable daily/family hauler for dogs, gear, light camping and off-road use.
+  The buyer values reliability, value, cargo/dog/gear space, family use,
+  proximity to Carmel / Bay Area, adventure capability, and overall feel.
+weak_points: >
+  Timing belt / water pump (interval 90k; verify date AND mileage). Rear air
+  suspension bags and height-control compressor (or a quality delete kit).
+  OEM plastic-tank radiator failures. Frame / undercarriage rust on non-western
+  cars. Lower ball joints (recall history). Exhaust manifold tick / cracks.
+  Cracked dashboard. Secondary air injection on later years. Transfer case and
+  differential fluid neglect. Cheap lifts and questionable modifications.
+immediate_repairs: worn tires, due fluids, aging radiator, timing belt if past interval
+repairs_12mo: rear air bags coming due, transmission service, brake hardware, suspension bushings
+market_notes: >
+  Clean, unmodified, high-mileage GX470s from dry states hold value well.
+  Timing-belt documentation and rear-suspension status are the two biggest
+  price drivers; heavily modified overland builds trade at a discount to
+  stock examples with records.
+weights:
+  reliability: 0.22
+  value: 0.15
+  condition: 0.15
+  practicality: 0.15
+  capability: 0.10
+  locality: 0.10
+  ownership_cost: 0.08
+  desirability: 0.05
+dealbreaker_rules:
+  - Salvage or rebuilt title
+  - Frame rust described or visible
+  - Timing belt unknown AND mileage over 180k with no budget noted
+checks:
+  - {key: timing_belt_water_pump, label: "Timing belt / water pump (date & mileage)"}
+  - {key: rear_air_suspension, label: "Rear air suspension status (or delete kit)"}
+  - {key: rust_frame, label: "Rust / frame condition"}
+  - {key: radiator_age, label: "Radiator age (OEM plastic tank failures)"}
+  - {key: drivetrain_fluids, label: "Transmission / transfer case / differential fluid history"}
+  - {key: lower_ball_joints, label: "Lower ball joints (recall history, replacement)"}
+  - {key: cv_boots, label: "CV boots condition"}
+  - {key: exhaust_manifold_tick, label: "Exhaust manifold tick / cracks"}
+  - {key: cracked_dash, label: "Cracked dashboard"}
+  - {key: ac_function, label: "A/C function (cold, both zones)"}
+  - {key: leaks, label: "Visible engine / drivetrain leaks"}
+  - {key: tire_age_condition, label: "Tire age and condition"}
+  - {key: mods_lift, label: "Modifications / lift quality"}

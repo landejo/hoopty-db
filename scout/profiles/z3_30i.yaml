@@ -1,0 +1,53 @@
+key: z3_30i
+label: BMW Z3 3.0i (roadster & coupe)
+make: BMW
+models: [Z3 3.0i roadster, Z3 3.0i coupe, Z3 3.0i]
+years: [2000, 2002]
+source: seed
+verified: true
+framing: >
+  A characterful fair-weather weekend and daily driver, NOT a collector or
+  investment car. The buyer values reliability, condition, driving engagement,
+  value, and proximity to Carmel / Monterey / Bay Area. Factory manual gearbox
+  only; the 3.0L M54 is the minimum engine.
+weak_points: >
+  REAR SUBFRAME / trunk-floor differential-mount cracking or tearing (the
+  signature structural failure; inspect from below AND the trunk spot welds).
+  Cooling system (~50-80k lifespan: water pump, thermostat, radiator, expansion
+  tank) on the M54. VANOS rattle/wear. DISA valve rattle. Valve-cover and oil
+  filter housing leaks. Rear trailing-arm bushings. Window regulators.
+  Convertible-top mechanism and rear-window separation (roadster). Cluster
+  pixel fade. Cracked or warped dashboard. Rust at rockers, floors, subframe mounts.
+immediate_repairs: cooling-system refresh, tires, fluids, convertible-top inspection
+repairs_12mo: VANOS service, rear subframe inspection/reinforcement, soft-top or rear-window repair, clutch if worn
+market_notes: >
+  Coupes command a substantial premium over roadsters. Low-mile, unmodified,
+  documented cars sell quickly; automatics and 2.5i/2.8i cars trade well below.
+weights:
+  reliability: 0.22
+  condition: 0.22
+  engagement: 0.18
+  value: 0.15
+  ownership_cost: 0.10
+  locality: 0.08
+  desirability: 0.05
+dealbreaker_rules:
+  - Automatic transmission
+  - Engine displacement below 3.0L
+  - Salvage or rebuilt title
+  - Unrepaired rear subframe cracking
+checks:
+  - {key: cooling_overhaul, label: "Cooling overhaul — radiator, expansion tank, water pump, thermostat, hoses"}
+  - {key: rear_subframe, label: "Rear subframe mounts / floor reinforcement (chassis cracking)"}
+  - {key: vanos, label: "VANOS operation — rattle / seals"}
+  - {key: disa_valve, label: "DISA intake valve rattle"}
+  - {key: convertible_top, label: "Convertible top operation, hydraulics/motor, rear window (roadster)"}
+  - {key: window_regulators, label: "Window regulator operation"}
+  - {key: cluster_pixels, label: "Instrument cluster / OBC pixel fade"}
+  - {key: differential_mounts, label: "Differential & mount condition"}
+  - {key: clutch_rms, label: "Clutch / flywheel wear & rear main seal leak"}
+  - {key: oil_leaks, label: "Oil leaks — valve cover, oil filter housing, oil pan"}
+  - {key: rust_floors, label: "Rust at rockers / floors / subframe mounts"}
+  - {key: tire_age_condition, label: "Tire age, match, and condition"}
+  - {key: mods_quality, label: "Modifications / suspension quality"}
+  - {key: records_major, label: "Documented service history (cooling, VANOS)"}
