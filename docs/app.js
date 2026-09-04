@@ -70,7 +70,7 @@
     if (p != null) return `<span class="badge prelim ${p >= 3.8 ? "hi" : p >= 2.8 ? "mid" : "lo"}" title="Preliminary score (Haiku, 1–5)">${p.toFixed(1)}</span>`;
     return `<span class="badge none">n/a</span>`;
   }
-  function availChip(a) { const c = { active: "olive", sold: "rose", ended: "walnut", removed: "slate" }[a] || ""; return `<span class="chip ${c === "walnut" ? "mustard" : c}">${esc(a)}</span>`; }
+  function availChip(a) { const c = { active: "olive", sold: "rose", ended: "walnut", removed: "slate", withdrawn: "rose" }[a] || ""; return `<span class="chip ${c === "walnut" ? "mustard" : c}">${esc(a)}</span>`; }
   function title(l) { return l.title || [l.year, l.make, l.model, l.trim].filter(Boolean).join(" ") || "Untitled listing"; }
   function photo(l) { return (l.photos && l.photos[0]) || l.thumb || null; }
   function profileLabel(k) { return state.profiles.get(k)?.label || k || "unprofiled"; }
@@ -145,7 +145,7 @@
         <span class="seg" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span>
         <select id="f-profile"><option value="">All profiles</option>${state.data.profiles.map((p) => `<option value="${p.key}" ${f.profile === p.key ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select>
         <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
-        <select id="f-avail"><option value="">Any availability</option>${["active", "sold", "ended", "removed"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
+        <select id="f-avail"><option value="">Any availability</option>${["active", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
         <select id="f-status"><option value="">Any status</option>${STATUSES.map((s) => `<option ${f.status === s ? "selected" : ""}>${s}</option>`).join("")}</select>
         <select id="f-sort">${[["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]].map(([k, v]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${v}</option>`).join("")}</select>
         <label><input type="checkbox" id="f-analyzed" ${f.analyzed ? "checked" : ""}> analyzed only</label>
@@ -191,7 +191,7 @@
     const p = photo(l);
     const flags = l.normalized?.red_flags?.length || 0;
     const v = verdictOf(l);
-    const qg = l.normalized?.quick_gates || [];
+    const qg = (l.normalized?.quick_gates || []).concat((l.provenance?.flags || []).map((f) => f.replace(/_/g, " ")));
     const el = h(`
       <article class="card ${l.role}" data-id="${l.id}">
         <div class="photo">${p ? `<img loading="lazy" src="${esc(p)}" alt="">` : `<div class="nophoto">⌁</div>`}
@@ -272,6 +272,25 @@
       main.appendChild(g); main.appendChild(h(`<div style="height:16px"></div>`));
     }
 
+    const P = l.provenance;
+    if (P) {
+      const flagLabel = { major_markup: "major markup", material_markup: "material markup", very_recent_resale: "very recent resale", recent_resale: "recent resale", rapid_relisting: "rapid relisting", not_actively_available: "not actively available" };
+      const pp = P.price_progression;
+      main.appendChild(h(`<div class="panel ${P.flags.length ? "accent-rose" : "accent-teal"}"><h3>Provenance <span class="muted small">${esc(P.confidence_label)} · ${ago(P.analyzed_at)}</span></h3>
+        <div class="row" style="gap:6px;margin-bottom:8px">${P.flags.map((f) => `<span class="chip rose">${esc(flagLabel[f] || f)}</span>`).join("")}${!P.flags.length ? `<span class="chip olive">no same-car flags</span>` : ""}</div>
+        ${P.current_status && P.current_status.available === false ? `<p><b>Current status:</b> ${esc(P.current_status.note)}</p>` : `<p><b>Current status:</b> ${esc(P.current_status?.listing_availability || "active")}</p>`}
+        ${P.summary ? `<p>${esc(P.summary)}</p>` : ""}
+        ${pp ? `<p><b>Price progression:</b> ${esc(pp.reference_description)} Now asking ${money(pp.current_price)}: <span class="mono">${pp.dollar_change >= 0 ? "+" : ""}${money(pp.dollar_change).replace("$-", "-$")}</span> (${(pp.percent_change * 100).toFixed(1)}%)${pp.elapsed_days != null ? ` after ${pp.elapsed_days} days` : ""}${pp.mileage_added != null ? (pp.mileage_added >= 0 ? `, ${num(pp.mileage_added)} miles added` : `, <span style="color:var(--rose)">mileage ${num(-pp.mileage_added)} LOWER than before (odometer inconsistency)</span>`) : ""}.</p>` : ""}
+        ${P.same_car_history?.length ? `<div class="tablewrap"><table class="checks"><tr><td class="muted small">Date</td><td class="muted small">Venue · status · evidence</td></tr>${P.same_car_history.map((e) => `<tr><td class="mono small">${esc(e.date || "undated")}</td><td>${esc(e.venue || "")} · <b>${esc(e.status)}</b>${e.mileage ? ` · ${num(e.mileage)} mi` : ""} · ${esc(e.description)}${e.identity_confidence !== "confirmed" ? ` <span class="chip mustard">${esc(e.identity_confidence.replace("_", " "))}</span>` : ""}${e.url ? ` <a href="${esc(e.url)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`).join("")}</table></div>` : `<p class="muted small">No prior same-car listings established.</p>`}
+        ${(P.what_changed?.work_after_prior_sale?.length || P.what_changed?.work_before_prior_sale?.length) ? `<p style="margin-top:8px"><b>What changed since the previous sale:</b></p><div class="kv small"><span class="k">After the sale</span><span>${P.what_changed.work_after_prior_sale.length ? P.what_changed.work_after_prior_sale.map(esc).join("; ") : "nothing documented"}</span><span class="k">Before the sale</span><span>${P.what_changed.work_before_prior_sale.map(esc).join("; ") || "—"}</span>${P.what_changed.cosmetic_or_preference?.length ? `<span class="k">Cosmetic / preference</span><span>${P.what_changed.cosmetic_or_preference.map(esc).join("; ")}</span>` : ""}${P.what_changed.repairs_correcting_faults?.length ? `<span class="k">Repairs of faults</span><span>${P.what_changed.repairs_correcting_faults.map(esc).join("; ")}</span>` : ""}</div>` : ""}
+        ${P.cross_post_findings?.length ? `<p style="margin-top:8px"><b>Seller cross-posts and comments:</b></p><ul class="list small">${P.cross_post_findings.map((c) => `<li><span class="chip ${c.kind === "keep" || c.kind === "withdrawn" || c.kind === "sold" ? "rose" : "mustard"}">${esc(c.kind.replace("_", " "))}</span> "${esc(c.quote)}" <span class="muted">${esc(c.date || "undated")}${c.factual ? "" : " · opinion"}</span>${c.url ? ` <a href="${esc(c.url)}" target="_blank" rel="noopener">↗</a>` : ""}</li>`).join("")}</ul>` : ""}
+        ${P.possible_matches?.length ? `<details><summary class="muted small">${P.possible_matches.length} possible match(es) not used (no unique identifier)</summary><ul class="list small">${P.possible_matches.map((e) => `<li>${esc(e.date || "undated")} · ${esc(e.venue || "")} · ${esc(e.status)} · ${esc(e.description)}${e.url ? ` <a href="${esc(e.url)}" target="_blank" rel="noopener">↗</a>` : ""}</li>`).join("")}</ul></details>` : ""}
+        ${P.effect?.length ? `<p style="margin-top:8px"><b>Effect on recommendation and price ceiling:</b></p><ul class="list">${P.effect.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}
+        ${P.sources?.length ? `<details><summary class="muted small">${P.sources.length} source link(s)</summary><ul class="list small">${P.sources.map((u) => `<li><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></li>`).join("")}</ul></details>` : ""}</div>`));
+    } else if (l.timeline?.length > 1) {
+      main.appendChild(h(`<div class="panel accent-teal"><h3>Vehicle timeline <span class="muted small">from tracked listings; no investigation run yet</span></h3><table class="checks">${l.timeline.map((e) => `<tr><td class="mono small">${esc(e.event_date || "undated")}</td><td>${esc(e.venue || "")} · <b>${esc(e.status)}</b>${e.price ? ` · ${money(e.price)} <span class="muted small">${esc((e.price_type || "").replace(/_/g, " "))}</span>` : ""}${e.mileage ? ` · ${num(e.mileage)} mi` : ""}${e.url ? ` <a href="${esc(e.url)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`).join("")}</table></div>`));
+    }
+
     if (A) {
       const hard = A.gates.filter((g) => g.kind === "hard" || g.kind === "strategy" || g.kind === "configuration");
       const cond = A.gates.filter((g) => g.kind === "conditional");
@@ -314,6 +333,7 @@
     if (state.local) {
       const act = h(`<div class="panel"><h3>Actions</h3>
         <div class="row"><button class="btn primary" id="analyze">${A ? "Re-assess" : "Assess"} <span class="muted small" style="color:inherit;opacity:.8">Opus · ~$0.50–1.50</span></button><button class="btn sm ghost" id="renorm" title="Re-run sync-time normalization">Re-normalize</button></div>
+        <div class="row" style="margin-top:8px"><button class="btn sm warm" id="investigate" title="Queue a same-car search; the extension runs it in your browser">${P ? "Re-investigate provenance" : "Investigate provenance"}</button><span class="muted small" id="inv-status"></span></div>
         <label style="display:block;margin-top:10px">Mission <select id="mission">${MISSIONS.map((m) => `<option value="${m}" ${l.mission === m ? "selected" : ""}>${missionLabel(m)}</option>`).join("")}</select> <span class="muted small">pragmatic bridge lifts the manual gate</span></label>
         <div class="row" style="margin-top:10px"><label>Status <select id="status">${STATUSES.map((s) => `<option ${l.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
         <label><input type="checkbox" id="pin" ${l.pinned ? "checked" : ""}> pinned</label>
@@ -326,6 +346,12 @@
         try { await api(`/api/listings/${l.id}/assess`, "POST"); await loadData(); route(); toast("Assessment stored"); }
         catch (err) { toast("Assessment failed: " + err.message, 6000); e.target.disabled = false; e.target.textContent = "Assess"; }
       };
+      $("#investigate", act).onclick = async (e) => {
+        e.target.disabled = true;
+        try { await api(`/api/listings/${l.id}/provenance/queue`, "POST"); $("#inv-status", act).textContent = "Queued. Open the Hoopty Scout extension popup and click Run."; toast("Investigation queued"); }
+        catch (err) { toast(err.message, 4000); e.target.disabled = false; }
+      };
+      api(`/api/listings/${l.id}/provenance`).then((r) => { const j = (r.jobs || [])[0]; if (j && j.status !== "done") $("#inv-status", act).textContent = `Investigation ${j.status}${j.hits ? ` · ${j.hits} hits` : ""}${j.error ? ` · ${j.error}` : ""}`; }).catch(() => {});
       $("#renorm", act).onclick = async (e) => { e.target.disabled = true; try { await api(`/api/listings/${l.id}/renormalize`, "POST"); await loadData(); route(); toast("Re-normalized"); } catch (err) { toast(err.message, 4000); e.target.disabled = false; } };
       const patch = async (body) => { try { await api(`/api/listings/${l.id}`, "PATCH", body); Object.assign(l, body); toast("Saved"); } catch (err) { toast(err.message, 4000); } };
       $("#mission", act).onchange = (e) => patch({ mission: e.target.value });

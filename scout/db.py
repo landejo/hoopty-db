@@ -95,6 +95,66 @@ CREATE TABLE IF NOT EXISTS assessments (
 );
 CREATE INDEX IF NOT EXISTS idx_assessments_listing ON assessments(listing_id, id);
 
+CREATE TABLE IF NOT EXISTS vehicles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vin TEXT UNIQUE,
+    fingerprint TEXT,
+    year INTEGER, make TEXT, model TEXT, trim TEXT, engine TEXT, transmission TEXT,
+    exterior_color TEXT, interior_color TEXT, plate TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vehicles_fingerprint ON vehicles(fingerprint);
+
+CREATE TABLE IF NOT EXISTS vehicle_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicle_id INTEGER NOT NULL,
+    listing_id INTEGER,
+    event_date TEXT,
+    venue TEXT,
+    url TEXT,
+    mileage INTEGER,
+    price INTEGER,
+    price_type TEXT,
+    status TEXT NOT NULL,
+    evidence TEXT,
+    source TEXT,
+    identity_confidence TEXT NOT NULL DEFAULT 'confirmed',
+    seller TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(vehicle_id, url, status, event_date),
+    FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_vehicle_events_vehicle ON vehicle_events(vehicle_id, event_date);
+
+CREATE TABLE IF NOT EXISTS provenance_hits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER NOT NULL,
+    engine TEXT,
+    query TEXT,
+    url TEXT NOT NULL,
+    title TEXT,
+    snippet TEXT,
+    detail_text TEXT,
+    fetched_at TEXT NOT NULL,
+    UNIQUE(listing_id, url),
+    FOREIGN KEY(listing_id) REFERENCES listings(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS provenance_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    queries_json TEXT NOT NULL,
+    hits INTEGER DEFAULT 0,
+    result_json TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(listing_id) REFERENCES listings(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS vin_decodes (
     vin TEXT PRIMARY KEY,
     decode_json TEXT NOT NULL,
@@ -110,7 +170,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 """
 
-JSON_COLS = {"raw_json": {}, "photos_json": [], "options_json": [], "normalized_json": {}, "analysis_json": None}
+JSON_COLS = {"raw_json": {}, "photos_json": [], "options_json": [], "normalized_json": {}, "analysis_json": None, "provenance_json": None}
 PROFILE_JSON_COLS = {"models_json": [], "years_json": [], "weights_json": {}, "checks_json": [], "dealbreakers_json": [],
                      "critical_evidence_json": []}
 
@@ -132,7 +192,7 @@ def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 _ADDITIVE_COLUMNS = {
-    "listings": [("mission", "TEXT")],
+    "listings": [("mission", "TEXT"), ("vehicle_id", "INTEGER"), ("provenance_json", "TEXT")],
     "profiles": [("critical_evidence_json", "TEXT DEFAULT '[]'"), ("mission_default", "TEXT"),
                  ("risk_reserve", "INTEGER"), ("automatic_ok", "INTEGER DEFAULT 0"),
                  ("catchup_notes", "TEXT")],
@@ -462,3 +522,131 @@ def vin_history(vin: str | None, exclude_listing_id: int | None = None, path: Pa
         if last:
             out["markup_vs_last_sale"] = round((current["price"] - last) / last, 3)
     return out
+
+
+# ---------- vehicles (one record per VIN) ----------
+
+def get_vehicle(vehicle_id: int, path: Path | None = None) -> dict[str, Any] | None:
+    with connect(path) as c:
+        row = c.execute("SELECT * FROM vehicles WHERE id=?", (vehicle_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_vehicle_by_vin(vin: str, path: Path | None = None) -> dict[str, Any] | None:
+    with connect(path) as c:
+        row = c.execute("SELECT * FROM vehicles WHERE vin=?", (vin.upper(),)).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_vehicle(vin: str | None, fingerprint: str | None, attrs: dict[str, Any], path: Path | None = None) -> int:
+    """VIN is canonical. Without one, a fingerprint record is provisional and is
+    merged into the VIN record once the VIN turns up."""
+    ts = now()
+    cols = {k: attrs.get(k) for k in ("year", "make", "model", "trim", "engine", "transmission", "exterior_color", "interior_color", "plate") if attrs.get(k) not in (None, "")}
+    with connect(path) as c:
+        row = None
+        if vin:
+            row = c.execute("SELECT * FROM vehicles WHERE vin=?", (vin.upper(),)).fetchone()
+        if row is None and fingerprint:
+            row = c.execute("SELECT * FROM vehicles WHERE fingerprint=? AND (vin IS NULL OR vin=?)", (fingerprint, (vin or "").upper())).fetchone()
+        if row:
+            sets = {k: v for k, v in cols.items() if not row[k]}
+            if vin and not row["vin"]:
+                sets["vin"] = vin.upper()
+            if fingerprint and not row["fingerprint"]:
+                sets["fingerprint"] = fingerprint
+            if sets:
+                sets["updated_at"] = ts
+                c.execute(f"UPDATE vehicles SET {', '.join(k + '=?' for k in sets)} WHERE id=?", [*sets.values(), row["id"]])
+            return row["id"]
+        cols.update({"vin": vin.upper() if vin else None, "fingerprint": fingerprint, "created_at": ts, "updated_at": ts})
+        cur = c.execute(f"INSERT INTO vehicles ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})", list(cols.values()))
+        return cur.lastrowid
+
+
+def add_vehicle_event(vehicle_id: int, ev: dict[str, Any], path: Path | None = None) -> bool:
+    cols = {k: ev.get(k) for k in ("listing_id", "event_date", "venue", "url", "mileage", "price", "price_type", "status",
+                                   "evidence", "source", "identity_confidence", "seller")}
+    cols = {k: v for k, v in cols.items() if v is not None}
+    cols.setdefault("identity_confidence", "confirmed")
+    cols["vehicle_id"] = vehicle_id
+    cols["created_at"] = now()
+    with connect(path) as c:
+        try:
+            c.execute(f"INSERT INTO vehicle_events ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})", list(cols.values()))
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def vehicle_events(vehicle_id: int, path: Path | None = None) -> list[dict[str, Any]]:
+    with connect(path) as c:
+        rows = c.execute("SELECT * FROM vehicle_events WHERE vehicle_id=? ORDER BY COALESCE(event_date, created_at), id", (vehicle_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def listings_for_vehicle(vehicle_id: int, path: Path | None = None) -> list[dict[str, Any]]:
+    with connect(path) as c:
+        rows = c.execute("SELECT * FROM listings WHERE vehicle_id=? ORDER BY first_seen, id", (vehicle_id,)).fetchall()
+    return [_row_to_dict(r, JSON_COLS) for r in rows]
+
+
+# ---------- provenance hits / jobs ----------
+
+def add_provenance_hits(listing_id: int, hits: list[dict[str, Any]], path: Path | None = None) -> int:
+    n = 0
+    with connect(path) as c:
+        for h in hits:
+            url = (h.get("url") or "").strip()
+            if not url:
+                continue
+            try:
+                c.execute("INSERT INTO provenance_hits (listing_id, engine, query, url, title, snippet, detail_text, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                          (listing_id, h.get("engine"), (h.get("query") or "")[:300], url[:1000], (h.get("title") or "")[:300],
+                           (h.get("snippet") or "")[:1500], (h.get("detail_text") or "")[:40000], now()))
+                n += 1
+            except sqlite3.IntegrityError:
+                if h.get("detail_text"):
+                    c.execute("UPDATE provenance_hits SET detail_text=? WHERE listing_id=? AND url=?", ((h.get("detail_text") or "")[:40000], listing_id, url[:1000]))
+    return n
+
+
+def provenance_hits(listing_id: int, path: Path | None = None) -> list[dict[str, Any]]:
+    with connect(path) as c:
+        rows = c.execute("SELECT * FROM provenance_hits WHERE listing_id=? ORDER BY id", (listing_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_provenance_job(listing_id: int, queries: list[dict[str, Any]], path: Path | None = None) -> int:
+    ts = now()
+    with connect(path) as c:
+        c.execute("UPDATE provenance_jobs SET status='superseded', updated_at=? WHERE listing_id=? AND status IN ('queued','running')", (ts, listing_id))
+        cur = c.execute("INSERT INTO provenance_jobs (listing_id, status, queries_json, created_at, updated_at) VALUES (?, 'queued', ?, ?, ?)",
+                        (listing_id, json.dumps(queries, ensure_ascii=False), ts, ts))
+        return cur.lastrowid
+
+
+def list_provenance_jobs(status: str | None = "queued", path: Path | None = None) -> list[dict[str, Any]]:
+    q = "SELECT j.*, l.title AS listing_title, l.url AS listing_url, l.site FROM provenance_jobs j JOIN listings l ON l.id=j.listing_id"
+    args: list[Any] = []
+    if status:
+        q += " WHERE j.status=?"
+        args.append(status)
+    q += " ORDER BY j.id DESC LIMIT 50"
+    with connect(path) as c:
+        rows = c.execute(q, args).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["queries"] = json.loads(d.pop("queries_json") or "[]")
+        d["result"] = json.loads(d.pop("result_json") or "null")
+        out.append(d)
+    return out
+
+
+def update_provenance_job(job_id: int, path: Path | None = None, **fields: Any) -> None:
+    if "result" in fields:
+        fields["result_json"] = json.dumps(fields.pop("result"), ensure_ascii=False)
+    fields["updated_at"] = now()
+    with connect(path) as c:
+        c.execute(f"UPDATE provenance_jobs SET {', '.join(k + '=?' for k in fields)} WHERE id=?", [*fields.values(), job_id])

@@ -48,7 +48,37 @@ async function init() {
     $("add").disabled = !(health && page.detail);
   }
   await refreshProgress();
+  await refreshJobs(health);
 }
+
+let currentListing = null;
+async function refreshJobs(health) {
+  if (!health) return;
+  try {
+    const jobs = await (await fetch(apiBase + "/api/provenance/jobs?status=queued")).json();
+    $("inv-row").hidden = false;
+    $("investigate").textContent = jobs.length ? `Run ${jobs.length} queued investigation${jobs.length > 1 ? "s" : ""}` : "No investigations queued";
+    $("investigate").disabled = !jobs.length;
+    if (tab && tab.url) {
+      const r = await fetch(apiBase + "/api/listings/by-url?url=" + encodeURIComponent(tab.url.split("?")[0]));
+      if (r.ok) { currentListing = await r.json(); $("queue-current").hidden = false; $("queue-current").textContent = `Investigate this car (#${currentListing.id})`; }
+    }
+    const { investigation } = await chrome.storage.session.get("investigation");
+    if (investigation && investigation.state && investigation.state !== "done" && investigation.state !== "error") {
+      $("progress").hidden = false; $("progress-msg").textContent = `Investigation: ${investigation.state} ${investigation.done ?? ""}/${investigation.total ?? ""} ${investigation.message || ""}`;
+    }
+  } catch (e) {}
+}
+$("investigate").addEventListener("click", () => {
+  $("investigate").disabled = true; $("cancel").hidden = false; $("progress").hidden = false;
+  setStatus("Investigating… searches run in background tabs; you can close this popup.", "info");
+  chrome.runtime.sendMessage({ type: "investigate" }, (r) => { setStatus(r && r.ok ? `Finished ${r.done}/${r.total} investigation(s).` : "Investigation failed: " + (r ? r.error : "no response"), r && r.ok ? "success" : "error"); refreshJobs(true); });
+});
+$("queue-current").addEventListener("click", async () => {
+  if (!currentListing) return;
+  try { await fetch(apiBase + `/api/listings/${currentListing.id}/provenance/queue`, { method: "POST" }); setStatus("Queued. Click Run to start.", "success"); refreshJobs(true); }
+  catch (e) { setStatus("Could not queue: " + e.message, "error"); }
+});
 
 $("sync").addEventListener("click", () => {
   $("sync").disabled = true; $("cancel").hidden = false; $("progress").hidden = false;
@@ -65,5 +95,5 @@ $("add").addEventListener("click", () => {
 });
 $("cancel").addEventListener("click", () => chrome.runtime.sendMessage({ type: "cancel" }));
 $("open").addEventListener("click", () => chrome.tabs.create({ url: apiBase }));
-chrome.storage.onChanged.addListener(refreshProgress);
+chrome.storage.onChanged.addListener((changes) => { refreshProgress(); if (changes.investigation) { const v = changes.investigation.newValue; if (v) { $("progress").hidden = false; $("progress-msg").textContent = `Investigation: ${v.state} ${v.done ?? ""}/${v.total ?? ""} ${v.message || ""}`; if (v.state === "done") setStatus(v.message, "success"); } } });
 init();

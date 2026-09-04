@@ -59,6 +59,14 @@ def export() -> JSONResponse:
     return JSONResponse(build_export())
 
 
+@app.get("/api/listings/by-url")
+def listing_by_url(url: str) -> dict[str, Any]:
+    row = db.get_listing_by_url(url.rstrip("/")) or db.get_listing_by_url(url.rstrip("/") + "/") or db.get_listing_by_url(url)
+    if not row:
+        raise HTTPException(404, "not tracked")
+    return {"id": row["id"], "title": row.get("title"), "site": row["site"]}
+
+
 @app.get("/api/listings/{listing_id}")
 def get_listing(listing_id: int) -> dict[str, Any]:
     row = db.get_listing(listing_id)
@@ -66,6 +74,7 @@ def get_listing(listing_id: int) -> dict[str, Any]:
         raise HTTPException(404, "not found")
     row["history"] = db.list_snapshots(listing_id)
     row["assessment"] = db.latest_assessment(listing_id)
+    row["timeline"] = db.vehicle_events(row["vehicle_id"]) if row.get("vehicle_id") else []
     return row
 
 
@@ -131,6 +140,12 @@ async def assess_listing(listing_id: int) -> dict[str, Any]:
     comps_median = pool[len(pool) // 2] if pool else None
     snaps = db.list_snapshots(listing_id)
     history = db.vin_history(row.get("vin"), exclude_listing_id=listing_id)
+    history["provenance"] = row.get("provenance")
+    history["timeline"] = db.vehicle_events(row["vehicle_id"]) if row.get("vehicle_id") else []
+    pp = (row.get("provenance") or {}).get("price_progression") or {}
+    if pp.get("percent_change") is not None:
+        history["markup_vs_last_sale"] = pp["percent_change"]
+        history["last_documented_price"] = (pp.get("reference") or {}).get("price")
     decoded = await asyncio.to_thread(decode_vin, row.get("vin")) if row.get("vin") else None
     history["vin_decode"] = decoded and {k: decoded.get(k) for k in ("year", "make", "model", "series", "trim", "engine_liters", "cylinders", "body_class")}
     history["vin_decode_contradictions"] = compare_decode(decoded, row)
@@ -198,6 +213,109 @@ async def renormalize(listing_id: int) -> dict[str, Any]:
     async with _ai_lock:
         stats = await asyncio.to_thread(ingest_items, row["site"], [item], True)
     return {"ok": True, **stats}
+
+
+# ---------- provenance ----------
+
+@app.post("/api/listings/{listing_id}/provenance/queue")
+def queue_provenance(listing_id: int) -> dict[str, Any]:
+    from scout.provenance import build_queries, link_listing_vehicle
+    row = db.get_listing(listing_id)
+    if not row:
+        raise HTTPException(404, "not found")
+    link_listing_vehicle(listing_id)
+    job_id = db.create_provenance_job(listing_id, build_queries(row))
+    db.log_event("provenance_queued", listing_id, str(job_id))
+    return {"ok": True, "job": next(j for j in db.list_provenance_jobs("queued") if j["id"] == job_id)}
+
+
+@app.get("/api/provenance/jobs")
+def provenance_jobs(status: str = "queued") -> list[dict[str, Any]]:
+    return db.list_provenance_jobs(None if status == "all" else status)
+
+
+class HitsPayload(BaseModel):
+    hits: list[dict[str, Any]]
+
+
+@app.post("/api/provenance/jobs/{job_id}/hits")
+def provenance_hits(job_id: int, payload: HitsPayload) -> dict[str, Any]:
+    job = next((j for j in db.list_provenance_jobs(None) if j["id"] == job_id), None)
+    if not job:
+        raise HTTPException(404, "job not found")
+    n = db.add_provenance_hits(job["listing_id"], payload.hits)
+    db.update_provenance_job(job_id, status="running", hits=(job.get("hits") or 0) + n)
+    return {"ok": True, "stored": n}
+
+
+class FailPayload(BaseModel):
+    error: str = ""
+
+
+@app.post("/api/provenance/jobs/{job_id}/fail")
+def provenance_fail(job_id: int, payload: FailPayload) -> dict[str, Any]:
+    db.update_provenance_job(job_id, status="failed", error=payload.error[:500])
+    return {"ok": True}
+
+
+@app.post("/api/provenance/jobs/{job_id}/complete")
+async def provenance_complete(job_id: int) -> dict[str, Any]:
+    """Classify the gathered hits (deep model), write same-car events to the
+    VIN record, run the deterministic analysis, store it on the listing."""
+    from scout.provenance import analyze, link_listing_vehicle
+    job = next((j for j in db.list_provenance_jobs(None) if j["id"] == job_id), None)
+    if not job:
+        raise HTTPException(404, "job not found")
+    lid = job["listing_id"]
+    row = db.get_listing(lid)
+    vid = link_listing_vehicle(lid)
+    events = db.vehicle_events(vid) if vid else []
+    hits = db.provenance_hits(lid)
+    interp = None
+    if CONFIG.ai_enabled and hits:
+        from scout.ai.provenance import interpret_hits  # lazy
+        async with _ai_lock:
+            try:
+                interp = await asyncio.to_thread(interpret_hits, row, events, hits)
+            except Exception as e:
+                db.update_provenance_job(job_id, status="failed", error=str(e)[:500])
+                raise HTTPException(500, f"provenance interpretation failed: {e}")
+    statements: list[dict[str, Any]] = []
+    if interp:
+        for ev in interp.events:
+            if ev.identity_confidence == "not_established" or not vid:
+                continue
+            db.add_vehicle_event(vid, {"event_date": ev.date, "venue": ev.venue, "url": ev.url or None, "mileage": ev.mileage,
+                                       "price": ev.price, "price_type": ev.price_type, "status": ev.status,
+                                       "evidence": ev.evidence, "source": "search", "identity_confidence": ev.identity_confidence,
+                                       "seller": ev.seller})
+        statements = [s.model_dump() for s in interp.seller_statements]
+        for st in interp.seller_statements:
+            if st.kind in {"withdrawn", "keep"} and vid:
+                db.add_vehicle_event(vid, {"event_date": st.date, "venue": st.venue, "url": st.url or None,
+                                           "status": "Seller decided to keep" if st.kind == "keep" else "Withdrawn",
+                                           "evidence": st.quote, "source": "search", "identity_confidence": "confirmed" if row.get("vin") else "strongly_likely"})
+    events = db.vehicle_events(vid) if vid else []
+    result = analyze(row, events, statements, interp.model_dump() if interp else None)
+    if interp:
+        result["identity_notes"] = interp.identity_notes
+        result["summary"] = interp.summary
+    db.update_listing(lid, {"provenance": result})
+    if not result["current_status"]["available"] and row.get("availability") == "active":
+        db.update_listing(lid, {"availability": "withdrawn"})
+    db.update_provenance_job(job_id, status="done", result={"flags": result["flags"], "available": result["current_status"]["available"]})
+    db.log_event("provenance_done", lid, ", ".join(result["flags"]) or "no flags")
+    return {"ok": True, "flags": result["flags"], "available": result["current_status"]["available"], "summary": result.get("summary", "")}
+
+
+@app.get("/api/listings/{listing_id}/provenance")
+def get_provenance(listing_id: int) -> dict[str, Any]:
+    row = db.get_listing(listing_id)
+    if not row:
+        raise HTTPException(404, "not found")
+    return {"provenance": row.get("provenance"), "timeline": db.vehicle_events(row["vehicle_id"]) if row.get("vehicle_id") else [],
+            "vehicle": db.get_vehicle(row["vehicle_id"]) if row.get("vehicle_id") else None,
+            "jobs": [j for j in db.list_provenance_jobs(None) if j["listing_id"] == listing_id][:5]}
 
 
 @app.get("/api/profiles")

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Hoopty Scout",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Sync saved vehicle listings (Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, Bring a Trailer) to the local Hoopty Scout workbench.",
   "permissions": [
     "activeTab",
@@ -17,7 +17,13 @@
     "*://*.carsandbids.com/*",
     "*://*.bringatrailer.com/*",
     "http://127.0.0.1:8765/*",
-    "http://localhost:8765/*"
+    "http://localhost:8765/*",
+    "*://*.duckduckgo.com/*",
+    "*://*.bing.com/*",
+    "*://*.google.com/*",
+    "*://*.ebay.com/*",
+    "*://*.classic.com/*",
+    "*://*.reddit.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -29,7 +35,8 @@
       ],
       "js": [
         "common.js",
-        "adapters/facebook.js"
+        "adapters/facebook.js",
+        "adapters/search.js"
       ],
       "run_at": "document_idle"
     },
@@ -79,7 +86,23 @@
       ],
       "js": [
         "common.js",
-        "adapters/bat.js"
+        "adapters/bat.js",
+        "adapters/search.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.duckduckgo.com/*",
+        "*://*.bing.com/*",
+        "*://*.google.com/*",
+        "*://*.ebay.com/*",
+        "*://*.classic.com/*",
+        "*://*.reddit.com/*"
+      ],
+      "js": [
+        "common.js",
+        "adapters/search.js"
       ],
       "run_at": "document_idle"
     }

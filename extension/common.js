@@ -123,13 +123,12 @@
   if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.onMessage) return; // injected for testing
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const A = window.__scoutAdapter;
-    if (!A) return false;
+    if (!A || !["ping", "collect", "detail"].includes(msg.type)) return false;
     (async () => {
       try {
         if (msg.type === "ping") sendResponse({ ok: true, site: A.site, saved: !!A.isSavedPage(), detail: !!A.isDetailPage() });
         else if (msg.type === "collect") sendResponse({ ok: true, items: await A.collectSaved() });
         else if (msg.type === "detail") sendResponse({ ok: true, detail: await A.scrapeDetail() });
-        else sendResponse({ ok: false, error: "unknown message" });
       } catch (e) {
         sendResponse({ ok: false, error: String(e && e.stack || e) });
       }

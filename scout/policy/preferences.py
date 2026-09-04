@@ -51,7 +51,7 @@ LOGISTICS_CAP_BY_BAND: dict[int | None, int] = {5: 10, 4: 9, 3: 7, 2: 5, 1: 4, N
 
 # Relisted with a markup above this fraction of the last known sale, with no
 # documented transformation, caps price_value.
-RELIST_MARKUP_FLAG = 0.25
+RELIST_MARKUP_FLAG = 0.20  # "major markup" per the provenance brief; >10% is flagged as material
 RELIST_PRICE_VALUE_CAP = 8
 
 # Documentation caps when model-critical evidence is missing (§9 score caps).

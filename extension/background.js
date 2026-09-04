@@ -179,3 +179,94 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "status") { sendResponse({ running }); return false; }
   return false;
 });
+
+// ---------------- Provenance investigations ----------------
+// A job (queued from the workbench) carries the query set. We run each query
+// in a background tab in the user's own browser, collect result links and the
+// visible results text, deepen hits that point at known listing pages, post
+// everything to the server, then ask the server to interpret.
+const enc = encodeURIComponent;
+const ENGINE_URLS = {
+  duckduckgo: (q) => `https://html.duckduckgo.com/html/?q=${enc(q)}`,
+  bing: (q) => `https://www.bing.com/search?q=${enc(q)}`,
+  google: (q) => `https://www.google.com/search?q=${enc(q)}`,
+  bat: (q) => `https://bringatrailer.com/?s=${enc(q)}`,
+  ebay_sold: (q) => `https://www.ebay.com/sch/i.html?_nkw=${enc(q)}&LH_Sold=1&LH_Complete=1`,
+  classic: (q) => `https://www.classic.com/search/?q=${enc(q)}`,
+  reddit: (q) => `https://www.reddit.com/search/?q=${enc(q)}`,
+  facebook_posts: (q) => `https://www.facebook.com/search/posts/?q=${enc(q)}`,
+  facebook_marketplace: (q) => `https://www.facebook.com/marketplace/search/?query=${enc(q)}`,
+};
+const DETAIL_PATTERNS = [/facebook\.com\/marketplace\/item\/\d+/, /cargurus\.com\/details\/\d+/, /cars\.com\/vehicledetail\//,
+  /autotrader\.com\/cars-for-sale\/vehicle\/\d+/, /carsandbids\.com\/auctions\//, /bringatrailer\.com\/listing\//];
+const MAX_DEEPEN = 8;
+
+async function searchPage(url, settleMs) {
+  const tab = await chrome.tabs.create({ url, active: false });
+  try {
+    await waitForLoad(tab.id);
+    const resp = await sendToTab(tab.id, { type: "search_results", settleMs }, 8);
+    return resp.ok ? resp : { results: [], error: resp.error };
+  } finally { try { await chrome.tabs.remove(tab.id); } catch (e) {} }
+}
+
+async function runInvestigation(job) {
+  const api = await getApi();
+  const progress = async (p) => chrome.storage.session.set({ investigation: Object.assign({ jobId: job.id, listing: job.listing_title }, p, { ts: Date.now() }) });
+  const hits = new Map();
+  const add = (h) => { if (h.url && !hits.has(h.url)) hits.set(h.url, h); };
+  try {
+    await progress({ state: "searching", done: 0, total: job.queries.length });
+    for (let i = 0; i < job.queries.length; i++) {
+      if (cancel) throw new Error("cancelled");
+      const q = job.queries[i];
+      const build = ENGINE_URLS[q.engine];
+      if (!build) continue;
+      const settle = /facebook|reddit|bat/.test(q.engine) ? 3500 : 1500;
+      let r;
+      try { r = await searchPage(build(q.q), settle); } catch (e) { r = { results: [], error: e.message }; }
+      for (const res of r.results || []) add({ engine: q.engine, query: q.q, url: res.url, title: res.title, snippet: res.snippet });
+      if (r.page_text) add({ engine: q.engine, query: q.q, url: r.page_url || build(q.q), title: `(${q.engine} results page)`, snippet: r.page_text });
+      log(`${q.engine}: ${(r.results || []).length} result(s) for ${q.q}`);
+      await progress({ done: i + 1, message: `${q.engine} · ${q.q}` });
+      await sleep(jitter());
+    }
+    // Deepen: open the listing pages we know how to read.
+    const deep = Array.from(hits.values()).filter((h) => DETAIL_PATTERNS.some((p) => p.test(h.url)) && h.url !== job.listing_url).slice(0, MAX_DEEPEN);
+    await progress({ state: "deepening", done: 0, total: deep.length });
+    for (let i = 0; i < deep.length; i++) {
+      if (cancel) throw new Error("cancelled");
+      try { const d = await scrapeUrl(deep[i].url); if (d && d.text) deep[i].detail_text = d.text.slice(0, 20000); } catch (e) {}
+      await progress({ done: i + 1, message: deep[i].title || deep[i].url });
+      await sleep(jitter());
+    }
+    const all = Array.from(hits.values());
+    for (let i = 0; i < all.length; i += 25) await post(`/api/provenance/jobs/${job.id}/hits`, { hits: all.slice(i, i + 25) });
+    await progress({ state: "interpreting", message: `Server is classifying ${all.length} hit(s)…` });
+    const res = await post(`/api/provenance/jobs/${job.id}/complete`, {});
+    await progress({ state: "done", message: res.summary || "Provenance stored.", result: { flags: res.flags, available: res.available } });
+    log(`Investigation done: ${all.length} hit(s); flags ${JSON.stringify(res.flags || [])}`);
+    return { ok: true, hits: all.length };
+  } catch (e) {
+    try { await post(`/api/provenance/jobs/${job.id}/fail`, { error: e.message }); } catch (e2) {}
+    await progress({ state: "error", message: e.message });
+    return { ok: false, error: e.message };
+  }
+}
+
+async function runQueuedInvestigations() {
+  if (running) return { ok: false, error: "A sync is already running." };
+  running = true; cancel = false;
+  try {
+    const api = await getApi();
+    const jobs = await (await fetch(api + "/api/provenance/jobs?status=queued")).json();
+    let done = 0;
+    for (const job of jobs) { const r = await runInvestigation(job); if (r.ok) done++; if (cancel) break; }
+    return { ok: true, done, total: jobs.length };
+  } catch (e) { return { ok: false, error: e.message }; } finally { running = false; }
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "investigate") { runQueuedInvestigations().then(sendResponse); return true; }
+  return false;
+});
