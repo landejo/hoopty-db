@@ -122,7 +122,18 @@
     };
     rows.sort(sorters[f.sort] || sorters.score);
     rows.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
-    return rows;
+    // One card per car: listings sharing a vehicle (same VIN) fold into the
+    // best-ranked one, which carries the other venues as `also_on`.
+    const seen = new Map();
+    const out = [];
+    for (const l of rows) {
+      const key = l.vehicle_id && (l.role === "candidate") ? "v" + l.vehicle_id : "l" + l.id;
+      const prime = seen.get(key);
+      if (prime) { prime.also_on = (prime.also_on || []).concat([l]); continue; }
+      l.also_on = [];
+      seen.set(key, l); out.push(l);
+    }
+    return out;
   }
 
   function renderBoard(app) {
@@ -240,6 +251,7 @@
           <div class="title">${esc(title(l))}</div>
           <div class="price">${l.role === "comp" && (l.sold_price || l.price) ? money(l.sold_price || l.price) + `<small>${l.availability === "sold" ? "sold" : esc(l.price_kind || "")}</small>` : money(l.price) + (l.price_kind && l.price_kind !== "asking" ? `<small>${esc(l.price_kind.replace("_", " "))}</small>` : "")}</div>
           <div class="meta"><span class="mono">${l.mileage ? num(l.mileage) + " mi" : "— mi"}</span><span>${esc(l.location || "—")}</span><span>${listedAge(l)}</span>${l.transmission ? `<span>${esc(l.transmission)}</span>` : ""}</div>
+          ${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
           <div class="foot">
             <div class="row" style="gap:6px">${v ? `<span class="chip ${verdictTone(v)}">${esc(v)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
             <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label><span class="pill-status">${esc(l.status || "New")}</span></span>
@@ -283,6 +295,7 @@
     const E = A?.evidence, S = A?.score, C = A?.costs;
     const photos = l.photos && l.photos.length ? l.photos : l.thumb ? [l.thumb] : [];
     const peers = state.data.listings.filter((x) => x.profile_key === l.profile_key && x.role === "candidate" && x.availability === "active" && x.id !== l.id);
+    const siblings = l.vehicle_id ? state.data.listings.filter((x) => x.vehicle_id === l.vehicle_id && x.id !== l.id) : [];
     const comps = state.data.listings.filter((x) => x.profile_key === l.profile_key && x.role === "comp");
     const market = state.data.markets?.[l.profile_key] || {};
     const CATS = [["documentation", "Documentation & verifiability", 30], ["condition", "Condition", 25], ["price_value", "Price & risk-adjusted value", 15], ["mission_fit", "Mission fit", 15], ["logistics", "Logistics & inspectability", 10], ["emotional_spec_fit", "Emotional / spec fit", 5]];
@@ -292,7 +305,7 @@
     app.appendChild(h(`<div>
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <a href="#/" class="btn sm ghost">← Board</a>
-        <div class="row">${siteChip(l.site)}${availChip(l.availability)}${l.role === "comp" ? `<span class="chip dark">market comp</span>` : ""}<span class="chip" title="mission">${esc(missionLabel(l.mission))}</span><a class="btn sm" href="${esc(l.url)}" target="_blank" rel="noopener">Open listing ↗</a></div>
+        <div class="row">${siteChip(l.site)}${availChip(l.availability)}${l.role === "comp" ? `<span class="chip dark">market comp</span>` : ""}<span class="chip" title="mission">${esc(missionLabel(l.mission))}</span>${siblings.map((o) => `<a href="#/l/${o.id}" class="chip teal" title="same VIN, other venue">also on ${esc(siteName(o.site))} · ${money(o.sold_price || o.price)}</a>`).join("")}<a class="btn sm" href="${esc(l.url)}" target="_blank" rel="noopener">Open listing ↗</a></div>
       </div>
       <div class="headline">
         <div><h1>${esc(title(l))}</h1><div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>

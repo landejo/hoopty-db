@@ -285,6 +285,11 @@ async def provenance_complete(job_id: int) -> dict[str, Any]:
         for ev in interp.events:
             if ev.identity_confidence == "not_established" or not vid:
                 continue
+            if ev.identity_confidence == "confirmed" and ev.url:
+                other = db.get_listing_by_url(ev.url) or db.get_listing_by_url(ev.url.rstrip("/") + "/")
+                if other and other.get("vehicle_id") and other["vehicle_id"] != vid:
+                    db.merge_vehicles(other["vehicle_id"], vid)
+                    db.log_event("vehicle_merged", lid, f"{other['vehicle_id']} -> {vid} via confirmed VIN match at {ev.url}")
             db.add_vehicle_event(vid, {"event_date": ev.date, "venue": ev.venue, "url": ev.url or None, "mileage": ev.mileage,
                                        "price": ev.price, "price_type": ev.price_type, "status": ev.status,
                                        "evidence": ev.evidence, "source": "search", "identity_confidence": ev.identity_confidence,

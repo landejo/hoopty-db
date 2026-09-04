@@ -44,7 +44,7 @@ def link_listing_vehicle(listing_id: int, path=None) -> int | None:
     fp = fingerprint(l)
     if not (l.get("vin") or fp):
         return None
-    vid = db.upsert_vehicle(l.get("vin"), fp, l, path)
+    vid = db.upsert_vehicle(l.get("vin"), fp, l, path, current_vehicle_id=l.get("vehicle_id"))
     db.update_listing(listing_id, {"vehicle_id": vid}, path)
     record_listing_events(l, vid, path)
     return vid
@@ -281,3 +281,13 @@ def timeline_for_listing(listing_id: int, path=None) -> list[dict[str, Any]]:
     if not l or not l.get("vehicle_id"):
         return []
     return db.vehicle_events(l["vehicle_id"], path)
+
+
+def repair_vehicle_links(path=None) -> dict[str, int]:
+    """Undo fingerprint merges and relink every listing (safe to re-run)."""
+    split = db.split_provisional_vehicles(path)
+    relinked = 0
+    for l in db.list_listings(path=path):
+        if link_listing_vehicle(l["id"], path):
+            relinked += 1
+    return {"split": split, "relinked": relinked}

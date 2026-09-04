@@ -538,17 +538,27 @@ def get_vehicle_by_vin(vin: str, path: Path | None = None) -> dict[str, Any] | N
     return dict(row) if row else None
 
 
-def upsert_vehicle(vin: str | None, fingerprint: str | None, attrs: dict[str, Any], path: Path | None = None) -> int:
-    """VIN is canonical. Without one, a fingerprint record is provisional and is
-    merged into the VIN record once the VIN turns up."""
+def upsert_vehicle(vin: str | None, fingerprint: str | None, attrs: dict[str, Any], path: Path | None = None,
+                   current_vehicle_id: int | None = None) -> int:
+    """VIN is the only identity. A listing without a VIN gets its OWN provisional
+    record (fingerprint kept for candidate matching, never for merging). When a
+    VIN later appears on a listing that already has a provisional record, that
+    record either takes the VIN or is merged into the existing VIN record."""
     ts = now()
     cols = {k: attrs.get(k) for k in ("year", "make", "model", "trim", "engine", "transmission", "exterior_color", "interior_color", "plate") if attrs.get(k) not in (None, "")}
     with connect(path) as c:
-        row = None
-        if vin:
-            row = c.execute("SELECT * FROM vehicles WHERE vin=?", (vin.upper(),)).fetchone()
-        if row is None and fingerprint:
-            row = c.execute("SELECT * FROM vehicles WHERE fingerprint=? AND (vin IS NULL OR vin=?)", (fingerprint, (vin or "").upper())).fetchone()
+        vin_row = c.execute("SELECT * FROM vehicles WHERE vin=?", (vin.upper(),)).fetchone() if vin else None
+        cur_row = c.execute("SELECT * FROM vehicles WHERE id=?", (current_vehicle_id,)).fetchone() if current_vehicle_id else None
+        if vin_row and cur_row and vin_row["id"] != cur_row["id"]:
+            # The listing's provisional record is now known to be the VIN record: merge.
+            _merge_vehicles(c, cur_row["id"], vin_row["id"])
+            row = vin_row
+        elif vin_row:
+            row = vin_row
+        elif cur_row:
+            row = cur_row
+        else:
+            row = None
         if row:
             sets = {k: v for k, v in cols.items() if not row[k]}
             if vin and not row["vin"]:
@@ -562,6 +572,49 @@ def upsert_vehicle(vin: str | None, fingerprint: str | None, attrs: dict[str, An
         cols.update({"vin": vin.upper() if vin else None, "fingerprint": fingerprint, "created_at": ts, "updated_at": ts})
         cur = c.execute(f"INSERT INTO vehicles ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})", list(cols.values()))
         return cur.lastrowid
+
+
+def _merge_vehicles(c: sqlite3.Connection, src: int, dst: int) -> None:
+    """Move listings and events from src onto dst, then drop src. Events that
+    would collide on (url, status, date) are dropped as duplicates."""
+    if src == dst:
+        return
+    c.execute("UPDATE listings SET vehicle_id=? WHERE vehicle_id=?", (dst, src))
+    for r in c.execute("SELECT * FROM vehicle_events WHERE vehicle_id=?", (src,)).fetchall():
+        try:
+            c.execute("UPDATE vehicle_events SET vehicle_id=? WHERE id=?", (dst, r["id"]))
+        except sqlite3.IntegrityError:
+            c.execute("DELETE FROM vehicle_events WHERE id=?", (r["id"],))
+    srow = c.execute("SELECT * FROM vehicles WHERE id=?", (src,)).fetchone()
+    drow = c.execute("SELECT * FROM vehicles WHERE id=?", (dst,)).fetchone()
+    sets = {k: srow[k] for k in ("year", "make", "model", "trim", "engine", "transmission", "exterior_color", "interior_color", "plate", "fingerprint") if srow[k] and not drow[k]}
+    if sets:
+        c.execute(f"UPDATE vehicles SET {', '.join(k + '=?' for k in sets)} WHERE id=?", [*sets.values(), dst])
+    c.execute("DELETE FROM vehicles WHERE id=?", (src,))
+
+
+def merge_vehicles(src: int, dst: int, path: Path | None = None) -> None:
+    """Explicit merge, used when an investigation confirms two tracked listings
+    are the same car (exact VIN, or a strongly-likely match the user accepts)."""
+    with connect(path) as c:
+        _merge_vehicles(c, src, dst)
+
+
+def split_provisional_vehicles(path: Path | None = None) -> int:
+    """Repair: a VIN-less record holding several listings was merged on a
+    fingerprint under the old rule. Give every listing but the first its own
+    record and rebuild their sync-derived events."""
+    moved = 0
+    with connect(path) as c:
+        groups = c.execute("SELECT v.id FROM vehicles v JOIN listings l ON l.vehicle_id=v.id WHERE v.vin IS NULL "
+                           "GROUP BY v.id HAVING COUNT(l.id) > 1").fetchall()
+        for g in groups:
+            ls = c.execute("SELECT id FROM listings WHERE vehicle_id=? ORDER BY id", (g["id"],)).fetchall()
+            for l in ls[1:]:
+                c.execute("UPDATE listings SET vehicle_id=NULL WHERE id=?", (l["id"],))
+                c.execute("DELETE FROM vehicle_events WHERE vehicle_id=? AND listing_id=?", (g["id"], l["id"]))
+                moved += 1
+    return moved
 
 
 def add_vehicle_event(vehicle_id: int, ev: dict[str, Any], path: Path | None = None) -> bool:

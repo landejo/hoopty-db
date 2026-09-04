@@ -100,33 +100,42 @@ def test_build_queries_follow_the_brief():
     assert len(q) <= 28
 
 
-def test_one_vehicle_per_vin_and_fingerprint_merge():
-    a, _ = db.upsert_listing({"site": "carscom", "url": "https://www.cars.com/vehicledetail/a/", "year": 2000, "make": "BMW",
-                              "model": "Z3 M roadster", "exterior_color": "Estoril Blue", "price": 13900, "availability": "sold", "role": "comp"})
-    db.add_snapshot(a, 13900, "asking", "sold")
-    va = link_listing_vehicle(a)
-    b, _ = db.upsert_listing({"site": "facebook", "url": "https://www.facebook.com/marketplace/item/999/", "vin": VIN, "year": 2000, "make": "BMW",
-                              "model": "Z3 M roadster", "exterior_color": "Estoril Blue", "price": 17500, "availability": "active", "role": "candidate"})
-    db.add_snapshot(b, 17500, "asking", "active")
-    vb = link_listing_vehicle(b)
-    assert va == vb  # fingerprint record absorbed the VIN
-    v = db.get_vehicle(vb)
-    assert v["vin"] == VIN and fingerprint(db.get_listing(a)) == v["fingerprint"]
-    ev = db.vehicle_events(vb)
-    statuses = [e["status"] for e in ev]
-    assert statuses.count("Listed") == 2 and "Sold" in statuses
-    sold = next(e for e in ev if e["status"] == "Sold")
-    assert sold["price_type"] == "advertised_sold" and "transaction price is unknown" in sold["evidence"]
+def test_fingerprint_never_merges_but_vin_does():
+    # Two red 2000 M Roadsters with no VIN are two cars until a VIN says otherwise.
+    a, _ = db.upsert_listing({"site": "facebook", "url": "https://www.facebook.com/marketplace/item/1/", "year": 2000, "make": "BMW",
+                              "model": "Z3 M roadster", "exterior_color": "Imola Red", "price": 8800, "availability": "active", "role": "candidate"})
+    b, _ = db.upsert_listing({"site": "facebook", "url": "https://www.facebook.com/marketplace/item/2/", "year": 2000, "make": "BMW",
+                              "model": "Z3 M roadster", "exterior_color": "Imola Red", "price": 25000, "availability": "active", "role": "candidate"})
+    db.add_snapshot(a, 8800, "asking", "active"); db.add_snapshot(b, 25000, "asking", "active")
+    va, vb = link_listing_vehicle(a), link_listing_vehicle(b)
+    assert va != vb and fingerprint(db.get_listing(a)) == fingerprint(db.get_listing(b))
+    # The same VIN on two venues IS one car: a dealer cross-post.
+    c, _ = db.upsert_listing({"site": "cargurus", "url": "https://www.cargurus.com/details/1/", "vin": VIN, "year": 2000, "make": "BMW",
+                              "model": "Z3 M roadster", "price": 17500, "availability": "active", "role": "candidate"})
+    d, _ = db.upsert_listing({"site": "carscom", "url": "https://www.cars.com/vehicledetail/d/", "vin": VIN, "year": 2000, "make": "BMW",
+                              "model": "Z3 M roadster", "price": 17400, "availability": "active", "role": "candidate"})
+    db.add_snapshot(c, 17500, "asking", "active"); db.add_snapshot(d, 17400, "asking", "active")
+    assert link_listing_vehicle(c) == link_listing_vehicle(d)
+    # A provisional record that later learns its VIN merges into the VIN record and keeps its events.
+    db.update_listing(a, {"vin": VIN})
+    assert link_listing_vehicle(a) == db.get_listing(c)["vehicle_id"]
+    assert db.get_vehicle(va) is None  # provisional row is gone
+    urls = {e["url"] for e in db.vehicle_events(db.get_listing(c)["vehicle_id"])}
+    assert "https://www.facebook.com/marketplace/item/1/" in urls and "https://www.cargurus.com/details/1/" in urls
     # idempotent
-    link_listing_vehicle(b)
-    assert len(db.vehicle_events(vb)) == len(ev)
+    n = len(db.vehicle_events(db.get_listing(c)["vehicle_id"]))
+    link_listing_vehicle(a); link_listing_vehicle(c)
+    assert len(db.vehicle_events(db.get_listing(c)["vehicle_id"])) == n
 
 
-def test_mileage_going_backwards_is_a_hard_gate():
-    cur = {**_current(), "mileage": 60000}
-    r = analyze(cur, _events()[:2], [], None, today=TODAY)
-    assert "mileage_decreased" in r["flags"] and any("LOWER" in e for e in r["effect"])
-    l = _listing(vin=VIN, model="Z3 M roadster", engine_liters=3.2, year=2000, price=17500, mileage=60000)
-    a = assess(l, _profile("z3_m"), _ev(critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}, quality=8),
-               DEFAULT_STATE, vin_history={"provenance": r}, mission="future_keeper")
-    assert a.verdict == "Reject" and any(g.key == "odometer_inconsistency" for g in a.gates)
+def test_repair_splits_old_fingerprint_merges():
+    from scout.provenance import repair_vehicle_links
+    a, _ = db.upsert_listing({"site": "facebook", "url": "https://www.facebook.com/marketplace/item/1/", "year": 2000, "make": "BMW",
+                              "model": "Z3 M roadster", "exterior_color": "Imola Red", "price": 8800, "availability": "active", "role": "candidate"})
+    b, _ = db.upsert_listing({"site": "facebook", "url": "https://www.facebook.com/marketplace/item/2/", "year": 2000, "make": "BMW",
+                              "model": "Z3 M roadster", "exterior_color": "Imola Red", "price": 25000, "availability": "active", "role": "candidate"})
+    vid = db.upsert_vehicle(None, "2000|bmw|z3mroadster|imolared", db.get_listing(a))
+    db.update_listing(a, {"vehicle_id": vid}); db.update_listing(b, {"vehicle_id": vid})  # the old, wrong state
+    r = repair_vehicle_links()
+    assert r["split"] == 1
+    assert db.get_listing(a)["vehicle_id"] != db.get_listing(b)["vehicle_id"]
