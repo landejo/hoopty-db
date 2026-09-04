@@ -120,6 +120,7 @@
     );
   };
 
+  if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.onMessage) return; // injected for testing
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const A = window.__scoutAdapter;
     if (!A) return false;

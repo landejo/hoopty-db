@@ -56,7 +56,7 @@
   }
   function listedAge(l) { return l.listing_date ? ago(l.listing_date) : l.first_seen ? "seen " + ago(l.first_seen) : "—"; }
   function siteName(k) { return (state.data.sites || {})[k] || k; }
-  function siteChip(k) { const c = { facebook: "teal", cargurus: "olive", carscom: "mustard", carsandbids: "orange", bat: "rose" }[k] || ""; return `<span class="chip ${c}">${esc(siteName(k))}</span>`; }
+  function siteChip(k) { const c = { facebook: "teal", cargurus: "olive", carscom: "mustard", autotrader: "slate", carsandbids: "orange", bat: "rose" }[k] || ""; return `<span class="chip ${c}">${esc(siteName(k))}</span>`; }
   function scoreOf(l) { return l.analysis?.deal_score ?? null; }
   function prelimOf(l) { return l.prelim_score ?? null; }
   function badge(l) {
@@ -178,7 +178,7 @@
       <ol>
         <li>Start the local server: <code>.venv/bin/python run.py</code></li>
         <li>Load the <code>extension/</code> folder in Chrome (chrome://extensions → Developer mode → Load unpacked)</li>
-        <li>Open your saved listings on Facebook Marketplace, CarGurus, Cars.com, Cars &amp; Bids, or Bring a Trailer and click <b>Sync saved listings</b></li>
+        <li>Open your saved listings on any supported site and click <b>Sync saved listings</b></li>
       </ol></div>`);
   }
 

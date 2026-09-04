@@ -70,6 +70,8 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
             continue
         seen_urls.add(url)
         availability = detect_availability(item, site)
+        if item.get("_vanished") and availability == "active":
+            availability = "removed"  # gone from the saved page and its page shows no result
         if availability in {"sold", "ended"} and not include_sold:
             stats["skipped_sold"] += 1
             continue
@@ -103,7 +105,7 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
             try:
                 from scout.ai.normalize import normalize_listing  # lazy
                 hints = {"title": item.get("title"), "price_text": item.get("price_text"),
-                         "location": item.get("location"), "url": url,
+                         "card_text": item.get("card_text"), "url": url,
                          "scraper_availability": availability}
                 norm = normalize_listing(raw_text, hints, site, profiles)
                 _apply_normalization(lid, norm, availability, profiles, stats, raw_text)

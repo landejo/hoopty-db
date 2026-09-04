@@ -36,7 +36,7 @@ async function init() {
   page = resp && resp.ok ? resp : null;
   if (!page) {
     $("site-label").textContent = "Unsupported page";
-    if (health) setStatus("Open a saved-listings page on Facebook Marketplace, CarGurus, Cars.com, Cars & Bids, or Bring a Trailer (reload it if you just installed the extension).", "warning");
+    if (health) setStatus("Open a saved-listings page on Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, or Bring a Trailer (reload it if you just installed the extension).", "warning");
   } else {
     $("site-label").textContent = `${page.site} · ${page.saved ? "saved list" : page.detail ? "listing page" : "other page"}`;
     if (health) {
