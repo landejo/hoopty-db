@@ -4,14 +4,21 @@ let tab = null, page = null, apiBase = DEFAULT_API;
 
 function setStatus(msg, kind = "info") { $("status").className = "status " + kind; $("status").textContent = msg; }
 
+let busy = false;
 async function refreshProgress() {
   const { progress, log } = await chrome.storage.session.get(["progress", "log"]);
   if (log) $("log").textContent = log.join("\n");
+  // The background worker is the only source of truth for "running"; stored
+  // progress can be stale after a sync finishes or the worker restarts.
+  const st = await new Promise((res) => chrome.runtime.sendMessage({ type: "status" }, (r) => res(chrome.runtime.lastError ? { running: false } : (r || { running: false }))));
+  busy = !!st.running;
+  $("cancel").hidden = !busy;
+  $("sync").disabled = busy || !(page && page.saved);
+  $("add").disabled = busy || !(page && page.detail);
+  $("investigate").disabled = busy || $("investigate").disabled;
+  if (busy) setStatus(`A ${st.site || ""} ${st.kind || "sync"} is still running (${progress && progress.message ? progress.message : "working"}). Wait for "Done." in the log, or press Stop.`, "warning");
   if (!progress) return;
-  const running = progress.state === "scraping" || progress.state === "collecting";
   $("progress").hidden = false;
-  $("cancel").hidden = !running;
-  $("sync").disabled = running || !(page && page.saved);
   const pct = progress.total ? Math.round(100 * progress.done / progress.total) : (progress.state === "done" ? 100 : 5);
   $("bar-fill").style.width = pct + "%";
   $("progress-msg").textContent = progress.message || "";

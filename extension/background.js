@@ -7,6 +7,7 @@ const MIN_GAP = 1800, MAX_GAP = 3800; // ms between listing loads (be polite)
 
 let running = false;
 let cancel = false;
+let runningInfo = { site: "", kind: "" };
 
 async function getApi() {
   const { api_base } = await chrome.storage.local.get("api_base");
@@ -85,7 +86,7 @@ async function post(path, body) {
 
 async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
   if (running) return { ok: false, error: "A sync is already running." };
-  running = true; cancel = false;
+  running = true; cancel = false; runningInfo = { site: "", kind: "sync" };
   await chrome.storage.session.set({ log: [] });
   const totals = { created: 0, updated: 0, normalized: 0, comps: 0, candidates: 0, profiles_created: 0, skipped_sold: 0, errors: [] };
   try {
@@ -93,6 +94,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
     const ping = await sendToTab(tabId, { type: "ping" });
     if (!ping.ok) throw new Error("This tab has no Hoopty Scout adapter. Open a supported saved-listings page and reload it.");
     const site = ping.site;
+    runningInfo.site = site;
     const col = await sendToTab(tabId, { type: "collect" });
     if (!col.ok) throw new Error("Collect failed: " + col.error);
     let items = col.items || [];
@@ -185,7 +187,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "sync") { runSync(msg).then(sendResponse); return true; }
   if (msg.type === "add_current") { addCurrent(msg).then(sendResponse); return true; }
   if (msg.type === "cancel") { cancel = true; sendResponse({ ok: true }); return false; }
-  if (msg.type === "status") { sendResponse({ running }); return false; }
+  if (msg.type === "status") { sendResponse({ running, site: runningInfo.site, kind: runningInfo.kind }); return false; }
   return false;
 });
 
@@ -265,7 +267,7 @@ async function runInvestigation(job) {
 
 async function runQueuedInvestigations() {
   if (running) return { ok: false, error: "A sync is already running." };
-  running = true; cancel = false;
+  running = true; cancel = false; runningInfo = { site: "", kind: "investigation" };
   try {
     const api = await getApi();
     const jobs = await (await fetch(api + "/api/provenance/jobs?status=queued")).json();
