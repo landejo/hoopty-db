@@ -13,7 +13,10 @@
       const id = a && idOf(a.href);
       if (!id) continue;
       const cardText = S.text(tile).slice(0, 600);
-      const lines = cardText.split("\n").map((s) => s.trim()).filter(Boolean).filter((l) => !/remove saved listing|^sold$/i.test(l));
+      const NOISE = /remove saved listing|^sold$|price drop|great deal|good deal|fair deal|high price|overpriced|no rating|check availability|includes dealer fees|\/mo est|mi away|^\$/i;
+      const raw = cardText.split("\n").map((s) => s.trim()).filter(Boolean);
+      const yi = raw.findIndex((l) => /\b(19|20)\d{2}\b/.test(l) && !NOISE.test(l));
+      const lines = yi >= 0 ? [raw[yi]].concat(raw[yi + 1] && !NOISE.test(raw[yi + 1]) && !/\bmi\b/.test(raw[yi + 1]) ? [raw[yi + 1]] : []) : raw.filter((l) => !NOISE.test(l));
       const img = tile.querySelector("img");
       const priceEl = tile.querySelector("[data-testid=srp-tile-price]");
       out.push({
