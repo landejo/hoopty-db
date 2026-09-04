@@ -65,6 +65,9 @@ h3 { font-size: 17px; }
 .seg button { border: 0; background: transparent; border-radius: 999px; padding: 4px 10px; cursor: pointer; color: var(--ink-2); }
 .seg button.on { background: var(--ink); color: var(--bg); }
 .filters label { display: inline-flex; gap: 6px; align-items: center; color: var(--ink-2); font-size: 14px; }
+.filters input.num { width: 110px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; font-family: var(--mono); font-size: 13px; outline: none; }
+.filters input.num:focus { border-color: var(--teal); }
+.filters input.num::-webkit-inner-spin-button { opacity: .4; }
 
 /* Cards */
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }

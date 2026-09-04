@@ -8,7 +8,7 @@
   const num = (n) => (n == null ? "—" : Number(n).toLocaleString());
   const STATUSES = ["New", "Pursue", "Verify", "Contacted", "PPI Scheduled", "Offer Made", "Pass", "Purchased"];
 
-  const state = { data: null, local: false, filters: load("filters", { profile: "", site: "", avail: "active", status: "", analyzed: false, sort: "score", role: "candidate", view: "cards" }),
+  const state = { data: null, local: false, filters: load("filters", { profile: "", site: "", avail: "active", status: "", analyzed: false, sort: "score", role: "candidate", view: "cards", max_price: "", max_mileage: "" }),
                   q: "", compare: load("compare", []), theme: load("theme", null) };
 
   function load(k, d) { try { const v = localStorage.getItem("scout." + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
@@ -103,6 +103,9 @@
       if (f.avail && l.availability !== f.avail) return false;
       if (f.status && l.status !== f.status) return false;
       if (f.analyzed && !l.assessment) return false;
+      const px = l.sold_price || l.price;
+      if (f.max_price && px && px > Number(f.max_price)) return false;
+      if (f.max_mileage && l.mileage && l.mileage > Number(f.max_mileage)) return false;
       if (q) {
         const hay = [title(l), l.location, l.model, l.trim, l.engine, l.exterior_color, l.notes, l.normalized?.prelim_summary, (l.options || []).join(" ")].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -149,6 +152,9 @@
         <select id="f-status"><option value="">Any status</option>${STATUSES.map((s) => `<option ${f.status === s ? "selected" : ""}>${s}</option>`).join("")}</select>
         <select id="f-sort">${[["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]].map(([k, v]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${v}</option>`).join("")}</select>
         <label><input type="checkbox" id="f-analyzed" ${f.analyzed ? "checked" : ""}> analyzed only</label>
+        <label title="Hide listings priced above this">≤ $<input type="number" class="num" id="f-max-price" min="0" step="500" placeholder="max price" value="${esc(f.max_price)}"></label>
+        <label title="Hide listings with more miles than this">≤ <input type="number" class="num" id="f-max-mileage" min="0" step="5000" placeholder="max miles" value="${esc(f.max_mileage)}"> mi</label>
+        ${f.max_price || f.max_mileage ? `<button class="btn sm ghost" id="f-clear-limits">clear limits</button>` : ""}
         <span class="spacer"></span>
         <span class="seg" id="view"><button data-v="cards" class="${f.view === "cards" ? "on" : ""}">Cards</button><button data-v="table" class="${f.view === "table" ? "on" : ""}">Table</button></span>
       </div>`);
@@ -162,10 +168,21 @@
     $("#f-status", bar).onchange = (e) => { f.status = e.target.value; rerender(); };
     $("#f-sort", bar).onchange = (e) => { f.sort = e.target.value; rerender(); };
     $("#f-analyzed", bar).onchange = (e) => { f.analyzed = e.target.checked; rerender(); };
+    let limitTimer;
+    const onLimit = (key) => (e) => { clearTimeout(limitTimer); limitTimer = setTimeout(() => { f[key] = e.target.value; save("filters", f); renderList(); const cl = $("#f-clear-limits", bar); if (!cl && (f.max_price || f.max_mileage)) route(); }, 250); };
+    $("#f-max-price", bar).oninput = onLimit("max_price");
+    $("#f-max-mileage", bar).oninput = onLimit("max_mileage");
+    const clearBtn = $("#f-clear-limits", bar);
+    if (clearBtn) clearBtn.onclick = () => { f.max_price = ""; f.max_mileage = ""; save("filters", f); route(); };
     const list = h(`<div id="list"></div>`); app.appendChild(list);
     function renderList() {
       const rows = filtered();
       list.innerHTML = "";
+      if (f.max_price || f.max_mileage) {
+        const saved = { p: f.max_price, m: f.max_mileage }; f.max_price = ""; f.max_mileage = "";
+        const without = filtered().length; f.max_price = saved.p; f.max_mileage = saved.m;
+        if (without > rows.length) list.appendChild(h(`<p class="muted small" style="margin:0 0 10px">${without - rows.length} listing${without - rows.length === 1 ? "" : "s"} hidden by your price / mileage limits.</p>`));
+      }
       if (!state.data.listings.length) return list.appendChild(emptyState());
       if (!rows.length) return list.appendChild(h(`<div class="empty"><h2>Nothing matches</h2><p>Loosen the filters or sync more listings.</p></div>`));
       if (f.view === "table") return list.appendChild(tableView(rows));
