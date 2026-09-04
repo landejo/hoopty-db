@@ -22,6 +22,15 @@ class Fact(BaseModel):
     source: Source
     note: str = Field(default="", max_length=400)
 
+    @field_validator("value", mode="before")
+    @classmethod
+    def _stringify(cls, v):
+        if v is None or isinstance(v, str):
+            return v
+        if isinstance(v, (int, float, bool)):
+            return str(v)
+        return str(v)[:300]
+
 
 class Contradiction(BaseModel):
     topic: str = Field(max_length=80)
