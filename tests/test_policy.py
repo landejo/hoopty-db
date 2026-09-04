@@ -187,6 +187,11 @@ def test_schema_rejects_bad_model_output():
         "flags": {"salvage_or_rebuilt_title": "yes"}, "facts": [{"key": "vin", "status": "unknown", "source": "listing_text"}],
     })
     assert ev.immediate_service_estimate.high == 800  # ordered
+    ev2 = EvidenceInterpretation.model_validate({
+        "ratings": {k: {"rating": 5, "rationale": "r"} for k in ("documentation", "condition", "price_value", "mission_fit", "logistics", "emotional_spec_fit")},
+        "evidence_quality": 5, "immediate_service_estimate": {"low": 1, "high": 2},
+        "facts": [{"key": "year", "value": 2007, "status": "verified", "source": "listing_text"}]})
+    assert ev2.facts[0].value == "2007"  # the model returns numbers; keep them as text
     assert ev.flags.permanent_warning_lights == "unknown"  # unknown by default, never "no"
 
 
