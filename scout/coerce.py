@@ -151,6 +151,9 @@ def normalized_listing(data: dict[str, Any]) -> dict[str, Any]:
     pk = str(data.get("price_kind") or "").strip().lower()
     out["price_kind"] = pk if pk in {"asking", "current_bid", "sold", "reserve_not_met", "no_reserve"} else None
     out["sold_price"] = to_int(data.get("sold_price"), *PRICE_RANGE)
+    for k in ("price", "sold_price"):
+        if out.get(k) and out.get("year") and out[k] == out["year"]:
+            out[k] = None  # "$2,016" on a 2016 car is the year, not a price
     out["options"] = str_list(data.get("options"), cap=30)
     drops = []
     for d in (data.get("price_drops") if isinstance(data.get("price_drops"), list) else [])[:6]:

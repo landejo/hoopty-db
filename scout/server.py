@@ -23,6 +23,15 @@ from scout.policy.state import load_state, reset_state, save_state
 app = FastAPI(title="Hoopty Scout")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
+@app.middleware("http")
+async def _no_cache_static(request, call_next):
+    """The viewer is edited often; make every load fetch the current files."""
+    resp = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
 _ai_lock = asyncio.Lock()
 
 
