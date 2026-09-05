@@ -222,9 +222,12 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
             updates["normalized"]["vin_recall_count"] = len(decoded.get("recalls") or [])
             updates["normalized"]["vin_contradictions"] = compare_decode(decoded, merged)
     state = load_state()
-    mission = current.get("mission") or default_mission(prof)
-    if not current.get("mission"):
-        updates["mission"] = mission
+    if current.get("mission_user_set"):
+        mission = current["mission"]
+    else:
+        mission = default_mission(prof)   # auto-assigned: tracks the profile until the user chooses
+        if mission != current.get("mission"):
+            updates["mission"] = mission
     updates["normalized"]["quick_gates"] = quick_gates(merged, prof, mission, state)
     db.update_listing(lid, updates)
     rescore_listing(lid, state)

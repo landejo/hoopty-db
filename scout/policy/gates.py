@@ -38,7 +38,7 @@ def is_excluded(make: str | None, model: str | None, active_exclusions: list[str
 
 def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceInterpretation,
                    mission: str, state: dict[str, Any], all_in_high: int | None = None,
-                   provenance: dict[str, Any] | None = None) -> list[Gate]:
+                   provenance: dict[str, Any] | None = None, all_in_mid: int | None = None) -> list[Gate]:
     gates: list[Gate] = []
     flags = evidence.flags
 
@@ -105,10 +105,13 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
     gates = [g for g in gates if not ((g.kind, g.reason) in seen or seen.add((g.kind, g.reason)))]
 
     # Total expected cost defeats the bridge strategy (§8 hard gate).
+    # Gate on the midpoint of the range (the guide: no false precision from a range);
+    # the high end is reported as a note by the cost engine.
     cap = (state.get("budget") or {}).get("defeats_purpose_all_in")
-    if all_in_high is not None and cap and mission in {"enthusiast_bridge", "pragmatic_bridge"} and all_in_high > cap:
+    basis = all_in_mid if all_in_mid is not None else all_in_high
+    if basis is not None and cap and mission in {"enthusiast_bridge", "pragmatic_bridge"} and basis > cap:
         gates.append(Gate(kind="hard", key="cost_defeats_bridge_purpose",
-                          reason=f"Risk-adjusted all-in ${all_in_high:,} exceeds the bridge ceiling ${cap:,}"))
+                          reason=f"Risk-adjusted all-in about ${basis:,} (midpoint of the range) exceeds the bridge ceiling ${cap:,}"))
     return gates
 
 

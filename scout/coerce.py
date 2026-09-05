@@ -259,7 +259,7 @@ def profile(data: dict[str, Any]) -> dict[str, Any] | None:
         "label": label,
         "critical_evidence": crit[:6],
         "mission_default": md if md in {"enthusiast_bridge", "pragmatic_bridge", "future_keeper", "utility_capability"} else None,
-        "risk_reserve": to_int(data.get("risk_reserve"), 0, 50000),
+        "risk_reserve": max(1000, min(4000, to_int(data.get("risk_reserve"), 0, 50000) or 1500)),  # generated profiles: never above $4k
         "automatic_ok": bool(data.get("automatic_ok")) if isinstance(data.get("automatic_ok"), bool) else False,
         "catchup_notes": str(data.get("catchup_notes") or "").strip()[:600],
         "make": str(data.get("make") or "").strip()[:60],

@@ -141,6 +141,7 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         if patch.mission not in MISSIONS:
             raise HTTPException(400, f"mission must be one of {MISSIONS}")
         updates["mission"] = patch.mission
+        updates["mission_user_set"] = 1
     db.update_listing(listing_id, updates)
     db.log_event("edit", listing_id, str(updates))
     return {"ok": True, **updates}
