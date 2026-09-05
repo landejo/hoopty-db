@@ -241,3 +241,24 @@ def test_photo_blocks_skip_failures_and_render_prompt():
     from scout.ai.assess import photo_blocks, SYSTEM, MISSION_GUIDANCE
     assert photo_blocks(["http://127.0.0.1:1/nope.jpg", "not a url"]) == []
     assert "FRAMING RULES" in SYSTEM and "fly out" in SYSTEM
+
+
+def test_schema_maps_vocabulary_drift_and_drops_only_the_bad_entry():
+    ev = EvidenceInterpretation.model_validate({
+        "ratings": {k: {"rating": 5, "rationale": "r"} for k in ("documentation", "condition", "price_value", "mission_fit", "logistics", "emotional_spec_fit")},
+        "evidence_quality": 5, "immediate_service_estimate": {"low": 1, "high": 2},
+        "facts": [{"key": "tires", "status": "missing", "source": "listing"},            # drift -> unknown / listing_text
+                  {"key": "vin", "status": "confirmed", "source": "NHTSA"},              # -> verified / external_vin
+                  {"key": "junk", "status": "verified"},                                 # no source -> default ai_inference
+                  {"status": "verified", "source": "photo"},                             # no key: dropped, not fatal
+                  "not even a dict"],
+        "critical_evidence": [{"key": "rear_structure", "status": "unknown"}, {"key": "cooling_history", "status": "claimed"}],
+        "flags": {"salvage_or_rebuilt_title": True, "permanent_warning_lights": "maybe", "made_up_flag": "yes"},
+        "contradictions": [{"topic": "t", "detail": "d", "severity": "major"}],
+        "concerns": [{"text": "Observed: leak"}, "plain"],
+    })
+    assert [(f.status, f.source) for f in ev.facts] == [("unknown", "listing_text"), ("verified", "external_vin"), ("verified", "ai_inference")]
+    assert [c.status for c in ev.critical_evidence] == ["missing", "claimed_only"]
+    assert ev.flags.salvage_or_rebuilt_title == "yes" and ev.flags.permanent_warning_lights == "unknown"
+    assert ev.contradictions[0].severity == "material"
+    assert ev.concerns == ["Observed: leak", "plain"]
