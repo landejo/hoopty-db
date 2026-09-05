@@ -386,6 +386,7 @@ class Assessment(BaseModel):
     costs: CostBreakdown
     evidence: EvidenceInterpretation
     vin_history: dict = Field(default_factory=dict)
+    context: dict = Field(default_factory=dict)   # budget + urgency the judgement was formed under
     assessed_at: str
     model: str
 

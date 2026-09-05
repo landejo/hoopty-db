@@ -343,3 +343,10 @@ def test_failed_conditional_item_is_strong_reservations_not_reject():
     l = _listing(make="Porsche", model="Cayman S", trim="S", engine_liters=3.4, year=2007, price=24000)
     a2 = assess(l, _profile("porsche_987_cayman"), _ev(quality=8, critical={"borescope": "failed", "dme_overrev": "satisfied", "cooling_aos_service": "satisfied"}), STATE, mission="future_keeper")
     assert a2.verdict == "Reject" and any(g.key == "critical_failed:borescope" for g in a2.gates)
+
+
+def test_assessment_records_context_and_export_flags_changes():
+    from scout.publish import _budget_signature
+    a = assess(_listing(), _profile("z3_30i"), _ev(critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}), STATE)
+    assert a.context["budget"]["max_price"] == STATE["budget"]["max_price"] and a.context["urgency_mode"] == "accelerated_bridge"
+    assert _budget_signature(STATE["budget"], "accelerated_bridge") != _budget_signature({**STATE["budget"], "max_price": 27000}, "accelerated_bridge")

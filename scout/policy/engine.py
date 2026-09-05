@@ -54,6 +54,7 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
         policy_version=POLICY_VERSION, mission=mission, urgency_mode=state.get("urgency_mode", "accelerated_bridge"),
         gates=gates, score=score, confidence=confidence, verdict=verdict, verdict_reason=reason,
         costs=costs, evidence=evidence, vin_history=vin_history,
+        context={"budget": dict(state.get("budget") or {}), "urgency_mode": state.get("urgency_mode")},
         assessed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(), model=model,
     )
 
@@ -72,4 +73,7 @@ def rescore_assessment(listing: dict[str, Any], profile: dict[str, Any], stored:
     d = a.model_dump()
     d["assessed_at"] = stored.get("assessed_at", d["assessed_at"])
     d["rescored_from"] = stored.get("policy_version")
+    if stored.get("context"):
+        d["context"] = stored["context"]
+    d["mission"] = stored.get("mission", d["mission"])   # what the model was told, not what the listing says now
     return d
