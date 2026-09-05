@@ -13,6 +13,8 @@ def test_detect_availability():
     assert detect_availability({"price_text": "Bid to $30,000"}, "bat") == "ended"
     assert detect_availability({"price_text": "Bid to $30,000"}, "facebook") == "active"
     assert detect_availability({"price_text": "$30,000"}, "carscom") == "active"
+    assert detect_availability({"pending": True, "price_text": "$30,000"}, "facebook") == "pending"
+    assert detect_availability({"badge": "Sale pending"}, "carscom") == "pending"
 
 
 def test_parse_price():
@@ -125,3 +127,12 @@ def test_normalizer_skip_marks_not_a_vehicle(monkeypatch):
     ing.ingest_items("facebook", [_item(url, title="Two kayaks", price="$450")], run_ai=True)
     row = db.get_listing_by_url(url)
     assert row["role"] == "ignored" and row["normalized"]["ignored_reason"].startswith("not a vehicle")
+
+
+def test_pending_stays_a_candidate_until_sold():
+    url = "https://www.facebook.com/marketplace/item/p/"
+    ingest_items("facebook", [dict(_item(url), pending=True)], run_ai=False)
+    row = db.get_listing_by_url(url)
+    assert row["availability"] == "pending" and row["role"] == "candidate"
+    ingest_items("facebook", [_item(url, sold=True)], run_ai=False)
+    assert db.get_listing_by_url(url)["role"] == "comp"

@@ -9,7 +9,7 @@
     async collectSaved() {
       await S.autoScroll(30, 1500);
       const items = S.collectByPattern("facebook", ITEM, (h) => (h.match(ITEM) || [])[1]);
-      for (const it of items) it.url = `https://www.facebook.com/marketplace/item/${it.site_id}/`;
+      for (const it of items) { it.url = `https://www.facebook.com/marketplace/item/${it.site_id}/`; it.pending = /^\s*pending\b/im.test(it.card_text) || /\bpending\b/i.test(it.card_text.split("\n")[0] || ""); }
       return items;
     },
     async scrapeDetail() {
@@ -23,7 +23,8 @@
       const mi = d.text.match(/Driven\s+([\d,]+)\s+miles/i);
       if (mi) d.mileage_text = mi[1];
       const sold = /^\s*Sold\b/m.test(d.text.slice(0, 1500)) || /This listing is sold/i.test(d.text);
-      d.status_text = (sold ? "Sold\n" : "") + d.status_text;
+      const pending = !sold && /^\s*Pending\b/m.test(d.text.slice(0, 1500));
+      d.status_text = (sold ? "Sold\n" : pending ? "Pending\n" : "") + d.status_text;
       return d;
     },
   };

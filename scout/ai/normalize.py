@@ -37,9 +37,10 @@ Fields (omit anything you cannot determine; never guess a VIN):
 - mileage (int miles), price (int USD; for an auction use the current bid or
   the final sale price), price_kind: one of asking, current_bid, sold,
   reserve_not_met, no_reserve; sold_price (int, only when actually sold)
-- availability: active | sold | ended | removed. "sold" when the text says
-  Sold / Sold for $X. "ended" for an auction that closed without a sale
-  (reserve not met, bid to $X). Otherwise "active".
+- availability: active | pending | sold | ended | removed. "sold" when the
+  text says Sold / Sold for $X. "pending" for Pending / sale pending / deposit
+  taken. "ended" for an auction that closed without a sale (reserve not met,
+  bid to $X). Otherwise "active".
 - location "City, ST", vin (17 chars only), seller_type (Private / Dealer /
   Auction / Unknown), seller_name, title_status, accidents (yes/no/unknown),
   num_owners (int)
