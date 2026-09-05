@@ -61,3 +61,9 @@ def test_profile_coerce_requires_weights_over_known_axes():
 def test_price_drops_derive_missing_side():
     out = coerce.normalized_listing({"price": 21353, "price_drops": [{"amount": 5000}, {"prior_price": 22000}, {"note": "junk"}]})
     assert out["price_drops"] == [{"prior_price": 26353, "amount": 5000, "note": ""}, {"prior_price": 22000, "amount": 647, "note": ""}]
+
+
+def test_price_equal_to_year_is_dropped():
+    out = coerce.normalized_listing({"year": 2016, "price": 2016, "sold_price": 2016})
+    assert "price" not in out and "sold_price" not in out
+    assert coerce.normalized_listing({"year": 2016, "price": 25900})["price"] == 25900
