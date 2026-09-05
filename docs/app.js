@@ -363,7 +363,7 @@
     const siblings = l.vehicle_id ? state.data.listings.filter((x) => x.vehicle_id === l.vehicle_id && x.id !== l.id) : [];
     const comps = state.data.listings.filter((x) => x.profile_key === l.profile_key && x.role === "comp");
     const market = state.data.markets?.[l.profile_key] || {};
-    const CATS = [["documentation", "Documentation & verifiability", 30], ["condition", "Condition", 25], ["price_value", "Price & risk-adjusted value", 15], ["mission_fit", "Mission fit", 15], ["logistics", "Logistics & inspectability", 10], ["emotional_spec_fit", "Emotional / spec fit", 5]];
+    const CATS = [["documentation", "Documentation & verifiability", 25], ["condition", "Condition", 25], ["price_value", "Price & risk-adjusted value", 15], ["mission_fit", "Mission fit", 15], ["logistics", "Logistics & inspectability", 10], ["emotional_spec_fit", "Emotional / spec fit", 10]].map(([k, l, m]) => [k, l, (S && S.max && S.max[k]) || (N.prelim_breakdown && N.prelim_breakdown[k] && N.prelim_breakdown[k].max) || m]);
     const factChip = (f) => `<span class="chip ${f.status === "verified" ? "olive" : f.status === "claimed" ? "mustard" : f.status === "inferred" ? "teal" : ""}" title="${esc(f.source)}${f.note ? " · " + esc(f.note) : ""}">${esc(f.status)}</span>`;
     const list = (arr) => `<ul class="list">${(arr || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
 

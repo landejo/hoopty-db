@@ -188,18 +188,15 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
     blocked = bool((listing.get("raw") or {}).get("blocked"))
     flags = len(n.get("red_flags") or [])
 
-    # Documentation: strict like the assessment. Unread listings start at 1/10, and
-    # nothing scores above 15/30 until model-critical evidence has been examined
-    # (the assessment applies the same cap while that evidence is unresolved).
-    doc = round((r.get("documentation") or {}).get("score", 1) * 3)
+    # Documentation (25): the listing as presented. Unread listings start at 1/10.
+    # Model-critical unknowns are the gates' job (they cap the verdict), not a
+    # second penalty here.
+    doc = round((r.get("documentation") or {}).get("score", 1) * 2.5)
     if listing.get("vin"):
-        doc = min(30, doc + 2)
+        doc = min(25, doc + 2)
     if blocked:
         doc = min(doc, 4)
-    critical_unknown = bool((profile or {}).get("critical_evidence"))
-    if critical_unknown and doc > 15:
-        doc = 15
-    breakdown["documentation"] = {"points": doc, "max": 30, "why": (r.get("documentation") or {}).get("why", "not read yet") + (" · VIN present" if listing.get("vin") else " · no VIN") + (" · page blocked" if blocked else "") + (" · capped at 15 until model-critical evidence is examined" if critical_unknown and doc == 15 else "")}
+    breakdown["documentation"] = {"points": doc, "max": 25, "why": (r.get("documentation") or {}).get("why", "not read yet") + (" · VIN present" if listing.get("vin") else " · no VIN") + (" · page blocked" if blocked else "")}
 
     # Condition: the reader's evidence-based score only. Red flags are listed, not
     # double-counted here (many are documentation or logistics, not condition).
@@ -227,9 +224,6 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
         pv, why = _price_value_points(price, reference, listing.get("mileage"), ref_miles)
     budget = state.get("budget") or {}
     mission = listing.get("mission") or (profile or {}).get("mission_default") or "enthusiast_bridge"
-    if price and budget.get("max_price") and mission in {"enthusiast_bridge", "pragmatic_bridge"} and price > budget["max_price"]:
-        pv = min(pv, 6)
-        why += f" · over the ${budget['max_price']:,} bridge budget"
     breakdown["price_value"] = {"points": pv, "max": 15, "why": f"{why} ({src}: {len(pool)})"}
 
     trans = (listing.get("transmission") or "").lower()
@@ -241,13 +235,15 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
         fit, fit_why = 9, "pragmatic bridge: solves the immediate problem"
     else:
         fit, fit_why = 10, "utility / capability mission"
-    if price and budget:
+    if price and budget and mission != "future_keeper":
         if budget.get("ideal_low", 0) <= price <= budget.get("ideal_high", 10**9):
             fit += 2; fit_why += " · inside the ideal band"
         elif price <= budget.get("max_price", 10**9):
             fit += 1; fit_why += " · under the max"
-        elif mission != "future_keeper":
-            fit -= 6; fit_why += " · over the max"
+        elif price > budget.get("defeats_purpose_all_in", 10**9):
+            fit -= 6; fit_why += " · far over the bridge budget"
+        else:
+            fit -= 3; fit_why += " · over the max"
     year = listing.get("year")
     if year and __import__("datetime").date.today().year - int(year) > 25:
         fit -= 1; fit_why += " · 25+ years old"
@@ -263,8 +259,8 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
         log = max(0, log - 1)
     breakdown["logistics"] = {"points": log, "max": 10, "why": f"location band {band or 'unknown'}: {listing.get('location') or 'unknown'}"}
 
-    spec = round((r.get("spec") or {}).get("score", 5) / 2)
-    breakdown["emotional_spec_fit"] = {"points": spec, "max": 5, "why": (r.get("spec") or {}).get("why", "no rating yet")}
+    spec = (r.get("spec") or {}).get("score", 5)
+    breakdown["emotional_spec_fit"] = {"points": int(spec), "max": 10, "why": (r.get("spec") or {}).get("why", "not read yet")}
 
     total = sum(v["points"] for v in breakdown.values())
     return int(total), breakdown

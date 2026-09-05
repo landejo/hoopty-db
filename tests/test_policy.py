@@ -64,7 +64,7 @@ def test_z3_missing_rear_structure_is_capped():
              critical={"rear_structure": "claimed_only", "cooling_history": "satisfied"})
     a = assess(_listing(), _profile("z3_30i"), ev, STATE)
     assert a.verdict == "Maybe / verify"
-    assert a.score.documentation <= 15
+    assert a.score.documentation <= 20
     assert any(g.kind == "conditional" and g.key == "critical_missing:rear_structure" for g in a.gates)
     assert a.costs.risk_reserve == 1500 + 1000  # one unresolved conditional adds reserve
 
@@ -130,7 +130,7 @@ def test_automatic_in_enthusiast_search_is_wrong_configuration():
              critical={"cooling_history": "satisfied", "oil_leaks": "satisfied"})
     a = assess(l, _profile("bmw_128i"), ev, STATE, mission="enthusiast_bridge")
     assert a.verdict == "Reject" and "wrong configuration" in a.verdict_reason
-    assert a.score.total > 60  # the arithmetic is still reported, the gate decides
+    assert a.score.total > 45  # the arithmetic is still reported, the gate decides
 
 
 # 9. The same automatic intentionally evaluated as a pragmatic bridge -> no configuration gate, mission-fit capped.
@@ -157,7 +157,7 @@ def test_documented_local_beats_exciting_remote():
     assert a.score.total > b.score.total
     assert a.verdict in {"Pursue", "Pursue conditionally"}
     assert b.verdict in {"Maybe / verify", "Reject"}  # thin evidence + two unresolved items never reaches Pursue
-    assert b.score.emotional_spec_fit == 5 and b.score.logistics <= 4  # rare color earns its 5 points and no more
+    assert b.score.emotional_spec_fit == 10 and b.score.logistics <= 4  # rare colour earns its points and no more
     assert b.costs.transport == 1900 and a.costs.transport == 0
 
 
@@ -283,3 +283,23 @@ def test_renamed_critical_evidence_keys_still_match_the_profile():
     keys = [g.key for g in a.gates]
     assert "critical_missing:rear_structure" not in keys
     assert "critical_missing:cooling_history" in keys and "critical_missing:s54_rod_bearings" in keys
+
+
+def test_policy_1_2_bands_and_weights():
+    from scout.policy.preferences import CATEGORY_POINTS, SCORE_BANDS
+    assert CATEGORY_POINTS == {"documentation": 25, "condition": 25, "price_value": 15, "mission_fit": 15, "logistics": 10, "emotional_spec_fit": 10}
+    assert dict(SCORE_BANDS)[45] == "Maybe / verify"
+    # A listing-stage car with two unresolved conditions and decent evidence is a Maybe, not a Reject.
+    ev = _ev(doc=5, cond=5, val=6, fit=7, log=8, emo=6, quality=5, critical={"rear_structure": "missing", "cooling_history": "missing"})
+    a = assess(_listing(), _profile("z3_30i"), ev, STATE)
+    assert 45 <= a.score.total < 75 and a.verdict == "Maybe / verify"
+
+
+def test_rescore_assessment_under_new_policy():
+    from scout.policy.engine import rescore_assessment
+    ev = _ev(doc=6, cond=6, val=6, fit=7, log=8, emo=7, quality=6, critical={"rear_structure": "satisfied", "cooling_history": "missing"})
+    old = assess(_listing(), _profile("z3_30i"), ev, STATE).model_dump()
+    old["policy_version"] = "1.1.0"; old["model"] = "claude-sonnet-5"
+    new = rescore_assessment(_listing(), _profile("z3_30i"), old, STATE)
+    assert new["policy_version"] == POLICY_VERSION and new["rescored_from"] == "1.1.0" and new["model"] == "claude-sonnet-5"
+    assert new["score"]["emotional_spec_fit"] == 7 and new["evidence"]["ratings"]["condition"]["rating"] == 6

@@ -39,9 +39,10 @@ def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: 
     budget = state.get("budget") or {}
     price = listing.get("price") or 0
     if mission in {"enthusiast_bridge", "pragmatic_bridge"} and budget.get("max_price") and price > budget["max_price"]:
-        if pts["mission_fit"] > 6:
-            pts["mission_fit"] = 6
-            caps.append("mission fit capped at 6: price above the bridge budget")
+        cap = 6 if price > budget.get("defeats_purpose_all_in", 10**9) else 9
+        if pts["mission_fit"] > cap:
+            pts["mission_fit"] = cap
+            caps.append(f"mission fit capped at {cap}: price above the bridge budget")
     if mission == "pragmatic_bridge" and pts["mission_fit"] > 11:
         pts["mission_fit"] = 11
         caps.append("mission fit capped at 11: pragmatic bridge solves the immediate problem, not the enthusiast brief")

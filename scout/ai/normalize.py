@@ -25,10 +25,18 @@ Fields (omit anything you cannot determine; never guess a VIN):
       or receipts described, photos of specific areas, history report, seller
       cooperation. 0-2 = bare claims, 5 = some specifics, 8+ = receipts/reports.
     condition: {{score, why}} evidence-based condition: leaks, warning lights,
-      tires, rust, structure, deferred work, accident history. Unknown pulls it
-      down; "runs great" is not evidence.
-    spec: {{score, why}} desirability of THIS spec for an enthusiast buyer:
-      manual, colors, options, body style, originality. 5 = ordinary.
+      tires, rust, structure, deferred work, accident history. Anchors: 2 = a
+      stated problem or visible neglect; 5 = nothing wrong stated, nothing
+      proven; 8+ ONLY with photographic or receipt evidence of specific good
+      condition (fresh tires by date, dry underside, recent major service with
+      invoices). "Runs great" is not evidence.
+    spec: {{score, why}} desirability of THIS exact specification for an
+      enthusiast buyer. Anchors: 5 = a typical example of the model; 3 or below
+      = base trim, automatic where a manual exists, unpopular colour, cheap or
+      incoherent modifications; 7 = one genuinely desirable trait named
+      (sport package, rare colour, hardtop, coupe body, extended leather,
+      documented originality); 9-10 = several such traits together. Do NOT
+      give 8 by default.
 - year (int), make, model (short, e.g. "Z3 M coupe", "GX470", "911 Carrera"),
   generation (chassis/gen code if known, e.g. "E36/8", "J120", "997.2"),
   trim, engine (short label, e.g. "S54", "4.7L V8"), engine_liters (number),

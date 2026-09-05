@@ -52,3 +52,20 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
         costs=costs, evidence=evidence, vin_history=vin_history,
         assessed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(), model=model,
     )
+
+
+def rescore_assessment(listing: dict[str, Any], profile: dict[str, Any], stored: dict[str, Any],
+                       state: dict[str, Any]) -> dict[str, Any] | None:
+    """Recompute score/verdict/costs from a stored assessment's evidence under the
+    current policy. Keeps the original model and evidence; bumps policy_version."""
+    try:
+        evidence = EvidenceInterpretation.model_validate(stored.get("evidence") or {})
+    except Exception:
+        return None
+    vh = stored.get("vin_history") or {}
+    a = assess(listing, profile, evidence, state, vin_history=vh, comps_median=None,
+               mission=stored.get("mission"), model=stored.get("model", ""))
+    d = a.model_dump()
+    d["assessed_at"] = stored.get("assessed_at", d["assessed_at"])
+    d["rescored_from"] = stored.get("policy_version")
+    return d
