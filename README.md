@@ -119,7 +119,8 @@ Asking prices are never described as sale prices.
 |---|---|---|---|
 | Normalize: facts, profile pick, quick read, red flags, prelim scores | `SCOUT_MODEL_FAST` (Haiku) | every new/changed listing, comps included | ~$0.01 |
 | Profile generation for an unknown make/model/generation | `SCOUT_MODEL_DEEP` (Opus) | once per new model, marked *unverified* | ~$0.30 |
-| Deep assessment: evidence interpretation for the policy engine (facts, provenance, critical evidence, flags, ratings, questions, PPI focus) | `SCOUT_MODEL_DEEP` (Opus) | only when you click | ~$0.50–1.50 |
+| Full assessment: evidence interpretation for the policy engine (facts, provenance, critical evidence, flags, ratings, questions, PPI focus), with up to 12 photos | `SCOUT_MODEL_DEEP` (Opus) | only when you click | ~$1 |
+| Quick assessment: identical prompt and photos on the mid tier, for triage across the board | `SCOUT_MODEL_MID` (Sonnet) | only when you click, or "quick-assess all" | ~$0.30 |
 
 Every model response passes through `scout/coerce.py` before it is stored. Raw responses are
 written to `data/last_*.log` for debugging.

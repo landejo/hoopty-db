@@ -89,5 +89,6 @@ def normalize_listing(raw_text: str, hints: dict[str, Any], site: str,
         if v not in (None, "", [], {}):
             hint_lines.append(f"{k.upper()}: {v}")
     user = "\n".join(hint_lines) + "\n\nLISTING TEXT:\n" + (raw_text or "")[:40_000]
-    text = call_text(CONFIG.model_fast, system, user, max_tokens=6000, log_name="last_normalize")
+    text = call_text(CONFIG.model_fast, system, user, max_tokens=6000, log_name="last_normalize",
+                     effort="low" if not CONFIG.model_fast.startswith("claude-haiku") else None)
     return coerce.normalized_listing(coerce.parse_json(text))
