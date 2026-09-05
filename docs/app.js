@@ -499,11 +499,13 @@
         <span class="k">${esc(C.price_basis.replace("_", " "))}</span><span class="mono">${money(C.price)}</span>
         <span class="k">Buyer fee</span><span class="mono">${money(C.buyer_fee)}</span>
         <span class="k">Transport / travel</span><span class="mono">${money(C.transport)}</span>
-        <span class="k">Immediate work</span><span class="mono">${money(C.immediate_service_low)}–${money(C.immediate_service_high)}</span>
-        <span class="k">Overdue allowance</span><span class="mono">${money(C.overdue_allowance)}</span>
-        <span class="k">Risk reserve</span><span class="mono">${money(C.risk_reserve)}</span>
         <span class="k">Tax &amp; registration</span><span class="mono">${money(C.tax_and_registration)}</span>
+        ${C.known_work_high ? `<span class="k" title="${esc((C.known_work_items || []).join(", "))}">Known repairs (this car)</span><span class="mono">${money(C.known_work_low)}–${money(C.known_work_high)}</span>` : `<span class="k">Known repairs (this car)</span><span class="mono muted">none established</span>`}
         <span class="k"><b>All-in</b></span><span class="mono"><b>${money(C.all_in_low)}–${money(C.all_in_high)}</b></span>
+        <span class="k muted">Not counted · likely catch-up</span><span class="mono muted">${money(C.immediate_service_low)}–${money(C.immediate_service_high)}</span>
+        <span class="k muted">Not counted · overdue allowance</span><span class="mono muted">${money(C.overdue_allowance)}</span>
+        <span class="k muted">Not counted · risk reserve</span><span class="mono muted">${money(C.risk_reserve)}</span>
+        ${C.with_catchup_high ? `<span class="k muted">If all of that lands</span><span class="mono muted">${money(C.with_catchup_low)}–${money(C.with_catchup_high)}</span>` : ""}
         <span class="k">Recommended offer</span><span class="mono">${money(C.offer_low)}–${money(C.offer_high)}</span>
         <span class="k"><b>Maximum price / hammer</b></span><span class="mono"><b>${money(C.max_price)}</b></span></div>
         ${C.notes?.length ? `<ul class="list small" style="margin-top:8px">${C.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}</div>`));

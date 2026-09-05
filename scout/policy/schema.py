@@ -213,7 +213,9 @@ class EvidenceInterpretation(Trimmed):
     flags: Flags = Field(default_factory=Flags)
     ratings: Ratings
     evidence_quality: int = Field(ge=0, le=10, description="How much of the key evidence is verifiable")
-    immediate_service_estimate: MoneyRange
+    immediate_service_estimate: MoneyRange                       # likely catch-up for a typical example (generic)
+    known_work_estimate: MoneyRange | None = None                 # work THIS listing establishes as needed (stated / visible)
+    known_work_items: list[str] = Field(default_factory=list, max_length=10)
     expected_hammer: MoneyRange | None = None
     positives: list[str] = Field(default_factory=list, max_length=8)
     concerns: list[str] = Field(default_factory=list, max_length=8)
@@ -350,13 +352,18 @@ class CostBreakdown(BaseModel):
     price: int
     buyer_fee: int
     transport: int
-    immediate_service_low: int
+    known_work_low: int = 0              # counted: work this listing establishes as needed
+    known_work_high: int = 0
+    known_work_items: list[str] = Field(default_factory=list)
+    immediate_service_low: int           # NOT counted: likely catch-up for a typical example
     immediate_service_high: int
-    overdue_allowance: int
-    risk_reserve: int
+    overdue_allowance: int               # NOT counted
+    risk_reserve: int                    # NOT counted
     tax_and_registration: int
-    all_in_low: int
+    all_in_low: int                      # price + fee + transport + tax/reg + known work
     all_in_high: int
+    with_catchup_low: int = 0            # informational: all-in + likely catch-up + overdue + reserve
+    with_catchup_high: int = 0
     max_price: int                       # max hammer / walk-away, solved backward
     offer_low: int
     offer_high: int

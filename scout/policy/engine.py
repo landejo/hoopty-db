@@ -30,7 +30,7 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
     costs = compute_costs(listing, profile, evidence, gates, state, comps_median)
     cap = (state.get("budget") or {}).get("defeats_purpose_all_in")
     if cap and mission in {"enthusiast_bridge", "pragmatic_bridge"} and costs.all_in_high > cap >= (costs.all_in_low + costs.all_in_high) // 2:
-        costs.notes.append(f"High end of the all-in range (${costs.all_in_high:,}) is above the bridge ceiling ${cap:,}; the midpoint is under it. The PPI decides.")
+        costs.notes.append(f"High end of the all-in range (${costs.all_in_high:,}, with known work) is above the bridge ceiling ${cap:,}; the midpoint is under it.")
     # Price ceiling anchors to the last documented price when the car was
     # recently resold/relisted at a markup (guide: transaction costs are not
     # improvements; only documented post-sale work moves the ceiling).

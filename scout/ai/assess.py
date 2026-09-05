@@ -96,7 +96,17 @@ FRAMING RULES:
   Rate emotional_spec_fit for color, spec, body style, character.
 - evidence_quality: 0-10, how much of the KEY evidence is verifiable from
   receipts, photos, reports, or inspection (not seller prose).
-- immediate_service_estimate: {{low, high}} USD for known/likely first-30-day work.
+- immediate_service_estimate: {{low, high}} USD: LIKELY first-30-day catch-up for a
+  typical example of this model at this age/mileage (fluids, tires by date,
+  cooling plastics, bushings). Planning figure; not counted in the all-in.
+- known_work_estimate: {{low, high}} USD: KNOWN REPAIRS, i.e. work this listing
+  itself establishes as needed on this car: a stated fault, a visible defect
+  in the photos, a disclosed warning light, tires with date codes older than
+  about six years or described as old (they must be replaced), a documented
+  open recall, a disclosed leak. null when nothing specific is established.
+  This IS counted in the all-in and in the maximum price.
+- known_work_items: short strings naming each item behind known_work_estimate
+  (e.g. "four tires, 2018 date codes", "rear main seal leak disclosed").
 - expected_hammer: {{low, high}} USD for an AUCTION only, or null.
 - positives: 3-6 strings, most important first.
 - concerns: 3-6 strings, most important first (model weak points the listing
