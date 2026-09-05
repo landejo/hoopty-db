@@ -33,10 +33,12 @@ Return ONE JSON object:
 - checks: 8-16 objects {{key: snake_case, label: short inspection item}}
   covering the weak points (these become a PPI checklist)
 - dealbreaker_rules: 2-6 short rules (e.g. "Salvage title", "Automatic")
-- critical_evidence: 1-5 objects {{key: snake_case, label, severity: hard|conditional}}
-  for the model-specific evidence a buyer must see before purchase. "hard"
-  ONLY for catastrophic engine/structure risks where no evidence means no
-  purchase (e.g. a Porsche M97 borescope); otherwise "conditional".
+- critical_evidence: 1-5 objects {{key: snake_case, label, severity: "conditional"}}
+  for the model-specific EVIDENCE a buyer should obtain before purchase:
+  receipts, photos of a specific area, scan or test results. Evidence only:
+  not wish lists (books, tool kits, original wheels) and not "unmodified".
+  Severity is always "conditional"; the buyer promotes an item to a hard gate
+  by hand when a model has a genuine no-evidence-no-purchase risk.
 - mission_default: one of enthusiast_bridge, pragmatic_bridge, future_keeper,
   utility_capability (SUVs/trucks -> utility_capability; expensive collector
   specs -> future_keeper; manual compact fun cars -> enthusiast_bridge)

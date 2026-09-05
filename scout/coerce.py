@@ -249,7 +249,7 @@ def profile(data: dict[str, Any]) -> dict[str, Any] | None:
             continue
         ck = re.sub(r"[^a-z0-9_]", "", str(c.get("key") or "").lower().replace(" ", "_"))
         lbl = str(c.get("label") or "").strip()[:200]
-        sev = "hard" if str(c.get("severity") or "").lower() == "hard" else "conditional"
+        sev = "conditional"  # generated profiles never declare hard gates; promote by editing the YAML deliberately
         if ck and lbl and ck not in seen_c:
             seen_c.add(ck)
             crit.append({"key": ck, "label": lbl, "severity": sev})
