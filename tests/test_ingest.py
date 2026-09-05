@@ -152,3 +152,31 @@ def test_auto_mission_follows_profile_until_user_sets_it(monkeypatch):
     db.update_listing(row["id"], {"mission": "pragmatic_bridge", "mission_user_set": 1})
     ing.ingest_items("carscom", [_item(url, text="changed " * 200)], run_ai=True)
     assert db.get_listing_by_url(url)["mission"] == "pragmatic_bridge"
+
+
+def test_removed_listing_page_is_not_a_kayak(monkeypatch):
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    import scout.ai.normalize as nz
+    monkeypatch.setattr("scout.vin.decode_vin", lambda *a, **k: None)
+    url = "https://www.cargurus.com/details/77"
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": True, "year": 2000, "make": "BMW", "model": "M roadster", "profile_key": "z3_m"})
+    ing.ingest_items("cargurus", [dict(_item(url, title="2000 BMW M 61,132 mi"), sold=True)], run_ai=True)
+    assert db.get_listing_by_url(url)["role"] == "comp"
+    # later the page is gone and the reader says skip: still a car, still a comp
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": False, "profile_key": "skip", "prelim_summary": "listing removed"})
+    ing.ingest_items("cargurus", [dict(_item(url, title="2000 BMW M 61,132 mi", text="This listing has been removed " * 20), sold=True)], run_ai=True)
+    assert db.get_listing_by_url(url)["role"] == "comp"
+
+
+def test_title_without_a_year_is_rebuilt(monkeypatch):
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    import scout.ai.normalize as nz
+    monkeypatch.setattr("scout.vin.decode_vin", lambda *a, **k: None)
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": True, "year": 1998, "make": "BMW", "model": "M roadster", "trim": "S52", "profile_key": "z3_m"})
+    url = "https://www.cargurus.com/details/88"
+    ing.ingest_items("cargurus", [_item(url, title="Price drop -$5,000")], run_ai=True)
+    assert db.get_listing_by_url(url)["title"] == "1998 BMW M roadster S52"
