@@ -42,7 +42,7 @@ def call_text(model: str, system: str, user, max_tokens: int, log_name: str,
         system=system_blocks,
         messages=[{"role": "user", "content": user}],
     )
-    if effort:
+    if effort and not model.startswith("claude-haiku"):
         kwargs["output_config"] = {"effort": effort}
     with client.messages.stream(**kwargs) as stream:
         msg = stream.get_final_message()

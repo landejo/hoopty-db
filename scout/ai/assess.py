@@ -163,7 +163,7 @@ def _fmt_row(r: dict[str, Any]) -> str:
 
 def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission: str, state: dict[str, Any],
                       vin_history: dict[str, Any], snapshots: list[dict[str, Any]],
-                      peers: list[dict[str, Any]], comps: list[dict[str, Any]]) -> EvidenceInterpretation:
+                      peers: list[dict[str, Any]], comps: list[dict[str, Any]], model: str | None = None) -> EvidenceInterpretation:
     critical = "\n".join(f"  - {c['key']}: {c.get('label', c['key'])} [{c.get('severity', 'conditional')}]"
                          for c in profile.get("critical_evidence") or []) or "  (none defined for this model)"
     state_view = {k: state.get(k) for k in ("urgency_mode", "budget", "current_vehicles", "active_exclusions", "deprioritized", "home_location", "travel")}
@@ -196,7 +196,7 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
         f"FULL LISTING TEXT:\n{(listing.get('raw_text') or '')[:60_000]}"
     )
     user = photos + [{"type": "text", "text": user_text}] if photos else user_text
-    text = call_json_text(CONFIG.model_deep, system, user, max_tokens=32000, log_name="last_assess", effort="high")
+    text = call_json_text(model or CONFIG.model_deep, system, user, max_tokens=32000, log_name="last_assess", effort="high")
     data = coerce.parse_json(text)
     try:
         return EvidenceInterpretation.model_validate(data)

@@ -80,6 +80,7 @@
     const i = pool.findIndex((x) => x.id === l.id);
     return i < 0 ? null : { rank: i + 1, of: pool.length };
   }
+  function modelTag(a) { const m = (a && a.model) || ""; return /opus/.test(m) ? "Opus" : /sonnet/.test(m) ? "Sonnet" : /haiku/.test(m) ? "Haiku" : m ? m.split("-")[1] : ""; }
   function badge(l) {
     const s = scoreOf(l);
     if (s != null) return `<span class="badge ${s >= 75 ? "hi" : s >= 60 ? "mid" : "lo"}" title="Score /100 · policy ${esc(l.assessment.policy_version)}">${s}</span>`;
@@ -292,7 +293,7 @@
           <div class="meta"><span class="mono">${l.mileage ? num(l.mileage) + " mi" : "— mi"}</span><span>${esc(l.location || "—")}</span><span>${listedAge(l)}</span>${l.transmission ? `<span>${esc(l.transmission)}</span>` : ""}</div>
           ${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
           <div class="foot">
-            <div class="row" style="gap:6px">${l.assessment ? `<span class="chip teal" title="Opus assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}">✓ assessed</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${v ? `<span class="chip ${verdictTone(v)}">${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
+            <div class="row" style="gap:6px">${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}">✓ ${esc(modelTag(l.assessment) || "assessed")}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${v ? `<span class="chip ${verdictTone(v)}">${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
             <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label><span class="pill-status">${esc(l.status || "New")}</span></span>
           </div>
         </div>
@@ -305,7 +306,7 @@
   function tableView(rows) {
     const cols = [["", (l) => badge(l)], ["Listing", (l) => `<a href="#/l/${l.id}">${esc(title(l))}</a>`], ["Price", (l) => `<span class="mono">${money(l.sold_price || l.price)}</span>`],
       ["Miles", (l) => `<span class="mono">${num(l.mileage)}</span>`], ["Year", (l) => l.year ?? "—"], ["Trans.", (l) => esc(l.transmission || "—")], ["Location", (l) => esc(l.location || "—")],
-      ["Site", (l) => siteChip(l.site)], ["Listed", (l) => listedAge(l)], ["Assessed", (l) => l.assessment ? `<span class="chip teal">✓ ${ago(l.assessment.assessed_at)}</span>` : `<span class="muted small">preliminary</span>`], ["Verdict", (l) => esc(verdictOf(l) || "—")], ["Mission", (l) => esc(missionLabel(l.mission))], ["Status", (l) => esc(l.status || "New")]];
+      ["Site", (l) => siteChip(l.site)], ["Listed", (l) => listedAge(l)], ["Assessed", (l) => l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}">✓ ${esc(modelTag(l.assessment))} · ${ago(l.assessment.assessed_at)}</span>` : `<span class="muted small">preliminary</span>`], ["Verdict", (l) => esc(verdictOf(l) || "—")], ["Mission", (l) => esc(missionLabel(l.mission))], ["Status", (l) => esc(l.status || "New")]];
     return h(`<div class="tablewrap"><table class="data"><thead><tr>${cols.map(([c]) => `<th>${c}</th>`).join("")}</tr></thead>
       <tbody>${rows.map((l) => `<tr>${cols.map(([, f]) => `<td>${f(l)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
   }
@@ -352,7 +353,7 @@
           <div><div class="price">${money(l.sold_price || l.price)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
           ${S ? `<div class="dial" style="--pct:${S.total}"><span>${S.total}</span><small>/100</small></div>`
               : prelimOf(l) != null ? `<div class="dial prelim" style="--pct:${Math.round(calibrated(l))}"><span>${state.data.calibration?.offset != null ? "≈" : ""}${Math.round(calibrated(l))}</span><small>prelim</small></div>` : ""}
-          ${A ? `<div><div class="verdict ${esc(A.verdict.split(" ")[0])}">${esc(A.verdict)}</div><div class="muted small">confidence ${A.confidence}/100 · policy ${esc(A.policy_version)}</div></div>`
+          ${A ? `<div><div class="verdict ${esc(A.verdict.split(" ")[0])}">${esc(A.verdict)}</div><div class="muted small">${esc(modelTag(A))} · confidence ${A.confidence}/100 · policy ${esc(A.policy_version)}</div></div>`
               : `<div><div class="verdict" style="color:var(--muted)">Not assessed</div><div class="muted small">${(() => { const r = rankOf(l); return r ? `#${r.rank} of ${r.of} in profile · ` : ""; })()}preliminary read only</div></div>`}
         </div>
       </div>
@@ -427,7 +428,7 @@
     // ----- side -----
     if (state.local) {
       const act = h(`<div class="panel"><h3>Actions</h3>
-        <div class="row"><button class="btn primary" id="analyze">${A ? "Re-assess" : "Assess"} <span class="muted small" style="color:inherit;opacity:.8">Opus · ~$0.50–1.50</span></button><button class="btn sm ghost" id="renorm" title="Re-run sync-time normalization">Re-normalize</button></div>
+        <div class="row"><button class="btn primary" id="analyze">${A ? "Re-assess" : "Assess"} <span class="muted small" style="color:inherit;opacity:.8">Opus · ~$1</span></button><button class="btn" id="analyze-quick" title="Same prompt and photos on Sonnet: triage tier">Quick assess <span class="muted small">Sonnet · ~30¢</span></button><button class="btn sm ghost" id="renorm" title="Re-run sync-time normalization">Re-normalize</button></div>
         <div class="row" style="margin-top:8px"><button class="btn sm warm" id="investigate" title="Queue a same-car search; the extension runs it in your browser">${P ? "Re-investigate provenance" : "Investigate provenance"}</button><span class="muted small" id="inv-status"></span></div>
         <label style="display:block;margin-top:10px">Mission <select id="mission">${MISSIONS.map((m) => `<option value="${m}" ${l.mission === m ? "selected" : ""}>${missionLabel(m)}</option>`).join("")}</select> <span class="muted small">pragmatic bridge lifts the manual gate</span></label>
         <div class="row" style="margin-top:10px"><label>Status <select id="status">${STATUSES.map((s) => `<option ${l.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
@@ -438,11 +439,13 @@
         <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn sm ghost" id="delete" title="Remove this listing and its history from the workbench">Delete listing</button></div></div>`);
       side.appendChild(act);
       if (l.last_error) side.appendChild(h(`<div class="panel accent-rose"><h3>Last run failed <span class="muted small">${ago(l.last_error.ts)}</span></h3><p class="small" style="margin:0">${esc(l.last_error.kind.replace("_", " "))}: ${esc(l.last_error.detail)}</p><p class="muted small" style="margin:6px 0 0">The paid call completed but its answer was rejected. This class of failure is now retried and trimmed automatically; run it again.</p></div>`));
-      $("#analyze", act).onclick = async (e) => {
-        e.target.disabled = true; e.target.textContent = "Assessing… (30–90s)";
-        try { await api(`/api/listings/${l.id}/assess`, "POST"); await loadData(); route(); toast("Assessment stored"); }
-        catch (err) { toast("Assessment failed: " + err.message, 6000); e.target.disabled = false; e.target.textContent = "Assess"; }
+      const runAssess = (tier) => async (e) => {
+        const btn = e.currentTarget; btn.disabled = true; btn.textContent = "Assessing… (30–120s)";
+        try { await api(`/api/listings/${l.id}/assess?tier=${tier}`, "POST"); await loadData(); route(); toast("Assessment stored"); }
+        catch (err) { toast("Assessment failed: " + err.message, 6000); btn.disabled = false; btn.textContent = tier === "quick" ? "Quick assess" : "Assess"; }
       };
+      $("#analyze", act).onclick = runAssess("full");
+      $("#analyze-quick", act).onclick = runAssess("quick");
       $("#investigate", act).onclick = async (e) => {
         e.target.disabled = true;
         try { await api(`/api/listings/${l.id}/provenance/queue`, "POST"); $("#inv-status", act).textContent = "Queued. Open the Hoopty Scout extension popup and click Run."; toast("Investigation queued"); }
@@ -569,10 +572,11 @@
     if (!state.local) return app.appendChild(h(`<div class="empty"><h2>Local only</h2><p>Edit policy state on the local workbench. Published policy version: ${esc(state.data.policy_version || "—")}</p></div>`));
     let cfg;
     try { cfg = await api("/api/settings"); } catch (e) { return app.appendChild(h(`<div class="empty"><h2>${esc(e.message)}</h2></div>`)); }
-    const tools = h(`<div class="panel"><h3>Scores</h3><div class="row"><button class="btn sm" id="rescore">Recompute preliminary scores (free)</button><button class="btn sm warm" id="renorm-missing">Re-normalize listings missing ratings (Haiku, ~1¢ each)</button><button class="btn sm ghost" id="renorm-all">Re-normalize everything</button><span class="muted small" id="tool-status"></span></div><p class="muted small" style="margin:8px 0 0">Preliminary scores use the guide's 100-point rubric: documentation 30, condition 25, price/value 15, mission fit 15, logistics 10, spec 5. Price, budget, transmission and location are computed; documentation, condition and spec come from the fast model's read of the listing.</p></div>`);
+    const tools = h(`<div class="panel"><h3>Scores</h3><div class="row"><button class="btn sm warm" id="assess-all">Quick-assess all unassessed active candidates (Sonnet, ~30¢ each)</button></div><div class="row" style="margin-top:8px"><button class="btn sm" id="rescore">Recompute preliminary scores (free)</button><button class="btn sm warm" id="renorm-missing">Re-normalize listings missing ratings (Haiku, ~1¢ each)</button><button class="btn sm ghost" id="renorm-all">Re-normalize everything</button><span class="muted small" id="tool-status"></span></div><p class="muted small" style="margin:8px 0 0">Preliminary scores use the guide's 100-point rubric: documentation 30, condition 25, price/value 15, mission fit 15, logistics 10, spec 5. Price, budget, transmission and location are computed; documentation, condition and spec come from the fast model's read of the listing.</p></div>`);
     app.appendChild(tools);
     const run = async (path, label, q = "") => { $("#tool-status", tools).textContent = label + "…"; try { const r = await api(path + q, "POST"); $("#tool-status", tools).textContent = JSON.stringify(r).slice(0, 200); await loadData(); } catch (e) { $("#tool-status", tools).textContent = e.message; } };
     $("#rescore", tools).onclick = () => run("/api/rescore", "Rescoring");
+    $("#assess-all", tools).onclick = () => { const n = state.data.listings.filter((l) => l.role === "candidate" && l.availability === "active" && l.profile_key && !l.assessment).length; if (!n) return toast("Nothing unassessed"); if (confirm(`Quick-assess ${n} listing(s) on Sonnet, roughly $${(n * 0.3).toFixed(2)}? This runs one at a time and can take ${Math.ceil(n * 1.2)} minutes.`)) run("/api/assess-all", `Quick-assessing ${n} listing(s)`, "?tier=quick"); };
     $("#renorm-missing", tools).onclick = () => run("/api/renormalize-all", "Re-normalizing (this can take a few minutes)");
     $("#renorm-all", tools).onclick = () => { if (confirm("Re-run the fast model on every listing?")) run("/api/renormalize-all", "Re-normalizing everything", "?only_missing_ratings=false"); };
     const panel = h(`<div class="panel"><div class="row" style="justify-content:space-between"><h3>Policy ${esc(cfg.policy_version)}</h3><div class="row"><button class="btn sm" id="save">Save</button><button class="btn sm ghost" id="reset">Reset to defaults</button></div></div>

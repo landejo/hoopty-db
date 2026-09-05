@@ -43,7 +43,7 @@ def _startup() -> None:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "ai": CONFIG.ai_enabled, "models": {"deep": CONFIG.model_deep, "fast": CONFIG.model_fast},
+    return {"ok": True, "ai": CONFIG.ai_enabled, "models": {"deep": CONFIG.model_deep, "mid": CONFIG.model_mid, "fast": CONFIG.model_fast},
             "skip_sold": CONFIG.skip_sold, "policy_version": POLICY_VERSION}
 
 
@@ -134,7 +134,7 @@ def delete_listing(listing_id: int) -> dict[str, Any]:
 
 @app.post("/api/listings/{listing_id}/assess")
 @app.post("/api/listings/{listing_id}/analyze")  # back-compat alias
-async def assess_listing(listing_id: int) -> dict[str, Any]:
+async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     """Deep assessment: the model interprets evidence; the policy engine gates,
     scores, costs, and decides. Stored with the policy version."""
     row = db.get_listing(listing_id)
@@ -167,9 +167,10 @@ async def assess_listing(listing_id: int) -> dict[str, Any]:
     history["vin_decode"] = decoded and {k: decoded.get(k) for k in ("year", "make", "model", "series", "trim", "engine_liters", "cylinders", "body_class")}
     history["vin_decode_contradictions"] = compare_decode(decoded, row)
     history["recalls"] = (decoded or {}).get("recalls") or []
+    model = CONFIG.model_mid if tier == "quick" else CONFIG.model_deep
     async with _ai_lock:
         try:
-            evidence = await asyncio.to_thread(interpret_listing, row, prof, mission, state, history, snaps, peers, comps)
+            evidence = await asyncio.to_thread(interpret_listing, row, prof, mission, state, history, snaps, peers, comps, model)
         except Exception as e:
             db.log_event("assess_error", listing_id, str(e))
             raise HTTPException(500, f"assessment failed: {e}")
@@ -179,12 +180,28 @@ async def assess_listing(listing_id: int) -> dict[str, Any]:
     for c in history["vin_decode_contradictions"]:
         evidence.contradictions.append(Contradiction(**c))
     result = assess(row, prof, evidence, state, vin_history=history, comps_median=comps_median,
-                    mission=mission, model=CONFIG.model_deep)
+                    mission=mission, model=model)
     data = result.model_dump()
     db.add_assessment(listing_id, data)
-    db.update_listing(listing_id, {"analyzed_at": db.now(), "analysis_model": CONFIG.model_deep, "mission": mission})
+    db.update_listing(listing_id, {"analyzed_at": db.now(), "analysis_model": model, "mission": mission})
     db.log_event("assessed", listing_id, f"{result.verdict} {result.score.total}/100 c{result.confidence}")
     return {"ok": True, "assessment": data}
+
+
+@app.post("/api/assess-all")
+async def assess_all(tier: str = "quick", only_unassessed: bool = True) -> dict[str, Any]:
+    """Assess every active candidate (quick tier by default). Serial, so it can take a while."""
+    rows = [r for r in db.list_listings(role="candidate") if r["availability"] == "active" and r.get("profile_key")]
+    if only_unassessed:
+        rows = [r for r in rows if not db.latest_assessment(r["id"])]
+    done, errors = 0, []
+    for r in rows:
+        try:
+            await assess_listing(r["id"], tier=tier)
+            done += 1
+        except HTTPException as e:
+            errors.append(f"{r.get('title')}: {e.detail}")
+    return {"ok": True, "assessed": done, "errors": errors[:10], "tier": tier}
 
 
 @app.get("/api/listings/{listing_id}/assessments")
