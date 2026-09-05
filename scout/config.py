@@ -57,7 +57,7 @@ SITES = {
 }
 AUCTION_SITES = {"carsandbids", "bat"}
 
-AVAILABILITY = ["active", "sold", "ended", "removed", "withdrawn", "unknown"]
+AVAILABILITY = ["active", "pending", "sold", "ended", "removed", "withdrawn", "unknown"]
 ROLES = ["candidate", "comp"]
 
 STATUSES = [

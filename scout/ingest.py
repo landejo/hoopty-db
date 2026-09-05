@@ -20,6 +20,7 @@ def is_blocked(detail: dict) -> bool:
 
 
 SOLD_RE = re.compile(r"\b(sold|sold for|no longer available|this listing has ended|listing ended)\b", re.I)
+PENDING_RE = re.compile(r"\b(pending|sale pending|deposit taken|deposit received|on hold)\b", re.I)
 ENDED_RE = re.compile(r"\b(bid to|reserve not met|auction ended|ended)\b", re.I)
 PRICE_RE = re.compile(r"\$\s?([\d,]{3,})")
 
@@ -34,6 +35,8 @@ def detect_availability(item: dict[str, Any], site: str) -> str:
             (item.get("detail", {}) or {}).get("status_text", "")).strip()
     if SOLD_RE.search(head):
         return "sold"
+    if item.get("pending") is True or PENDING_RE.search(head):
+        return "pending"
     if site in AUCTION_SITES and ENDED_RE.search(head):
         return "ended"
     return "active"
@@ -167,6 +170,8 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     if norm.get("availability") in {"sold", "ended"} and scraper_availability == "active":
         updates["availability"] = norm["availability"]
         updates["role"] = "comp"
+    elif norm.get("availability") == "pending" and scraper_availability == "active":
+        updates["availability"] = "pending"
     updates["normalized"] = {k: norm.get(k) for k in ("highlights", "red_flags", "prelim_summary", "prelim_scores", "profile_confidence", "price_drops", "days_listed", "ratings")}
     if norm.get("is_vehicle") is False or norm.get("profile_key") == "skip":
         updates["role"] = "ignored"

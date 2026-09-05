@@ -147,7 +147,7 @@ def normalized_listing(data: dict[str, Any]) -> dict[str, Any]:
     d = str(data.get("listing_date") or "").strip()
     out["listing_date"] = d if DATE_RE.match(d) else None
     av = str(data.get("availability") or "").strip().lower()
-    out["availability"] = av if av in {"active", "sold", "ended", "removed"} else None
+    out["availability"] = av if av in {"active", "pending", "sold", "ended", "removed"} else None
     pk = str(data.get("price_kind") or "").strip().lower()
     out["price_kind"] = pk if pk in {"asking", "current_bid", "sold", "reserve_not_met", "no_reserve"} else None
     out["sold_price"] = to_int(data.get("sold_price"), *PRICE_RANGE)

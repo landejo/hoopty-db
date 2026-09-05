@@ -113,7 +113,7 @@
     if (p != null) { const c = calibrated(l), off = state.data.calibration?.offset; return `<span class="badge prelim ${c >= 75 ? "hi" : c >= 60 ? "mid" : "lo"}" title="Preliminary ${Math.round(p)}/100 (not yet assessed). ${off != null ? `Assessed scores have landed ${off >= 0 ? "+" : ""}${off} from preliminary on average over ${state.data.calibration.samples} cars; sorting uses ≈${Math.round(c)}.` : "Preliminary scores run optimistic: expect the assessment to land lower."}">${off != null ? "≈" : ""}${Math.round(off != null ? c : p)}</span>`; }
     return `<span class="badge none">n/a</span>`;
   }
-  function availChip(a) { const c = { active: "olive", sold: "rose", ended: "walnut", removed: "slate", withdrawn: "rose" }[a] || ""; return `<span class="chip ${c === "walnut" ? "mustard" : c}">${esc(a)}</span>`; }
+  function availChip(a) { const c = { active: "olive", pending: "mustard", sold: "rose", ended: "walnut", removed: "slate", withdrawn: "rose" }[a] || ""; return `<span class="chip ${c === "walnut" ? "mustard" : c}">${esc(a)}</span>`; }
   function title(l) { return l.title || [l.year, l.make, l.model, l.trim].filter(Boolean).join(" ") || "Untitled listing"; }
   function photo(l) { return (l.photos && l.photos[0]) || l.thumb || null; }
   function profileLabel(k) { return state.profiles.get(k)?.label || k || "unprofiled"; }
@@ -207,7 +207,7 @@
         <span class="seg" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span>
         <span class="chips" id="f-profiles" title="Click to toggle · Option-click for only this one"><button data-k="" class="${f.profiles.length ? "" : "on"}">All</button>${profileChips(f)}</span>
         <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
-        <select id="f-avail"><option value="">Any availability</option>${["active", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
+        <select id="f-avail"><option value="">Any availability</option>${["active", "pending", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
         <span class="chips" id="f-statuses" title="Click: show only · click again: hide · third click: clear"></span>
         <select id="f-sort">${[["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]].map(([k, v]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${v}</option>`).join("")}</select>
         <label><input type="checkbox" id="f-analyzed" ${f.analyzed ? "checked" : ""}> analyzed only</label>
