@@ -8,10 +8,10 @@
   const num = (n) => (n == null ? "—" : Number(n).toLocaleString());
   const STATUSES = ["New", "Pursue", "Verify", "Contacted", "PPI Scheduled", "Offer Made", "Pass", "Purchased"];
 
-  const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "score", role: "candidate", view: "cards", max_price: "", max_mileage: "", max_age: "" }),
+  const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "score", role: "candidate", view: "cards", max_price: "", max_mileage: "", max_age: "", statuses: {} }),
                   q: "", compare: load("compare", []), theme: load("theme", null) };
 
-  function load(k, d) { try { const v = localStorage.getItem("scout." + k); const out = v ? JSON.parse(v) : d; if (k === "filters" && out && !Array.isArray(out.profiles)) out.profiles = out.profile ? [out.profile] : []; return out; } catch (e) { return d; } }
+  function load(k, d) { try { const v = localStorage.getItem("scout." + k); const out = v ? JSON.parse(v) : d; if (k === "filters" && out && !Array.isArray(out.profiles)) out.profiles = out.profile ? [out.profile] : []; if (k === "filters" && out && typeof out.statuses !== "object") out.statuses = out.status ? { [out.status]: "include" } : {}; return out; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem("scout." + k, JSON.stringify(v)); } catch (e) {} }
 
   // ---------- theme ----------
@@ -119,7 +119,9 @@
       if (f.profiles.length && !f.profiles.includes(l.profile_key || "__none__")) return false;
       if (f.site && l.site !== f.site) return false;
       if (f.avail && l.availability !== f.avail) return false;
-      if (f.status && l.status !== f.status) return false;
+      const st = l.status || "New", inc = Object.keys(f.statuses || {}).filter((k) => f.statuses[k] === "include");
+      if (inc.length && !inc.includes(st)) return false;
+      if ((f.statuses || {})[st] === "exclude") return false;
       if (f.analyzed && !l.assessment) return false;
       const px = l.sold_price || l.price;
       if (f.max_price && px && px > Number(f.max_price)) return false;
@@ -180,7 +182,7 @@
         <span class="chips" id="f-profiles" title="Click to toggle · Option-click for only this one"><button data-k="" class="${f.profiles.length ? "" : "on"}">All</button>${profileChips(f)}</span>
         <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
         <select id="f-avail"><option value="">Any availability</option>${["active", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
-        <select id="f-status"><option value="">Any status</option>${STATUSES.map((s) => `<option ${f.status === s ? "selected" : ""}>${s}</option>`).join("")}</select>
+        <span class="chips" id="f-statuses" title="Click: show only · click again: hide · third click: clear"></span>
         <select id="f-sort">${[["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]].map(([k, v]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${v}</option>`).join("")}</select>
         <label><input type="checkbox" id="f-analyzed" ${f.analyzed ? "checked" : ""}> analyzed only</label>
         <label title="Hide listings priced above this">≤ $<input type="number" class="num" id="f-max-price" min="0" step="500" placeholder="max price" value="${esc(f.max_price)}"></label>
@@ -202,13 +204,27 @@
         rerender();
       }));
     };
-    const rerender = () => { save("filters", f); bindChips(); renderList(); };
+    const rerender = () => { save("filters", f); bindChips(); bindStatusChips(); renderList(); };
     bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp" || f.role === "ignored") f.avail = ""; if (f.role === "candidate") f.avail = f.avail || "active"; route(); }));
     bar.querySelectorAll("#view button").forEach((b) => (b.onclick = () => { f.view = b.dataset.v; route(); }));
     bindChips();
     $("#f-site", bar).onchange = (e) => { f.site = e.target.value; rerender(); };
     $("#f-avail", bar).onchange = (e) => { f.avail = e.target.value; rerender(); };
-    $("#f-status", bar).onchange = (e) => { f.status = e.target.value; rerender(); };
+    const bindStatusChips = () => {
+      const box = $("#f-statuses", bar);
+      const saved = f.statuses; f.statuses = {};
+      const counts = {}; for (const l of filtered()) { const k = l.status || "New"; counts[k] = (counts[k] || 0) + 1; }
+      f.statuses = saved;
+      const any = Object.values(f.statuses).some(Boolean);
+      box.innerHTML = `<button data-k="" class="${any ? "" : "on"}">Any</button>` + STATUSES.filter((st) => counts[st] || f.statuses[st]).map((st) => `<button data-k="${st}" class="${f.statuses[st] === "include" ? "on" : f.statuses[st] === "exclude" ? "off" : ""}">${f.statuses[st] === "exclude" ? "✕ " : ""}${st} <span class="n">${counts[st] || 0}</span></button>`).join("");
+      box.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+        const k = b.dataset.k;
+        if (!k) f.statuses = {};
+        else { const cur = f.statuses[k]; f.statuses = { ...f.statuses }; if (!cur) f.statuses[k] = "include"; else if (cur === "include") f.statuses[k] = "exclude"; else delete f.statuses[k]; }
+        rerender();
+      }));
+    };
+    bindStatusChips();
     $("#f-sort", bar).onchange = (e) => { f.sort = e.target.value; rerender(); };
     $("#f-analyzed", bar).onchange = (e) => { f.analyzed = e.target.checked; rerender(); };
     let limitTimer;

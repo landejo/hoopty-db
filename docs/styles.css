@@ -69,6 +69,8 @@ h3 { font-size: 17px; }
 .filters .chips button { border: 0; background: transparent; border-radius: 999px; padding: 4px 10px; cursor: pointer; color: var(--ink-2); font-size: 13px; white-space: nowrap; }
 .filters .chips button:hover { background: var(--bg-2); }
 .filters .chips button.on { background: var(--teal); color: #fff; }
+.filters .chips button.off { background: var(--chip-rose); color: #7A241B; text-decoration: line-through; }
+html[data-theme="dark"] .filters .chips button.off { color: #F2A99F; }
 .filters .chips button .n { font-family: var(--mono); font-size: 11px; opacity: .7; margin-left: 2px; }
 .filters input.num { width: 110px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; font-family: var(--mono); font-size: 13px; outline: none; }
 .filters input.num:focus { border-color: var(--teal); }
