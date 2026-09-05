@@ -33,6 +33,28 @@ async def _no_cache_static(request, call_next):
     return resp
 
 _ai_lock = asyncio.Lock()
+_task: dict[str, Any] = {"active": False}
+
+
+def _task_start(name: str, total: int | None = None) -> None:
+    _task.update({"active": True, "name": name, "done": 0, "total": total, "current": "", "started": db.now(), "errors": 0, "result": None})
+
+
+def _task_step(current: str = "", done: int | None = None) -> None:
+    if done is not None:
+        _task["done"] = done
+    else:
+        _task["done"] = int(_task.get("done") or 0) + 1
+    _task["current"] = current
+
+
+def _task_end(result: str = "") -> None:
+    _task.update({"active": False, "result": result, "ended": db.now()})
+
+
+@app.get("/api/task")
+def task_status() -> dict[str, Any]:
+    return _task
 
 
 @app.on_event("startup")
@@ -168,11 +190,16 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     history["vin_decode_contradictions"] = compare_decode(decoded, row)
     history["recalls"] = (decoded or {}).get("recalls") or []
     model = CONFIG.model_mid if tier == "quick" else CONFIG.model_deep
+    nested = _task.get("active") and _task.get("name", "").startswith("Quick-assessing")
+    if not nested:
+        _task_start(f"{'Quick' if tier == 'quick' else 'Full'} assessment · {row.get('title') or listing_id} · {model}", 1)
     async with _ai_lock:
         try:
             evidence = await asyncio.to_thread(interpret_listing, row, prof, mission, state, history, snaps, peers, comps, model)
         except Exception as e:
             db.log_event("assess_error", listing_id, str(e))
+            if not nested:
+                _task_end(f"failed: {e}")
             raise HTTPException(500, f"assessment failed: {e}")
     # External VIN facts + deterministic decode contradictions join the model's interpretation.
     from scout.policy.schema import Contradiction, Fact
@@ -185,6 +212,8 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     db.add_assessment(listing_id, data)
     db.update_listing(listing_id, {"analyzed_at": db.now(), "analysis_model": model, "mission": mission})
     db.log_event("assessed", listing_id, f"{result.verdict} {result.score.total}/100 c{result.confidence}")
+    if not nested:
+        _task_end(f"{result.verdict} · {result.score.total}/100")
     return {"ok": True, "assessment": data}
 
 
@@ -195,12 +224,16 @@ async def assess_all(tier: str = "quick", only_unassessed: bool = True) -> dict[
     if only_unassessed:
         rows = [r for r in rows if not db.latest_assessment(r["id"])]
     done, errors = 0, []
-    for r in rows:
+    _task_start(f"Quick-assessing {len(rows)} listing(s) · {CONFIG.model_mid if tier == 'quick' else CONFIG.model_deep}", len(rows))
+    for i, r in enumerate(rows):
+        _task_step(r.get("title") or r["url"], i)
         try:
             await assess_listing(r["id"], tier=tier)
             done += 1
         except HTTPException as e:
             errors.append(f"{r.get('title')}: {e.detail}")
+            _task["errors"] = len(errors)
+    _task_end(f"{done} assessed" + (f", {len(errors)} failed" if errors else ""))
     return {"ok": True, "assessed": done, "errors": errors[:10], "tier": tier}
 
 
@@ -308,6 +341,7 @@ async def provenance_complete(job_id: int) -> dict[str, Any]:
     interp = None
     if CONFIG.ai_enabled and hits:
         from scout.ai.provenance import interpret_hits  # lazy
+        _task_start(f"Provenance · classifying {len(hits)} hit(s) · {row.get('title') or lid}", 1)
         async with _ai_lock:
             try:
                 interp = await asyncio.to_thread(interpret_hits, row, events, hits)
@@ -344,6 +378,7 @@ async def provenance_complete(job_id: int) -> dict[str, Any]:
         db.update_listing(lid, {"availability": "withdrawn"})
     db.update_provenance_job(job_id, status="done", result={"flags": result["flags"], "available": result["current_status"]["available"]})
     db.log_event("provenance_done", lid, ", ".join(result["flags"]) or "no flags")
+    _task_end(", ".join(result["flags"]) or "no same-car flags")
     return {"ok": True, "flags": result["flags"], "available": result["current_status"]["available"], "summary": result.get("summary", "")}
 
 
@@ -373,8 +408,10 @@ async def renormalize_all(only_missing_ratings: bool = True) -> dict[str, Any]:
     rows = [r for r in db.list_listings() if r["role"] != "ignored"
             and (not only_missing_ratings or not (r.get("normalized") or {}).get("ratings"))]
     done, errors = 0, []
+    _task_start(f"Re-normalizing {len(rows)} listing(s) · {CONFIG.model_fast}", len(rows))
     async with _ai_lock:
-        for r in rows:
+        for i, r in enumerate(rows):
+            _task_step(r.get("title") or r["url"], i)
             db.update_listing(r["id"], {"normalized_at": None})
             item = {"url": r["url"], "title": r.get("title"), "price_text": f"${r['price']:,}" if r.get("price") else "",
                     "detail": {"text": r.get("raw_text") or "", "photos": r.get("photos") or []}, "sold": r["availability"] == "sold"}
@@ -384,6 +421,8 @@ async def renormalize_all(only_missing_ratings: bool = True) -> dict[str, Any]:
                 errors += st.get("errors") or []
             except Exception as e:
                 errors.append(f"{r['url']}: {e}")
+                _task["errors"] = len(errors)
+    _task_end(f"{done} re-normalized" + (f", {len(errors)} failed" if errors else ""))
     return {"ok": True, "renormalized": done, "errors": errors[:10]}
 
 

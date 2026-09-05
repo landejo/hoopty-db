@@ -199,3 +199,15 @@ details.profile { background: var(--card); border: 1px solid var(--line); border
 details.profile summary { cursor: pointer; display: flex; gap: 10px; align-items: center; font-weight: 600; list-style: none; }
 details.profile summary::-webkit-details-marker { display: none; }
 .weights { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Running-task banner */
+.taskbar { position: sticky; top: 61px; z-index: 19; background: var(--mustard); color: #1F1D1A; padding: 10px 20px; display: flex; align-items: center; gap: 14px; font-weight: 500; box-shadow: 0 6px 18px -10px rgba(0,0,0,.4); }
+.taskbar.done { background: #7FCB9F; }
+.taskbar.failed { background: #EFA68F; }
+.taskbar .spin { width: 18px; height: 18px; border: 3px solid rgba(31,29,26,.25); border-top-color: #1F1D1A; border-radius: 50%; animation: spin .9s linear infinite; flex: none; }
+.taskbar.done .spin, .taskbar.failed .spin { display: none; }
+.taskbar .bar { flex: 1; height: 8px; background: rgba(31,29,26,.18); border-radius: 999px; overflow: hidden; max-width: 320px; }
+.taskbar .bar i { display: block; height: 100%; background: #1F1D1A; transition: width .4s; }
+.taskbar .mono { color: #1F1D1A; opacity: .8; }
+@keyframes spin { to { transform: rotate(360deg); } }
+button.busy, .btn.busy { opacity: .5; pointer-events: none; }

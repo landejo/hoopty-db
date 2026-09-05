@@ -44,6 +44,31 @@
     if (!r.ok) throw new Error(j.detail || r.statusText);
     return j;
   }
+  // ---------- running-task banner (local mode) ----------
+  let taskTimer = null, taskDoneAt = 0;
+  function fmtElapsed(iso) { const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000)); return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s"; }
+  function renderTask(t) {
+    const bar = $("#taskbar");
+    if (!t || (!t.active && (!t.ended || Date.now() - new Date(t.ended).getTime() > 8000))) { bar.hidden = true; document.querySelectorAll(".btn.busy").forEach((b) => b.classList.remove("busy")); return; }
+    bar.hidden = false;
+    bar.className = "taskbar" + (t.active ? "" : /fail/i.test(t.result || "") ? " failed" : " done");
+    const pct = t.total ? Math.round((t.done / t.total) * 100) : null;
+    bar.innerHTML = `<span class="spin"></span><span>${t.active ? "Running:" : "Finished:"} ${esc(t.name || "")}</span>${t.total > 1 ? `<span class="bar"><i style="width:${pct}%"></i></span><span class="mono">${t.done}/${t.total}</span>` : ""}${t.current && t.active ? `<span class="mono">· ${esc(t.current).slice(0, 60)}</span>` : ""}<span class="mono">· ${t.active ? fmtElapsed(t.started) + " elapsed" : esc(t.result || "")}</span>${t.errors ? `<span class="mono">· ${t.errors} failed</span>` : ""}${t.active ? `<span class="mono">· wait for this to finish before starting another run</span>` : ""}`;
+    document.querySelectorAll("#app .btn").forEach((b) => { if (/assess|normalize|rescore|investigate|publish|quick/i.test(b.textContent)) b.classList.toggle("busy", !!t.active); });
+    $("#publish").classList.toggle("busy", !!t.active);
+  }
+  async function pollTask(force = false) {
+    if (!state.local) return;
+    try {
+      const t = await (await fetch("/api/task", { cache: "no-store" })).json();
+      renderTask(t);
+      const wasActive = !!taskTimer;
+      if (t.active) { if (!taskTimer) taskTimer = setInterval(() => pollTask(), 2000); }
+      else if (taskTimer) { clearInterval(taskTimer); taskTimer = null; await loadData(); route(); setTimeout(() => renderTask(null), 8000); }
+    } catch (e) {}
+  }
+  function watchTask() { pollTask(); if (!taskTimer) taskTimer = setInterval(() => pollTask(), 2000); }
+
   function toast(msg, ms = 2600) { const t = h(`<div class="toast">${esc(msg)}</div>`); document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
 
   // ---------- helpers ----------
@@ -440,7 +465,7 @@
       side.appendChild(act);
       if (l.last_error) side.appendChild(h(`<div class="panel accent-rose"><h3>Last run failed <span class="muted small">${ago(l.last_error.ts)}</span></h3><p class="small" style="margin:0">${esc(l.last_error.kind.replace("_", " "))}: ${esc(l.last_error.detail)}</p><p class="muted small" style="margin:6px 0 0">The paid call completed but its answer was rejected. This class of failure is now retried and trimmed automatically; run it again.</p></div>`));
       const runAssess = (tier) => async (e) => {
-        const btn = e.currentTarget; btn.disabled = true; btn.textContent = "Assessing… (30–120s)";
+        const btn = e.currentTarget; btn.disabled = true; btn.textContent = "Assessing… (30–120s)"; setTimeout(watchTask, 300);
         try { await api(`/api/listings/${l.id}/assess?tier=${tier}`, "POST"); await loadData(); route(); toast("Assessment stored"); }
         catch (err) { toast("Assessment failed: " + err.message, 6000); btn.disabled = false; btn.textContent = tier === "quick" ? "Quick assess" : "Assess"; }
       };
@@ -452,7 +477,7 @@
         catch (err) { toast(err.message, 4000); e.target.disabled = false; }
       };
       api(`/api/listings/${l.id}/provenance`).then((r) => { const j = (r.jobs || [])[0]; if (j && j.status !== "done") $("#inv-status", act).textContent = `Investigation ${j.status}${j.hits ? ` · ${j.hits} hits` : ""}${j.error ? ` · ${j.error}` : ""}`; }).catch(() => {});
-      $("#renorm", act).onclick = async (e) => { e.target.disabled = true; try { await api(`/api/listings/${l.id}/renormalize`, "POST"); await loadData(); route(); toast("Re-normalized"); } catch (err) { toast(err.message, 4000); e.target.disabled = false; } };
+      $("#renorm", act).onclick = async (e) => { e.target.disabled = true; setTimeout(watchTask, 300); try { await api(`/api/listings/${l.id}/renormalize`, "POST"); await loadData(); route(); toast("Re-normalized"); } catch (err) { toast(err.message, 4000); e.target.disabled = false; } };
       const patch = async (body) => { try { await api(`/api/listings/${l.id}`, "PATCH", body); Object.assign(l, body); toast("Saved"); } catch (err) { toast(err.message, 4000); } };
       $("#delete", act).onclick = async () => {
         if (!confirm(`Delete "${title(l)}" and its snapshots, assessments and provenance? A future sync will re-add it as new if it is still saved on the site.`)) return;
@@ -574,7 +599,7 @@
     try { cfg = await api("/api/settings"); } catch (e) { return app.appendChild(h(`<div class="empty"><h2>${esc(e.message)}</h2></div>`)); }
     const tools = h(`<div class="panel"><h3>Scores</h3><div class="row"><button class="btn sm warm" id="assess-all">Quick-assess all unassessed active candidates (Sonnet, ~30¢ each)</button></div><div class="row" style="margin-top:8px"><button class="btn sm" id="rescore">Recompute preliminary scores (free)</button><button class="btn sm warm" id="renorm-missing">Re-normalize listings missing ratings (Haiku, ~1¢ each)</button><button class="btn sm ghost" id="renorm-all">Re-normalize everything</button><span class="muted small" id="tool-status"></span></div><p class="muted small" style="margin:8px 0 0">Preliminary scores use the guide's 100-point rubric: documentation 30, condition 25, price/value 15, mission fit 15, logistics 10, spec 5. Price, budget, transmission and location are computed; documentation, condition and spec come from the fast model's read of the listing.</p></div>`);
     app.appendChild(tools);
-    const run = async (path, label, q = "") => { $("#tool-status", tools).textContent = label + "…"; try { const r = await api(path + q, "POST"); $("#tool-status", tools).textContent = JSON.stringify(r).slice(0, 200); await loadData(); } catch (e) { $("#tool-status", tools).textContent = e.message; } };
+    const run = async (path, label, q = "") => { $("#tool-status", tools).textContent = label + "…"; setTimeout(watchTask, 300); try { const r = await api(path + q, "POST"); $("#tool-status", tools).textContent = JSON.stringify(r).slice(0, 200); await loadData(); } catch (e) { $("#tool-status", tools).textContent = e.message; } pollTask(); };
     $("#rescore", tools).onclick = () => run("/api/rescore", "Rescoring");
     $("#assess-all", tools).onclick = () => { const n = state.data.listings.filter((l) => l.role === "candidate" && l.availability === "active" && l.profile_key && !l.assessment).length; if (!n) return toast("Nothing unassessed"); if (confirm(`Quick-assess ${n} listing(s) on Sonnet, roughly $${(n * 0.3).toFixed(2)}? This runs one at a time and can take ${Math.ceil(n * 1.2)} minutes.`)) run("/api/assess-all", `Quick-assessing ${n} listing(s)`, "?tier=quick"); };
     $("#renorm-missing", tools).onclick = () => run("/api/renormalize-all", "Re-normalizing (this can take a few minutes)");
@@ -641,5 +666,5 @@
   $("#search").oninput = (e) => { state.q = e.target.value; if ((location.hash || "#/") === "#/" || location.hash.startsWith("#/?")) { const list = $("#list"); if (list) { route(); } } else location.hash = "#/"; };
   $("#publish").onclick = async (e) => { e.target.disabled = true; e.target.textContent = "Publishing…"; try { const r = await api("/api/publish", "POST"); toast(/Everything up-to-date|nothing to commit/.test(r.git) ? "Nothing new to publish" : "Published"); } catch (err) { toast("Publish failed: " + err.message, 5000); } e.target.disabled = false; e.target.textContent = "Publish"; };
 
-  loadData().then(route).catch((e) => { $("#app").innerHTML = `<div class="empty"><h2>Could not load data</h2><p>${esc(e.message)}</p></div>`; });
+  loadData().then(() => { route(); if (state.local) watchTask(); }).catch((e) => { $("#app").innerHTML = `<div class="empty"><h2>Could not load data</h2><p>${esc(e.message)}</p></div>`; });
 })();
