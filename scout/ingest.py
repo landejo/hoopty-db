@@ -175,7 +175,8 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     updates["normalized"] = {k: norm.get(k) for k in ("highlights", "red_flags", "prelim_summary", "prelim_scores", "profile_confidence", "price_drops", "days_listed", "ratings")}
     # Only an explicit "not a vehicle" answer ignores a listing, and never one we
     # already know to be a car (a removed listing page is not a kayak).
-    known_car = bool((norm.get("year") or current_year_hint(lid)) and (norm.get("make") or norm.get("model")))
+    _row = db.get_listing(lid) or {}
+    known_car = bool((norm.get("year") or _row.get("year")) and (norm.get("make") or norm.get("model") or _row.get("make") or _row.get("model")))
     if norm.get("is_vehicle") is False and not known_car:
         updates["role"] = "ignored"
         updates["normalized"]["ignored_reason"] = "not a vehicle (normalizer)"
@@ -241,11 +242,6 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     rescore_listing(lid, state)
     from scout.provenance import link_listing_vehicle  # lazy
     link_listing_vehicle(lid)
-
-
-def current_year_hint(lid: int) -> int | None:
-    row = db.get_listing(lid)
-    return (row or {}).get("year")
 
 
 def rescore_listing(lid: int, state: dict[str, Any] | None = None) -> int | None:
