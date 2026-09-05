@@ -61,11 +61,11 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
             gates.append(Gate(kind="hard", key="identity_contradiction", reason=f"{c.topic}: {c.detail}"))
 
     # Model-critical evidence from the profile (single source: profile YAML / generated profile).
-    status_by_key = {c.key: c for c in evidence.critical_evidence}
+    # Models sometimes rename the keys they were given; match on meaning before giving up.
     for req in profile.get("critical_evidence") or []:
         if not _applies(req, listing):
             continue
-        ce = status_by_key.get(req["key"])
+        ce = match_reported(req, evidence.critical_evidence)
         st = ce.status if ce else "missing"
         if st == "satisfied":
             continue
@@ -110,6 +110,41 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
         gates.append(Gate(kind="hard", key="cost_defeats_bridge_purpose",
                           reason=f"Risk-adjusted all-in ${all_in_high:,} exceeds the bridge ceiling ${cap:,}"))
     return gates
+
+
+_GENERIC = {"records", "record", "receipts", "receipt", "photos", "photo", "inspection", "inspected", "history", "evidence",
+            "service", "documentation", "documented", "status", "condition", "check", "report", "proof", "with", "and", "the"}
+_ALIASES = {"subframe": "rear_structure", "trunk": "rear_structure", "differential": "rear_structure", "diff": "rear_structure",
+            "floor": "rear_structure", "welds": "rear_structure", "weld": "rear_structure",
+            "cooling": "cooling_history", "coolant": "cooling_history", "radiator": "cooling_history", "water_pump": "cooling_history",
+            "bearing": "s54_rod_bearings", "bearings": "s54_rod_bearings", "rod": "s54_rod_bearings",
+            "borescope": "borescope", "bore": "borescope", "scoring": "borescope", "timing": "timing_belt_water_pump", "belt": "timing_belt_water_pump",
+            "tune": "tune_status", "tuned": "tune_status", "ecu": "tune_status", "leak": "oil_leaks", "leaks": "oil_leaks", "tires": "matching_tires",
+            "tire": "matching_tires", "rust": "rust_evaluation", "underbody": "rust_evaluation", "warning": "warning_lights", "lights": "warning_lights",
+            "kdss": "kdss_status", "air_injection": "secondary_air_injection", "dme": "dme_overrev", "overrev": "dme_overrev", "over_rev": "dme_overrev"}
+
+
+def _tokens(text: str) -> set[str]:
+    import re
+    return {t for t in re.split(r"[^a-z0-9]+", (text or "").lower()) if len(t) > 2 and t not in _GENERIC}
+
+
+def match_reported(req: dict[str, Any], reported: list[Any]):
+    """Find the reported critical-evidence item for a profile requirement: exact
+    key first, then alias words, then token overlap with the key and label."""
+    for c in reported:
+        if c.key == req["key"]:
+            return c
+    want = _tokens(req["key"]) | _tokens(req.get("label", ""))
+    best, best_score = None, 0
+    for c in reported:
+        ctoks = _tokens(c.key)
+        score = len(ctoks & want)
+        if any(_ALIASES.get(t) == req["key"] for t in ctoks) or any(_ALIASES.get(t) == req["key"] for t in _tokens(c.key.replace("_", " "))):
+            score += 2
+        if score > best_score:
+            best, best_score = c, score
+    return best if best_score >= 1 else None
 
 
 def _applies(req: dict[str, Any], listing: dict[str, Any]) -> bool:

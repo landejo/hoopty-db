@@ -71,8 +71,8 @@ def _canon(v, allowed, synonyms, default):
 class Fact(Trimmed):
     key: str = Field(max_length=60)
     value: str | None = Field(default=None, max_length=300)
-    status: FactStatus
-    source: Source
+    status: FactStatus = "unknown"
+    source: Source = "ai_inference"
     note: str = Field(default="", max_length=400)
 
     @field_validator("status", mode="before")
