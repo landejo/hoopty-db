@@ -57,7 +57,7 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
         if getattr(flags, key) == "yes":
             gates.append(Gate(kind="hard", key=key, reason=reason))
     for c in evidence.contradictions:
-        if c.severity == "identity":
+        if c.severity == "identity" and not _is_tracker_artifact(c):
             gates.append(Gate(kind="hard", key="identity_contradiction", reason=f"{c.topic}: {c.detail}"))
 
     # Model-critical evidence from the profile (single source: profile YAML / generated profile).
@@ -145,6 +145,17 @@ def match_reported(req: dict[str, Any], reported: list[Any]):
         if score > best_score:
             best, best_score = c, score
     return best if best_score >= 1 else None
+
+
+_ARTIFACT_RE = __import__("re").compile(
+    r"structured (data|facts|feed|fields?)|normalized (feed|fields?|data)|tracker'?s? (own )?(read|feed|fields?|data)|"
+    r"no vin|without a vin|vin (is )?(missing|absent|not (provided|shown|listed))|nothing .* confirms", __import__("re").I)
+
+
+def _is_tracker_artifact(c) -> bool:
+    """A 'contradiction' between the listing and our own metadata, or an
+    absence of proof, is not an identity conflict."""
+    return bool(_ARTIFACT_RE.search(f"{c.topic} {c.detail}"))
 
 
 def _applies(req: dict[str, Any], listing: dict[str, Any]) -> bool:

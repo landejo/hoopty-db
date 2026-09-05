@@ -303,3 +303,16 @@ def test_rescore_assessment_under_new_policy():
     new = rescore_assessment(_listing(), _profile("z3_30i"), old, STATE)
     assert new["policy_version"] == POLICY_VERSION and new["rescored_from"] == "1.1.0" and new["model"] == "claude-sonnet-5"
     assert new["score"]["emotional_spec_fit"] == 7 and new["evidence"]["ratings"]["condition"]["rating"] == 6
+
+
+def test_contradiction_with_tracker_metadata_or_missing_vin_is_not_a_gate():
+    ev = _ev(critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}, quality=7)
+    ev.contradictions = [
+        {"topic": "engine vs model year", "detail": "Structured data lists an S54 3.2L, but a 1999 US-market M Roadster is an S52.", "severity": "identity"},
+        {"topic": "M authenticity", "detail": "Title says M Roadster but nothing in the description, and no VIN, confirms the S engine.", "severity": "identity"},
+    ]
+    a = assess(_listing(model="Z3 M roadster", engine_liters=3.2, year=1999), _profile("z3_m"), ev, STATE, mission="future_keeper")
+    assert not any(g.key == "identity_contradiction" for g in a.gates)
+    ev.contradictions = [{"topic": "mileage", "detail": "Listing states 58,000 miles in the title and 85,000 miles in the description.", "severity": "identity"}]
+    a = assess(_listing(model="Z3 M roadster", engine_liters=3.2, year=1999), _profile("z3_m"), ev, STATE, mission="future_keeper")
+    assert any(g.key == "identity_contradiction" for g in a.gates)
