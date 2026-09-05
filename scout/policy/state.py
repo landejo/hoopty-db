@@ -45,7 +45,7 @@ DEFAULT_STATE: dict[str, Any] = {
     "early_bid_hours_before_close": 24,
     # Listing age (days since the site says it was listed, else since first seen).
     # Not applied to live auctions. Penalty steps are mission-fit points.
-    "listing_age": {"fresh_days": 45, "steps": [[90, 2], [180, 4], [365, 6], [99999, 8]], "stale_after_days": 180},
+    "listing_age": {"fresh_days": 45, "steps": [[90, 2], [120, 4], [240, 6], [99999, 8]], "stale_after_days": 120},
 }
 
 SETTINGS_KEY = "policy_state"

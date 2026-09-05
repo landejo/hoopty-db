@@ -89,7 +89,7 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
     # A listing that has sat for months is probably sold, withdrawn or mispriced:
     # availability must be confirmed with the seller before it counts.
     age = listing_age_days(listing)
-    stale_after = int((state.get("listing_age") or {}).get("stale_after_days", 180))
+    stale_after = int((state.get("listing_age") or {}).get("stale_after_days", 120))
     if age is not None and age > stale_after:
         gates.append(Gate(kind="conditional", key="stale_listing",
                           reason=f"Listed about {round(age / 30)} months ago; confirm it is still available and why it has not sold"))
@@ -151,6 +151,6 @@ def quick_gates(listing: dict[str, Any], profile: dict[str, Any] | None, mission
     if price and mx and mission != "future_keeper" and price > mx:
         out.append(f"over ${mx:,} budget")
     age = listing_age_days(listing)
-    if age is not None and age > int((state.get("listing_age") or {}).get("stale_after_days", 180)):
+    if age is not None and age > int((state.get("listing_age") or {}).get("stale_after_days", 120)):
         out.append(f"stale: {round(age / 30)} mo")
     return out
