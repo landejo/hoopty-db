@@ -24,6 +24,8 @@ DEFAULT_STATE: dict[str, Any] = {
     "active_exclusions": ["Lexus SC430", "Mazda Miata", "Honda CR-Z", "Lexus IS350", "Lexus GS350"],
     "deprioritized": ["turbo BMW like the 335i", "Land Rover LR4", "second Lexus SUV unless the capability itself is wanted"],
     "home_location": "Carmel, CA",
+    "travel": "Willing to fly out and drive a good car home. Distance is a cost and an inspection-access "
+              "question (can a PPI happen before money moves?), never a red flag or a risk by itself.",
     "fees": {
         # Verify against each platform's current terms before relying on the numbers.
         "bat": {"pct": 0.05, "min": 250, "max": 7500},

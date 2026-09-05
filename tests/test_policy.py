@@ -235,3 +235,9 @@ def test_schema_trims_long_strings_instead_of_rejecting():
         "facts": [{"key": "vin", "value": "x", "status": "verified", "source": "listing_text", "note": "n" * 2000}]})
     assert len(ev.ratings.condition.rationale) == 1500 and len(ev.rationale) == 4000 and ev.positives == ["one string, not a list"]
     assert len(ev.facts[0].note) == 400
+
+
+def test_photo_blocks_skip_failures_and_render_prompt():
+    from scout.ai.assess import photo_blocks, SYSTEM, MISSION_GUIDANCE
+    assert photo_blocks(["http://127.0.0.1:1/nope.jpg", "not a url"]) == []
+    assert "FRAMING RULES" in SYSTEM and "fly out" in SYSTEM
