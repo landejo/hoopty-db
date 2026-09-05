@@ -63,11 +63,14 @@
   const MISSIONS = ["enthusiast_bridge", "pragmatic_bridge", "future_keeper", "utility_capability"];
   const missionLabel = (m) => ({ enthusiast_bridge: "enthusiast bridge", pragmatic_bridge: "pragmatic bridge", future_keeper: "future keeper", utility_capability: "utility / capability" }[m] || m || "—");
   function prelimOf(l) { return l.prelim_score ?? null; }
+  // Preliminary scores run optimistic; sort unassessed cards by the calibrated value.
+  function calibrated(l) { const p = prelimOf(l); if (p == null) return null; const off = state.data.calibration?.offset; return off == null ? p : Math.max(0, Math.min(100, p + off)); }
+  function glance(l) { return scoreOf(l) ?? calibrated(l); }
   function rankOf(l) {
     if (l.role !== "candidate" || !l.profile_key) return null;
-    const pool = state.data.listings.filter((x) => x.role === "candidate" && x.availability === "active" && x.profile_key === l.profile_key && (scoreOf(x) ?? prelimOf(x)) != null);
+    const pool = state.data.listings.filter((x) => x.role === "candidate" && x.availability === "active" && x.profile_key === l.profile_key && glance(x) != null);
     if (pool.length < 2) return null;
-    pool.sort((a, b) => (scoreOf(b) ?? prelimOf(b)) - (scoreOf(a) ?? prelimOf(a)));
+    pool.sort((a, b) => glance(b) - glance(a));
     const i = pool.findIndex((x) => x.id === l.id);
     return i < 0 ? null : { rank: i + 1, of: pool.length };
   }
@@ -75,7 +78,7 @@
     const s = scoreOf(l);
     if (s != null) return `<span class="badge ${s >= 75 ? "hi" : s >= 60 ? "mid" : "lo"}" title="Score /100 · policy ${esc(l.assessment.policy_version)}">${s}</span>`;
     const p = prelimOf(l);
-    if (p != null) return `<span class="badge prelim ${p >= 75 ? "hi" : p >= 60 ? "mid" : "lo"}" title="Preliminary score /100 (same rubric, cheap inputs; dashed = not yet assessed)">${Math.round(p)}</span>`;
+    if (p != null) { const c = calibrated(l), off = state.data.calibration?.offset; return `<span class="badge prelim ${c >= 75 ? "hi" : c >= 60 ? "mid" : "lo"}" title="Preliminary ${Math.round(p)}/100 (not yet assessed). ${off != null ? `Assessed scores have landed ${off >= 0 ? "+" : ""}${off} from preliminary on average over ${state.data.calibration.samples} cars; sorting uses ≈${Math.round(c)}.` : "Preliminary scores run optimistic: expect the assessment to land lower."}">${off != null ? "≈" : ""}${Math.round(off != null ? c : p)}</span>`; }
     return `<span class="badge none">n/a</span>`;
   }
   function availChip(a) { const c = { active: "olive", sold: "rose", ended: "walnut", removed: "slate", withdrawn: "rose" }[a] || ""; return `<span class="chip ${c === "walnut" ? "mustard" : c}">${esc(a)}</span>`; }
@@ -122,7 +125,7 @@
       return true;
     });
     const sorters = {
-      score: (a, b) => (scoreOf(b) ?? -1) - (scoreOf(a) ?? -1) || (prelimOf(b) ?? -1) - (prelimOf(a) ?? -1),
+      score: (a, b) => (glance(b) ?? -1) - (glance(a) ?? -1),
       price: (a, b) => (a.price ?? 9e9) - (b.price ?? 9e9),
       price_desc: (a, b) => (b.price ?? -1) - (a.price ?? -1),
       mileage: (a, b) => (a.mileage ?? 9e9) - (b.mileage ?? 9e9),
@@ -156,7 +159,7 @@
       <div class="hero">
         <div><h1>The board</h1><p>Everything you've saved, normalized and scored. Sold and ended listings feed the <a href="#/market">market view</a>.</p></div>
         <div class="tiles" style="margin:0;min-width:520px">
-          <div class="tile"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} deep-analyzed</div></div>
+          <div class="tile"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} assessed${state.data.calibration?.offset != null ? ` · prelim runs ${-state.data.calibration.offset} high` : ""}</div></div>
           <div class="tile"><div class="k">Pursue</div><div class="v">${pursue}</div><div class="s">by verdict or status</div></div>
           <div class="tile"><div class="k">Market comps</div><div class="v">${comps}</div><div class="s">sold + ended${ignored ? ` · ${ignored} ignored` : ""}</div></div>
           <div class="tile"><div class="k">Profiles</div><div class="v">${state.data.profiles.length}</div><div class="s">${state.data.profiles.filter((p) => !p.verified).length} unverified</div></div>

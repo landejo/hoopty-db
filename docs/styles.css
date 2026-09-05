@@ -105,7 +105,7 @@ html[data-theme="dark"] .chip.olive { color: #C2D6A6; } html[data-theme="dark"] 
 .chip.dark { background: var(--ink); color: var(--bg); }
 .badge { display: inline-grid; place-items: center; width: 46px; height: 46px; border-radius: 50% 50% 50% 10px; font-family: var(--mono); font-weight: 700; font-size: 16px; color: #1F1D1A; background: var(--mustard); box-shadow: 0 2px 0 rgba(0,0,0,.12); }
 .badge.hi { background: #7FCB9F; } .badge.mid { background: var(--mustard); } .badge.lo { background: #EFA68F; } .badge.none { background: var(--chip-slate); color: var(--muted); font-weight: 500; font-size: 12px; }
-.badge.prelim { border: 2px dashed rgba(31,29,26,.25); }
+.badge.prelim { border: 2px dashed rgba(31,29,26,.25); font-weight: 600; opacity: .9; }
 .pill-status { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
 
 /* Buttons */
