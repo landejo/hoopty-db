@@ -43,8 +43,14 @@ Fields (omit anything you cannot determine; never guess a VIN):
 - location "City, ST", vin (17 chars only), seller_type (Private / Dealer /
   Auction / Unknown), seller_name, title_status, accidents (yes/no/unknown),
   num_owners (int)
-- listing_date: ISO date. TODAY IS {today}. Convert "Listed 3 weeks ago" to
-  today minus 21 days. For auctions use the auction END date if shown.
+- listing_date: ISO date the listing was posted. TODAY IS {today}. Convert
+  "Listed 3 weeks ago" to today minus 21 days. For auctions, the date the
+  auction opened if shown, else omit.
+- auction_end: for auctions only, the closing time as ISO "YYYY-MM-DDTHH:MM"
+  in Pacific time when the page states it (e.g. "Ending September 9th at 1:06
+  PM PDT"); if the page only says "5 days" or "2:39:23" left, put that text in
+  auction_time_left instead.
+- auction_time_left: the site's remaining-time text, verbatim, if present
 - price_drops: array of {{prior_price (int), amount (int), note}} for price
   reductions the SITE or SELLER states (e.g. "Price drop -$5,000",
   "$300 price drop", "was $19,995 now $18,995", "reduced from"). Derive
@@ -77,5 +83,5 @@ def normalize_listing(raw_text: str, hints: dict[str, Any], site: str,
         if v not in (None, "", [], {}):
             hint_lines.append(f"{k.upper()}: {v}")
     user = "\n".join(hint_lines) + "\n\nLISTING TEXT:\n" + (raw_text or "")[:40_000]
-    text = call_text(CONFIG.model_fast, system, user, max_tokens=4000, log_name="last_normalize")
+    text = call_text(CONFIG.model_fast, system, user, max_tokens=6000, log_name="last_normalize")
     return coerce.normalized_listing(coerce.parse_json(text))

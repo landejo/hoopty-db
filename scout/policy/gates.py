@@ -8,7 +8,7 @@ from typing import Any
 
 from scout.policy.preferences import EXCLUDED_MODELS, MANUAL_REQUIRED_MISSIONS
 from scout.policy.schema import EvidenceInterpretation, Gate
-from scout.scoring import listing_age_days
+from scout.scoring import is_early_bid, listing_age_days
 
 HARD_FLAGS = {
     "seller_refuses_vin_or_ppi": "Seller refuses VIN or a reasonable independent inspection",
@@ -153,4 +153,7 @@ def quick_gates(listing: dict[str, Any], profile: dict[str, Any] | None, mission
     age = listing_age_days(listing)
     if age is not None and age > int((state.get("listing_age") or {}).get("stale_after_days", 120)):
         out.append(f"stale: {round(age / 30)} mo")
+    early, hrs = is_early_bid(listing, state)
+    if early:
+        out.append("early bid" + (f": {round(hrs / 24)}d left" if hrs is not None else ""))
     return out

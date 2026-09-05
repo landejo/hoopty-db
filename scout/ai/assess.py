@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from scout import coerce
-from scout.ai import call_text
+from scout.ai import call_json_text
 from scout.config import CONFIG, SITES
 from scout.policy.preferences import CATEGORY_LABELS, CATEGORY_POINTS, COMPACT_CONTEXT
 from scout.policy.schema import EvidenceInterpretation, Flags
@@ -143,7 +143,7 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
         f"SOLD / ENDED COMPS:\n" + ("\n".join(f"  - {_fmt_row(c)}" for c in comps[:30]) or "  (none)") + "\n\n"
         f"FULL LISTING TEXT:\n{(listing.get('raw_text') or '')[:60_000]}"
     )
-    text = call_text(CONFIG.model_deep, system, user, max_tokens=12000, log_name="last_assess", effort="high")
+    text = call_json_text(CONFIG.model_deep, system, user, max_tokens=32000, log_name="last_assess", effort="high")
     data = coerce.parse_json(text)
     try:
         return EvidenceInterpretation.model_validate(data)

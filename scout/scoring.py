@@ -96,6 +96,55 @@ def listing_age_days(l: dict, today=None) -> int | None:
     return max(0, ((today or date.today()) - d).days)
 
 
+def auction_hours_left(l: dict, now=None) -> float | None:
+    """Hours until an auction closes, from auction_end (Pacific) or from the site's
+    "5 days" / "2:39:23" text plus when we read it. None when unknown / not live."""
+    import re
+    from datetime import datetime, timedelta, timezone
+    if l.get("site") not in {"bat", "carsandbids"} or l.get("availability") != "active":
+        return None
+    now = now or datetime.now(timezone.utc)
+    if l.get("auction_end"):
+        try:
+            end = datetime.fromisoformat(l["auction_end"]).replace(tzinfo=timezone(timedelta(hours=-7)))  # Pacific (PDT)
+            return (end - now).total_seconds() / 3600
+        except ValueError:
+            pass
+    raw = l.get("raw") or {}
+    text = str(raw.get("time_left") or "")
+    seen = raw.get("time_left_seen_at") or raw.get("scraped_at") or l.get("last_seen")
+    if not text or not seen:
+        return None
+    try:
+        t0 = datetime.fromisoformat(str(seen).replace("Z", "+00:00"))
+        if t0.tzinfo is None:
+            t0 = t0.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    hours = None
+    m = re.search(r"(\d+)\s*day", text, re.I)
+    if m:
+        hours = int(m.group(1)) * 24
+    elif re.match(r"^\s*(\d+):(\d{2}):(\d{2})", text):
+        h, mnt, _ = re.match(r"^\s*(\d+):(\d{2}):(\d{2})", text).groups()
+        hours = int(h) + int(mnt) / 60
+    elif re.search(r"(\d+)\s*hour", text, re.I):
+        hours = int(re.search(r"(\d+)\s*hour", text, re.I).group(1))
+    elif re.search(r"(\d+)\s*min", text, re.I):
+        hours = int(re.search(r"(\d+)\s*min", text, re.I).group(1)) / 60
+    if hours is None:
+        return None
+    return hours - (now - t0).total_seconds() / 3600
+
+
+def is_early_bid(l: dict, state: dict, now=None) -> tuple[bool, float | None]:
+    """A live auction more than a day out: the current bid says little about the price."""
+    hrs = auction_hours_left(l, now)
+    if hrs is None:
+        return (l.get("price_kind") in {"current_bid", "no_reserve"} and l.get("site") in {"bat", "carsandbids"} and l.get("availability") == "active"), None
+    return hrs > float(state.get("early_bid_hours_before_close", 24)), hrs
+
+
 def age_penalty(age: int | None, state: dict) -> tuple[int, str]:
     cfg = state.get("listing_age") or {}
     if age is None or age <= cfg.get("fresh_days", 45):
@@ -167,7 +216,15 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
     reference = pool[len(pool) // 2] if pool else None
     miles = sorted(m for m in ((c.get("mileage") for c in comps + peers)) if m)
     ref_miles = miles[len(miles) // 2] if miles else None
-    pv, why = _price_value_points(price, reference, listing.get("mileage"), ref_miles)
+    early, hrs = is_early_bid(listing, state)
+    if early:
+        # The bid is not a price yet. Value against the comps median if we have
+        # one, else stay neutral; either way say so.
+        est = reference if src == "sold comps" else None
+        pv = 7 if est is None else _price_value_points(est, reference, listing.get("mileage"), ref_miles)[0]
+        why = f"early bid ${price:,} ignored" + (f" ({round(hrs / 24, 1)} days left)" if hrs is not None else "") + (f"; valued at the sold-comp median ${est:,}" if est else "; no sold comps, neutral")
+    else:
+        pv, why = _price_value_points(price, reference, listing.get("mileage"), ref_miles)
     budget = state.get("budget") or {}
     mission = listing.get("mission") or (profile or {}).get("mission_default") or "enthusiast_bridge"
     if price and budget.get("max_price") and mission in {"enthusiast_bridge", "pragmatic_bridge"} and price > budget["max_price"]:

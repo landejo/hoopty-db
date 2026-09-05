@@ -717,3 +717,20 @@ def delete_listing(listing_id: int, path: Path | None = None) -> bool:
         if vid and not c.execute("SELECT 1 FROM listings WHERE vehicle_id=?", (vid,)).fetchone():
             c.execute("DELETE FROM vehicles WHERE id=?", (vid,))
     return True
+
+
+def last_errors(path: Path | None = None) -> dict[int, dict[str, Any]]:
+    """Latest *_error event per listing, unless a later success superseded it."""
+    out: dict[int, dict[str, Any]] = {}
+    ok_kinds = {"assess_error": "assessed", "provenance_error": "provenance_done", "normalize_error": "sync"}
+    with connect(path) as c:
+        rows = c.execute("SELECT ts, kind, listing_id, detail FROM events WHERE listing_id IS NOT NULL ORDER BY id DESC").fetchall()
+    seen_ok: set[tuple[int, str]] = set()
+    for r in rows:
+        lid, kind = r["listing_id"], r["kind"]
+        if kind in ok_kinds.values():
+            seen_ok.add((lid, kind))
+            continue
+        if kind.endswith("_error") and lid not in out and (lid, ok_kinds.get(kind, "")) not in seen_ok:
+            out[lid] = {"ts": r["ts"], "kind": kind, "detail": (r["detail"] or "")[:400]}
+    return out

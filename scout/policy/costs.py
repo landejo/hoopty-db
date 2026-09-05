@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any
 
 from scout.policy.schema import CostBreakdown, EvidenceInterpretation, Gate
-from scout.scoring import locality_hint
+from scout.scoring import is_early_bid, locality_hint
 
 
 def buyer_fee(site: str, price: int, state: dict[str, Any]) -> int:
@@ -59,6 +59,15 @@ def price_basis(listing: dict[str, Any], evidence: EvidenceInterpretation, comps
         elif comps_median:
             expected = comps_median
         reserve = evidence.flags.reserve_auction
+        early, hrs = is_early_bid(listing, state)
+        left = f" ({round(hrs / 24, 1)} days left)" if hrs is not None else ""
+        if early and expected:
+            notes.append(f"Current bid ${price:,} is an early bid{left}" + (" on a reserve auction" if reserve == "yes" else "")
+                         + f"; it carries no weight until the closing day. Using expected hammer ${expected:,} for cost and value.")
+            return "expected_hammer", int(expected), notes
+        if early:
+            notes.append(f"Current bid ${price:,} is an early bid{left} and no expected hammer is available; treat every price figure below as provisional.")
+            return "current_bid", price, notes
         if expected and expected > price:
             notes.append(f"Current bid ${price:,} treated as an early bid" + (" on a reserve auction" if reserve == "yes" else "")
                          + f"; using expected hammer ${expected:,} for cost and value.")

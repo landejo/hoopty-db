@@ -51,6 +51,25 @@ def call_text(model: str, system: str, user: str, max_tokens: int, log_name: str
     text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
     try:
         (DATA_DIR / f"{log_name}.log").write_text(text[:500_000])
+        (DATA_DIR / f"{log_name}.meta").write_text(f"stop_reason={msg.stop_reason} output_tokens={getattr(msg.usage, 'output_tokens', '?')}\n")
     except OSError:
         pass
+    if msg.stop_reason == "max_tokens":
+        raise TruncatedOutput(f"model output hit the {max_tokens}-token ceiling (thinking counts toward it)")
     return text
+
+
+class TruncatedOutput(RuntimeError):
+    pass
+
+
+def call_json_text(model: str, system: str, user: str, max_tokens: int, log_name: str,
+                   effort: str | None = None) -> str:
+    """call_text with one retry when the output is truncated: a bigger ceiling
+    and an instruction to be terser. Deep assessments need this headroom."""
+    try:
+        return call_text(model, system, user, max_tokens, log_name, effort=effort)
+    except TruncatedOutput:
+        terse = system + ("\n\nOUTPUT LENGTH: your previous answer was cut off. Keep every string under 300 "
+                          "characters, at most 6 items per list, and no prose outside the JSON.")
+        return call_text(model, terse, user, int(max_tokens * 1.5), log_name, effort=effort)

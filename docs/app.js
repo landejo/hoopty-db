@@ -437,6 +437,7 @@
         <textarea class="notes" id="notes" placeholder="Your notes (saved on blur)">${esc(l.notes || "")}</textarea>
         <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn sm ghost" id="delete" title="Remove this listing and its history from the workbench">Delete listing</button></div></div>`);
       side.appendChild(act);
+      if (l.last_error) side.appendChild(h(`<div class="panel accent-rose"><h3>Last run failed <span class="muted small">${ago(l.last_error.ts)}</span></h3><p class="small" style="margin:0">${esc(l.last_error.kind.replace("_", " "))}: ${esc(l.last_error.detail)}</p><p class="muted small" style="margin:6px 0 0">The paid call completed but its answer was rejected. This class of failure is now retried and trimmed automatically; run it again.</p></div>`));
       $("#analyze", act).onclick = async (e) => {
         e.target.disabled = true; e.target.textContent = "Assessing… (30–90s)";
         try { await api(`/api/listings/${l.id}/assess`, "POST"); await loadData(); route(); toast("Assessment stored"); }
