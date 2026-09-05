@@ -3,6 +3,7 @@ return (interpretation only: facts, provenance, contradictions, flags, ratings,
 qualitative lists). `Assessment` is what the deterministic engine stores."""
 from __future__ import annotations
 
+from json import dumps as json_dumps
 from types import UnionType
 from typing import Literal, Union, get_args, get_origin
 
@@ -42,12 +43,47 @@ Tri = Literal["yes", "no", "unknown"]
 CriticalStatus = Literal["satisfied", "claimed_only", "missing", "failed"]
 
 
+# Vocabulary the models drift toward, mapped back to the schema's words. A
+# synonym is never a reason to reject a paid answer.
+_STATUS_SYNONYMS = {"missing": "unknown", "not stated": "unknown", "not_stated": "unknown", "n/a": "unknown", "none": "unknown",
+                    "unverified": "claimed", "seller": "claimed", "seller_claim": "claimed", "claimed_only": "claimed",
+                    "confirmed": "verified", "documented": "verified", "satisfied": "verified", "inference": "inferred", "estimated": "inferred"}
+_SOURCE_SYNONYMS = {"seller": "seller_claim", "claim": "seller_claim", "listing": "listing_text", "text": "listing_text", "description": "listing_text",
+                    "carfax": "history_report", "autocheck": "history_report", "history": "history_report", "report": "history_report",
+                    "vin": "external_vin", "vin_decode": "external_vin", "nhtsa": "external_vin", "decoder": "external_vin",
+                    "image": "photo", "photos": "photo", "images": "photo", "invoice": "receipt", "receipts": "receipt", "records": "receipt",
+                    "comment": "seller_comment", "comments": "seller_comment", "inference": "ai_inference", "ai": "ai_inference", "model": "ai_inference"}
+_CRITICAL_SYNONYMS = {"unknown": "missing", "not provided": "missing", "not_provided": "missing", "absent": "missing", "none": "missing",
+                      "claimed": "claimed_only", "seller_claim": "claimed_only", "unverified": "claimed_only",
+                      "verified": "satisfied", "present": "satisfied", "documented": "satisfied", "yes": "satisfied", "fail": "failed", "no": "failed"}
+
+
+def _canon(v, allowed, synonyms, default):
+    if v is None:
+        return default
+    t = str(v).strip().lower().replace("-", "_")
+    if t in allowed:
+        return t
+    t2 = synonyms.get(t) or synonyms.get(t.replace("_", " "))
+    return t2 if t2 in allowed else default
+
+
 class Fact(Trimmed):
     key: str = Field(max_length=60)
     value: str | None = Field(default=None, max_length=300)
     status: FactStatus
     source: Source
     note: str = Field(default="", max_length=400)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _status(cls, v):
+        return _canon(v, set(FactStatus.__args__), _STATUS_SYNONYMS, "unknown")
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _source(cls, v):
+        return _canon(v, set(Source.__args__), _SOURCE_SYNONYMS, "ai_inference")
 
     @field_validator("value", mode="before")
     @classmethod
@@ -64,6 +100,11 @@ class Contradiction(Trimmed):
     detail: str = Field(max_length=500)
     severity: Literal["minor", "material", "identity"]
 
+    @field_validator("severity", mode="before")
+    @classmethod
+    def _sev(cls, v):
+        return _canon(v, {"minor", "material", "identity"}, {"major": "material", "serious": "material", "critical": "identity", "low": "minor", "high": "material"}, "minor")
+
 
 class CriticalEvidence(Trimmed):
     key: str = Field(max_length=60)
@@ -71,9 +112,33 @@ class CriticalEvidence(Trimmed):
     evidence: str = Field(default="", max_length=500)
     source: Source = "ai_inference"
 
+    @field_validator("status", mode="before")
+    @classmethod
+    def _status(cls, v):
+        return _canon(v, set(CriticalStatus.__args__), _CRITICAL_SYNONYMS, "missing")
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _source(cls, v):
+        return _canon(v, set(Source.__args__), _SOURCE_SYNONYMS, "ai_inference")
+
 
 class Flags(BaseModel):
     """Gate inputs. 'unknown' is the honest default; code never treats unknown as good."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _tri(cls, data):
+        if not isinstance(data, dict):
+            return data
+        out = {}
+        for k, v in data.items():
+            if k not in cls.model_fields:
+                continue
+            t = str(v).strip().lower() if v is not None else "unknown"
+            out[k] = "yes" if t in {"yes", "true", "y"} or v is True else "no" if t in {"no", "false", "n"} or v is False else "unknown"
+        return out
+
     seller_refuses_vin_or_ppi: Tri = "unknown"
     identity_or_odometer_fraud: Tri = "unknown"
     active_overheating_or_coolant_loss: Tri = "unknown"
@@ -118,6 +183,30 @@ class MoneyRange(BaseModel):
 
 
 class EvidenceInterpretation(Trimmed):
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_bad_entries(cls, data):
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for name, model in (("facts", Fact), ("contradictions", Contradiction), ("critical_evidence", CriticalEvidence)):
+            items = out.get(name)
+            if not isinstance(items, list):
+                out[name] = []
+                continue
+            kept = []
+            for it in items:
+                try:
+                    kept.append(model.model_validate(it).model_dump())
+                except Exception:
+                    continue
+            out[name] = kept
+        for name in ("positives", "concerns", "unknowns", "seller_questions", "ppi_focus", "what_would_change_verdict"):
+            v = out.get(name)
+            if isinstance(v, list):
+                out[name] = [x if isinstance(x, str) else (x.get("text") or x.get("item") or json_dumps(x)) if isinstance(x, dict) else str(x) for x in v]
+        return out
+
     facts: list[Fact] = Field(default_factory=list, max_length=60)
     contradictions: list[Contradiction] = Field(default_factory=list, max_length=15)
     critical_evidence: list[CriticalEvidence] = Field(default_factory=list, max_length=20)
@@ -167,6 +256,35 @@ class ProvenanceEvent(Trimmed):
     identity_basis: str = Field(default="", max_length=400)
     seller: str | None = Field(default=None, max_length=120)
 
+    @field_validator("price_type", mode="before")
+    @classmethod
+    def _pt(cls, v):
+        return _canon(v, set(PriceType.__args__), {"sold": "verified_sale", "sale": "verified_sale", "hammer": "winning_bid", "bid": "winning_bid",
+                                                    "rnm": "high_bid_reserve_not_met", "reserve_not_met": "high_bid_reserve_not_met",
+                                                    "ask": "asking", "list": "asking", "listed": "asking", "advertised": "asking", "estimate": "estimated"}, "estimated")
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _st(cls, v):
+        allowed = set(EventStatus.__args__)
+        if v is None:
+            return "Unknown"
+        t = str(v).strip()
+        for a in allowed:
+            if a.lower() == t.lower():
+                return a
+        low = t.lower()
+        return ("Sold" if "sold" in low else "Bid to / reserve not met" if "reserve" in low or "bid to" in low else "Withdrawn" if "withdr" in low
+                else "Seller decided to keep" if "keep" in low else "Price reduced" if "reduc" in low or "drop" in low else "Relisted" if "relist" in low
+                else "Listed" if "list" in low else "Dealer acquisition" if "dealer" in low else "Unknown")
+
+    @field_validator("identity_confidence", mode="before")
+    @classmethod
+    def _ic(cls, v):
+        return _canon(v, set(Identity.__args__), {"confirmed_same_car": "confirmed", "exact": "confirmed", "strong": "strongly_likely", "likely": "strongly_likely",
+                                                   "strongly likely": "strongly_likely", "possible_match": "possible", "maybe": "possible", "unknown": "not_established",
+                                                   "none": "not_established", "no": "not_established"}, "not_established")
+
     @field_validator("date")
     @classmethod
     def _iso(cls, v):
@@ -194,6 +312,23 @@ class SellerStatement(Trimmed):
 
 
 class ProvenanceInterpretation(Trimmed):
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_bad_entries(cls, data):
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for name, model in (("events", ProvenanceEvent), ("seller_statements", SellerStatement)):
+            items = out.get(name)
+            kept = []
+            for it in (items if isinstance(items, list) else []):
+                try:
+                    kept.append(model.model_validate(it).model_dump())
+                except Exception:
+                    continue
+            out[name] = kept
+        return out
+
     events: list[ProvenanceEvent] = Field(default_factory=list, max_length=40)
     seller_statements: list[SellerStatement] = Field(default_factory=list, max_length=25)
     work_before_prior_sale: list[str] = Field(default_factory=list, max_length=15)
