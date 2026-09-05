@@ -43,6 +43,9 @@ DEFAULT_STATE: dict[str, Any] = {
     "reserve_per_unresolved_conditional": 1000,
     "reserve_max_unresolved_counted": 2,   # stacking cap so four open items do not read as a $4k penalty
     "early_bid_hours_before_close": 24,
+    # Listing age (days since the site says it was listed, else since first seen).
+    # Not applied to live auctions. Penalty steps are mission-fit points.
+    "listing_age": {"fresh_days": 45, "steps": [[90, 2], [180, 4], [365, 6], [99999, 8]], "stale_after_days": 180},
 }
 
 SETTINGS_KEY = "policy_state"

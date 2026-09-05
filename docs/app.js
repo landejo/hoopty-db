@@ -8,7 +8,7 @@
   const num = (n) => (n == null ? "—" : Number(n).toLocaleString());
   const STATUSES = ["New", "Pursue", "Verify", "Contacted", "PPI Scheduled", "Offer Made", "Pass", "Purchased"];
 
-  const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "score", role: "candidate", view: "cards", max_price: "", max_mileage: "" }),
+  const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "score", role: "candidate", view: "cards", max_price: "", max_mileage: "", max_age: "" }),
                   q: "", compare: load("compare", []), theme: load("theme", null) };
 
   function load(k, d) { try { const v = localStorage.getItem("scout." + k); const out = v ? JSON.parse(v) : d; if (k === "filters" && out && !Array.isArray(out.profiles)) out.profiles = out.profile ? [out.profile] : []; return out; } catch (e) { return d; } }
@@ -53,6 +53,12 @@
     if (d < 1) return Math.max(1, Math.round(d * 24)) + "h ago";
     if (d < 45) return Math.round(d) + "d ago";
     return Math.round(d / 30) + "mo ago";
+  }
+  function ageDays(l) {
+    if ((l.site === "bat" || l.site === "carsandbids") && l.availability === "active") return null;
+    const src = l.listing_date || (l.first_seen || "").slice(0, 10);
+    if (!src) return null;
+    return Math.max(0, Math.round((Date.now() - new Date(src).getTime()) / 864e5));
   }
   function listedAge(l) { return l.listing_date ? ago(l.listing_date) : l.first_seen ? "seen " + ago(l.first_seen) : "—"; }
   function siteName(k) { return (state.data.sites || {})[k] || k; }
@@ -118,6 +124,7 @@
       const px = l.sold_price || l.price;
       if (f.max_price && px && px > Number(f.max_price)) return false;
       if (f.max_mileage && l.mileage && l.mileage > Number(f.max_mileage)) return false;
+      if (f.max_age) { const a = ageDays(l); if (a != null && a > Number(f.max_age)) return false; }
       if (q) {
         const hay = [title(l), l.location, l.model, l.trim, l.engine, l.exterior_color, l.notes, l.normalized?.prelim_summary, (l.options || []).join(" ")].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -178,7 +185,8 @@
         <label><input type="checkbox" id="f-analyzed" ${f.analyzed ? "checked" : ""}> analyzed only</label>
         <label title="Hide listings priced above this">≤ $<input type="number" class="num" id="f-max-price" min="0" step="500" placeholder="max price" value="${esc(f.max_price)}"></label>
         <label title="Hide listings with more miles than this">≤ <input type="number" class="num" id="f-max-mileage" min="0" step="5000" placeholder="max miles" value="${esc(f.max_mileage)}"> mi</label>
-        ${f.max_price || f.max_mileage ? `<button class="btn sm ghost" id="f-clear-limits">clear limits</button>` : ""}
+        <label title="Hide listings older than this many days (live auctions are never hidden)">≤ <input type="number" class="num" id="f-max-age" min="0" step="7" placeholder="max age" value="${esc(f.max_age)}" style="width:90px"> days</label>
+        ${f.max_price || f.max_mileage || f.max_age ? `<button class="btn sm ghost" id="f-clear-limits">clear limits</button>` : ""}
         <span class="spacer"></span>
         <span class="seg" id="view"><button data-v="cards" class="${f.view === "cards" ? "on" : ""}">Cards</button><button data-v="table" class="${f.view === "table" ? "on" : ""}">Table</button></span>
       </div>`);
@@ -204,19 +212,20 @@
     $("#f-sort", bar).onchange = (e) => { f.sort = e.target.value; rerender(); };
     $("#f-analyzed", bar).onchange = (e) => { f.analyzed = e.target.checked; rerender(); };
     let limitTimer;
-    const onLimit = (key) => (e) => { clearTimeout(limitTimer); limitTimer = setTimeout(() => { f[key] = e.target.value; rerender(); const cl = $("#f-clear-limits", bar); if (!cl && (f.max_price || f.max_mileage)) route(); }, 250); };
+    const onLimit = (key) => (e) => { clearTimeout(limitTimer); limitTimer = setTimeout(() => { f[key] = e.target.value; rerender(); const cl = $("#f-clear-limits", bar); if (!cl && (f.max_price || f.max_mileage || f.max_age)) route(); }, 250); };
     $("#f-max-price", bar).oninput = onLimit("max_price");
     $("#f-max-mileage", bar).oninput = onLimit("max_mileage");
+    $("#f-max-age", bar).oninput = onLimit("max_age");
     const clearBtn = $("#f-clear-limits", bar);
-    if (clearBtn) clearBtn.onclick = () => { f.max_price = ""; f.max_mileage = ""; save("filters", f); route(); };
+    if (clearBtn) clearBtn.onclick = () => { f.max_price = ""; f.max_mileage = ""; f.max_age = ""; save("filters", f); route(); };
     const list = h(`<div id="list"></div>`); app.appendChild(list);
     function renderList() {
       const rows = filtered();
       list.innerHTML = "";
-      if (f.max_price || f.max_mileage) {
-        const saved = { p: f.max_price, m: f.max_mileage }; f.max_price = ""; f.max_mileage = "";
-        const without = filtered().length; f.max_price = saved.p; f.max_mileage = saved.m;
-        if (without > rows.length) list.appendChild(h(`<p class="muted small" style="margin:0 0 10px">${without - rows.length} listing${without - rows.length === 1 ? "" : "s"} hidden by your price / mileage limits.</p>`));
+      if (f.max_price || f.max_mileage || f.max_age) {
+        const saved = { p: f.max_price, m: f.max_mileage, a: f.max_age }; f.max_price = ""; f.max_mileage = ""; f.max_age = "";
+        const without = filtered().length; f.max_price = saved.p; f.max_mileage = saved.m; f.max_age = saved.a;
+        if (without > rows.length) list.appendChild(h(`<p class="muted small" style="margin:0 0 10px">${without - rows.length} listing${without - rows.length === 1 ? "" : "s"} hidden by your price / mileage / age limits.</p>`));
       }
       if (!state.data.listings.length) return list.appendChild(emptyState());
       if (!rows.length) return list.appendChild(h(`<div class="empty"><h2>Nothing matches</h2><p>Loosen the filters or sync more listings.</p></div>`));
