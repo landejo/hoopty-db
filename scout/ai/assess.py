@@ -63,6 +63,29 @@ Return ONE JSON object with exactly these keys:
   Meanings (points in parentheses are applied by code, not you):
 {category_help}
   Rate documentation on what is VERIFIABLE, not on how much the seller wrote.
+
+FRAMING RULES:
+- Distance, transport, travel and dealer/doc fees are LOGISTICS and COST
+  items. They belong in the logistics rating and the service estimate, never
+  in concerns, red flags or risks. The buyer will fly out and drive a good car
+  home.
+- The car's age is the baseline, not a concern. Only cite age when tied to a
+  specific unaddressed item (e.g. "no cooling-system work in 25 years").
+- Contradictions require two SPECIFIC, INCOMPATIBLE claims (year vs engine,
+  two different mileages, "clean title" vs a branded title). "Multiple owners"
+  and "2 owners" agree. Do not manufacture contradictions from vague phrasing
+  or from the tracker's own normalized fields.
+- Concerns come in two kinds and must be labelled: "Observed: ..." for
+  something actually wrong or stated in the listing or visible in a photo, and
+  "Unverified: ... (ask for / inspect ...)" for model-critical evidence the
+  listing does not provide. List Observed items first. An Unverified item is a
+  question to ask, not a reason to reject, unless the profile marks it hard.
+- PHOTOS: some captured listing photos are attached. Describe only what you
+  can actually see, and give photo-derived facts the source "photo". The
+  attached set is what the tracker captured, NOT the listing's full gallery:
+  never state how many photos the listing has, and never call something
+  "unverifiable" merely because it is not in the attached photos; say
+  "not examined here" and put it in unknowns.
   Rate condition on evidence; unknown areas pull the rating down.
   Rate price_value against the comps/peers given and the buyer's budget.
   Rate mission_fit for the stated mission and urgency mode.
@@ -96,6 +119,34 @@ MISSION_GUIDANCE = {
 }
 
 
+MAX_PHOTOS = 12
+MAX_PHOTO_BYTES = 4_000_000
+
+
+def photo_blocks(urls: list[str], limit: int = MAX_PHOTOS) -> list[dict[str, Any]]:
+    """Download captured photos and attach them as base64 image blocks. Any
+    failure (expired CDN link, hotlink block, huge file) just skips that photo."""
+    import base64
+    import urllib.request
+    out: list[dict[str, Any]] = []
+    for url in urls:
+        if len(out) >= limit:
+            break
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh) hoopty-scout/0.2", "Accept": "image/*"})
+            with urllib.request.urlopen(req, timeout=8) as r:  # noqa: S310
+                ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                if ctype not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+                    continue
+                data = r.read(MAX_PHOTO_BYTES + 1)
+            if len(data) > MAX_PHOTO_BYTES or len(data) < 2000:
+                continue
+            out.append({"type": "image", "source": {"type": "base64", "media_type": ctype, "data": base64.b64encode(data).decode("ascii")}})
+        except Exception:
+            continue
+    return out
+
+
 def _profile_text(profile: dict[str, Any]) -> str:
     keys = ("label", "framing", "weak_points", "immediate_repairs", "repairs_12mo", "market_notes", "catchup_notes")
     return "\n".join(f"{k}: {profile.get(k)}" for k in keys if profile.get(k))
@@ -115,7 +166,7 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
                       peers: list[dict[str, Any]], comps: list[dict[str, Any]]) -> EvidenceInterpretation:
     critical = "\n".join(f"  - {c['key']}: {c.get('label', c['key'])} [{c.get('severity', 'conditional')}]"
                          for c in profile.get("critical_evidence") or []) or "  (none defined for this model)"
-    state_view = {k: state.get(k) for k in ("urgency_mode", "budget", "current_vehicles", "active_exclusions", "deprioritized", "home_location")}
+    state_view = {k: state.get(k) for k in ("urgency_mode", "budget", "current_vehicles", "active_exclusions", "deprioritized", "home_location", "travel")}
     system = SYSTEM.format(
         context=COMPACT_CONTEXT, state=json.dumps(state_view, indent=1), mission=mission,
         mission_guidance=MISSION_GUIDANCE.get(mission, ""), profile=_profile_text(profile), critical=critical,
@@ -134,15 +185,17 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
             facts[k] = raw[k]
     hist = "\n".join(f"  {s['seen_at'][:10]}: {'$' + format(s['price'], ',') if s.get('price') else '-'} "
                      f"{s.get('price_kind') or ''} {s.get('availability') or ''}" for s in snapshots) or "  (first sighting)"
-    user = (
+    photos = photo_blocks(listing.get("photos") or [])
+    user_text = (
         f"STRUCTURED FACTS (from the scraper + normalizer; verify against the text):\n{json.dumps(facts, indent=1)}\n\n"
-        f"PHOTO COUNT: {len(listing.get('photos') or [])} (you cannot see them; do not infer condition from them)\n\n"
+        f"PHOTOS ATTACHED: {len(photos)} of {len(listing.get('photos') or [])} captured (the listing may have more; do not count them)\n\n"
         f"THIS LISTING'S PRICE / AVAILABILITY HISTORY:\n{hist}\n\n"
         f"VIN HISTORY IN THE TRACKER (same VIN, other listings):\n{json.dumps(vin_history, indent=1)[:6000]}\n\n"
         f"ACTIVE PEERS (same profile):\n" + ("\n".join(f"  - {_fmt_row(p)}" for p in peers[:20]) or "  (none)") + "\n\n"
         f"SOLD / ENDED COMPS:\n" + ("\n".join(f"  - {_fmt_row(c)}" for c in comps[:30]) or "  (none)") + "\n\n"
         f"FULL LISTING TEXT:\n{(listing.get('raw_text') or '')[:60_000]}"
     )
+    user = photos + [{"type": "text", "text": user_text}] if photos else user_text
     text = call_json_text(CONFIG.model_deep, system, user, max_tokens=32000, log_name="last_assess", effort="high")
     data = coerce.parse_json(text)
     try:

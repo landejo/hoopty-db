@@ -28,7 +28,7 @@ def require_client() -> "Anthropic":
     return client
 
 
-def call_text(model: str, system: str, user: str, max_tokens: int, log_name: str,
+def call_text(model: str, system: str, user, max_tokens: int, log_name: str,
               effort: str | None = None, cache_system: bool = True) -> str:
     """One Messages call, returns concatenated text. Streams so long outputs
     never hit the HTTP timeout. Raw response saved to data/<log_name>.log."""
@@ -63,7 +63,7 @@ class TruncatedOutput(RuntimeError):
     pass
 
 
-def call_json_text(model: str, system: str, user: str, max_tokens: int, log_name: str,
+def call_json_text(model: str, system: str, user, max_tokens: int, log_name: str,
                    effort: str | None = None) -> str:
     """call_text with one retry when the output is truncated: a bigger ceiling
     and an instruction to be terser. Deep assessments need this headroom."""

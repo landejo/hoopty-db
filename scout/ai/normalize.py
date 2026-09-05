@@ -59,8 +59,14 @@ Fields (omit anything you cannot determine; never guess a VIN):
 - days_listed: integer days on market if the site states it (omit otherwise)
 - options: array of factory options / packages / notable equipment
 - highlights: 2-6 short concrete positives (documented work, rare spec, records)
-- red_flags: 0-6 short concrete concerns (salvage, rust, mods, gaps, vague
-  seller, mileage/price mismatch, missing key info for this model)
+- red_flags: 0-6 short, concrete, car-specific concerns the listing itself
+  evidences: salvage/rebuilt/branded title, accident or repaint history, rust,
+  leaks, warning lights, unexplained noises, cheap or undocumented
+  modifications, mileage/price/spec mismatch, seller evasiveness, a stated
+  problem. NOT red flags (they are handled elsewhere): distance from the buyer,
+  dealer or doc fees, the car's age, "no records mentioned", the site blocking
+  the page, generic wear you would expect on any car this old. If nothing in
+  the listing is actually wrong, return an empty array.
 - summary: 2-3 plain sentences, buyer-oriented
 - scores: quick 1-5 integers on any of these axes you can reason about:
 {axes}
