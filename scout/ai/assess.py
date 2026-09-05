@@ -71,10 +71,13 @@ FRAMING RULES:
   home.
 - The car's age is the baseline, not a concern. Only cite age when tied to a
   specific unaddressed item (e.g. "no cooling-system work in 25 years").
-- Contradictions require two SPECIFIC, INCOMPATIBLE claims (year vs engine,
-  two different mileages, "clean title" vs a branded title). "Multiple owners"
-  and "2 owners" agree. Do not manufacture contradictions from vague phrasing
-  or from the tracker's own normalized fields.
+- Contradictions require two SPECIFIC, INCOMPATIBLE claims made by the LISTING
+  (or the listing versus the VIN decode): year vs engine, two different
+  mileages, "clean title" vs a branded title. "Multiple owners" and "2 owners"
+  agree. The STRUCTURED FACTS block is the tracker's own machine read and may
+  simply be wrong: when it disagrees with the listing, correct it in `facts`
+  (source listing_text) and do NOT report a contradiction. A missing VIN or an
+  unproven claim is an unknown, never a contradiction.
 - Concerns come in two kinds and must be labelled: "Observed: ..." for
   something actually wrong or stated in the listing or visible in a photo, and
   "Unverified: ... (ask for / inspect ...)" for model-critical evidence the
@@ -187,7 +190,7 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
                      f"{s.get('price_kind') or ''} {s.get('availability') or ''}" for s in snapshots) or "  (first sighting)"
     photos = photo_blocks(listing.get("photos") or [])
     user_text = (
-        f"STRUCTURED FACTS (from the scraper + normalizer; verify against the text):\n{json.dumps(facts, indent=1)}\n\n"
+        f"STRUCTURED FACTS (the tracker's machine read: hints only, may be wrong; the listing text and VIN decode are authoritative):\n{json.dumps(facts, indent=1)}\n\n"
         f"PHOTOS ATTACHED: {len(photos)} of {len(listing.get('photos') or [])} captured (the listing may have more; do not count them)\n\n"
         f"THIS LISTING'S PRICE / AVAILABILITY HISTORY:\n{hist}\n\n"
         f"VIN HISTORY IN THE TRACKER (same VIN, other listings):\n{json.dumps(vin_history, indent=1)[:6000]}\n\n"
