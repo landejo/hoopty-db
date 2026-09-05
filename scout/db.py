@@ -703,3 +703,17 @@ def update_provenance_job(job_id: int, path: Path | None = None, **fields: Any) 
     fields["updated_at"] = now()
     with connect(path) as c:
         c.execute(f"UPDATE provenance_jobs SET {', '.join(k + '=?' for k in fields)} WHERE id=?", [*fields.values(), job_id])
+
+
+def delete_listing(listing_id: int, path: Path | None = None) -> bool:
+    """Remove a listing and everything hanging off it (snapshots, assessments,
+    hits, jobs cascade). A vehicle record left with no listings is removed too."""
+    with connect(path) as c:
+        row = c.execute("SELECT vehicle_id FROM listings WHERE id=?", (listing_id,)).fetchone()
+        if not row:
+            return False
+        c.execute("DELETE FROM listings WHERE id=?", (listing_id,))
+        vid = row["vehicle_id"]
+        if vid and not c.execute("SELECT 1 FROM listings WHERE vehicle_id=?", (vid,)).fetchone():
+            c.execute("DELETE FROM vehicles WHERE id=?", (vid,))
+    return True

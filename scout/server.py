@@ -115,6 +115,14 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
     return {"ok": True, **updates}
 
 
+@app.delete("/api/listings/{listing_id}")
+def delete_listing(listing_id: int) -> dict[str, Any]:
+    if not db.delete_listing(listing_id):
+        raise HTTPException(404, "not found")
+    db.log_event("deleted", listing_id, "")
+    return {"ok": True}
+
+
 @app.post("/api/listings/{listing_id}/assess")
 @app.post("/api/listings/{listing_id}/analyze")  # back-compat alias
 async def assess_listing(listing_id: int) -> dict[str, Any]:
