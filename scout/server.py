@@ -221,7 +221,7 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
 @app.post("/api/assess-all")
 async def assess_all(tier: str = "quick", only_unassessed: bool = True) -> dict[str, Any]:
     """Assess every active candidate (quick tier by default). Serial, so it can take a while."""
-    rows = [r for r in db.list_listings(role="candidate") if r["availability"] == "active" and r.get("profile_key")]
+    rows = [r for r in db.list_listings(role="candidate") if r["availability"] in ("active", "pending") and r.get("profile_key")]
     if only_unassessed:
         rows = [r for r in rows if not db.latest_assessment(r["id"])]
     done, errors = 0, []
