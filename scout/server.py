@@ -100,7 +100,7 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         updates["notes"] = patch.notes[:20_000]
     if patch.pinned is not None:
         updates["pinned"] = 1 if patch.pinned else 0
-    if patch.role in {"candidate", "comp"}:
+    if patch.role in {"candidate", "comp", "ignored"}:
         updates["role"] = patch.role
     if patch.profile_key is not None:
         if patch.profile_key and not db.get_profile(patch.profile_key):
@@ -321,6 +321,36 @@ def get_provenance(listing_id: int) -> dict[str, Any]:
     return {"provenance": row.get("provenance"), "timeline": db.vehicle_events(row["vehicle_id"]) if row.get("vehicle_id") else [],
             "vehicle": db.get_vehicle(row["vehicle_id"]) if row.get("vehicle_id") else None,
             "jobs": [j for j in db.list_provenance_jobs(None) if j["listing_id"] == listing_id][:5]}
+
+
+@app.post("/api/rescore")
+def rescore() -> dict[str, Any]:
+    """Recompute every preliminary score from stored data. Free."""
+    from scout.ingest import rescore_all
+    return {"ok": True, "rescored": rescore_all()}
+
+
+@app.post("/api/renormalize-all")
+async def renormalize_all(only_missing_ratings: bool = True) -> dict[str, Any]:
+    """Re-run the fast model on candidates (all, or only those without the new
+    ratings). Roughly a cent per listing."""
+    if not CONFIG.ai_enabled:
+        raise HTTPException(400, "ANTHROPIC_API_KEY not set")
+    rows = [r for r in db.list_listings() if r["role"] != "ignored"
+            and (not only_missing_ratings or not (r.get("normalized") or {}).get("ratings"))]
+    done, errors = 0, []
+    async with _ai_lock:
+        for r in rows:
+            db.update_listing(r["id"], {"normalized_at": None})
+            item = {"url": r["url"], "title": r.get("title"), "price_text": f"${r['price']:,}" if r.get("price") else "",
+                    "detail": {"text": r.get("raw_text") or "", "photos": r.get("photos") or []}, "sold": r["availability"] == "sold"}
+            try:
+                st = await asyncio.to_thread(ingest_items, r["site"], [item], True)
+                done += 1
+                errors += st.get("errors") or []
+            except Exception as e:
+                errors.append(f"{r['url']}: {e}")
+    return {"ok": True, "renormalized": done, "errors": errors[:10]}
 
 
 @app.get("/api/profiles")

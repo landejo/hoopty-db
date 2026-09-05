@@ -79,3 +79,98 @@ def price_percentile(price: int | None, pool: list[int]) -> int | None:
         return None
     below = sum(1 for p in pool if p < price)
     return int(round(100 * below / len(pool)))
+
+
+# ---------- preliminary score: the guide's 100-point rubric, cheap inputs ----------
+# documentation 30 · condition 25 · price/value 15 · mission fit 15 · logistics 10 · spec 5
+# Haiku rates documentation / condition / spec (0-10); everything else is arithmetic
+# so that similar cars separate on price, budget, configuration and location.
+
+LOGISTICS_BY_BAND = {5: 10, 4: 8, 3: 6, 2: 4, 1: 2, None: 5}
+
+
+def _price_value_points(price: int | None, reference: int | None, mileage: int | None, ref_mileage: int | None) -> tuple[int, str]:
+    if not price:
+        return 7, "no price"
+    if not reference:
+        return 8, "no comps or peers to compare against"
+    ratio = price / reference
+    # Mileage-adjust the reference: ±4% per 10k miles versus the pool median, capped.
+    note = f"price is {ratio:.0%} of the reference ${reference:,}"
+    if mileage and ref_mileage:
+        adj = max(-0.25, min(0.25, (ref_mileage - mileage) / 10000 * 0.04))
+        ratio = price / (reference * (1 + adj))
+        note += f", {'+' if adj >= 0 else ''}{adj:.0%} mileage-adjusted"
+    pts = 15 if ratio <= 0.80 else 13 if ratio <= 0.90 else 11 if ratio <= 0.97 else 9 if ratio <= 1.03 else 7 if ratio <= 1.10 else 4 if ratio <= 1.20 else 2
+    return pts, note
+
+
+def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: list[dict], peers: list[dict]) -> tuple[int, dict]:
+    n = listing.get("normalized") or {}
+    r = n.get("ratings") or {}
+    breakdown: dict = {}
+    blocked = bool((listing.get("raw") or {}).get("blocked"))
+    flags = len(n.get("red_flags") or [])
+
+    doc = round((r.get("documentation") or {}).get("score", 3) * 3)
+    if listing.get("vin"):
+        doc = min(30, doc + 2)
+    if blocked:
+        doc = min(doc, 6)
+    breakdown["documentation"] = {"points": doc, "max": 30, "why": (r.get("documentation") or {}).get("why", "no rating yet") + (" · VIN present" if listing.get("vin") else " · no VIN") + (" · page blocked" if blocked else "")}
+
+    cond = round((r.get("condition") or {}).get("score", 4) * 2.5) - min(10, 2 * flags)
+    cond = max(0, cond)
+    breakdown["condition"] = {"points": cond, "max": 25, "why": (r.get("condition") or {}).get("why", "no rating yet") + (f" · {flags} red flag(s)" if flags else "")}
+
+    price = listing.get("sold_price") or listing.get("price")
+    pool = [c.get("sold_price") or c.get("price") for c in comps if (c.get("sold_price") or c.get("price"))]
+    src = "sold comps"
+    if len(pool) < 3:
+        pool = [p.get("price") for p in peers if p.get("price") and p.get("id") != listing.get("id")]
+        src = "active peers"
+    pool = sorted(pool)
+    reference = pool[len(pool) // 2] if pool else None
+    miles = sorted(m for m in ((c.get("mileage") for c in comps + peers)) if m)
+    ref_miles = miles[len(miles) // 2] if miles else None
+    pv, why = _price_value_points(price, reference, listing.get("mileage"), ref_miles)
+    budget = state.get("budget") or {}
+    mission = listing.get("mission") or (profile or {}).get("mission_default") or "enthusiast_bridge"
+    if price and budget.get("max_price") and mission in {"enthusiast_bridge", "pragmatic_bridge"} and price > budget["max_price"]:
+        pv = min(pv, 6)
+        why += f" · over the ${budget['max_price']:,} bridge budget"
+    breakdown["price_value"] = {"points": pv, "max": 15, "why": f"{why} ({src}: {len(pool)})"}
+
+    trans = (listing.get("transmission") or "").lower()
+    auto_ok = bool((profile or {}).get("automatic_ok"))
+    if mission in {"enthusiast_bridge", "future_keeper"} and not auto_ok:
+        fit = 12 if trans == "manual" else 3 if trans == "automatic" else 8
+        fit_why = {"manual": "manual, fits the brief", "automatic": "automatic in a manual brief", "": "transmission unknown"}.get(trans, "transmission unknown")
+    elif mission == "pragmatic_bridge":
+        fit, fit_why = 9, "pragmatic bridge: solves the immediate problem"
+    else:
+        fit, fit_why = 10, "utility / capability mission"
+    if price and budget:
+        if budget.get("ideal_low", 0) <= price <= budget.get("ideal_high", 10**9):
+            fit += 3; fit_why += " · inside the ideal band"
+        elif price <= budget.get("max_price", 10**9):
+            fit += 1; fit_why += " · under the max"
+        elif mission != "future_keeper":
+            fit -= 6; fit_why += " · over the max"
+    year = listing.get("year")
+    if year and __import__("datetime").date.today().year - int(year) > 25:
+        fit -= 1; fit_why += " · 25+ years old"
+    fit = max(0, min(15, fit))
+    breakdown["mission_fit"] = {"points": fit, "max": 15, "why": f"{fit_why} ({mission.replace('_', ' ')})"}
+
+    band = locality_hint(listing.get("location"))
+    log = LOGISTICS_BY_BAND.get(band, 5)
+    if listing.get("site") in {"bat", "carsandbids"} and (band or 0) < 4:
+        log = max(0, log - 1)
+    breakdown["logistics"] = {"points": log, "max": 10, "why": f"location band {band or 'unknown'}: {listing.get('location') or 'unknown'}"}
+
+    spec = round((r.get("spec") or {}).get("score", 5) / 2)
+    breakdown["emotional_spec_fit"] = {"points": spec, "max": 5, "why": (r.get("spec") or {}).get("why", "no rating yet")}
+
+    total = sum(v["points"] for v in breakdown.values())
+    return int(total), breakdown

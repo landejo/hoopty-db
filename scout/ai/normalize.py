@@ -18,6 +18,17 @@ make/model/generation, and "skip" if the listing is not a vehicle):
 {registry}
 
 Fields (omit anything you cannot determine; never guess a VIN):
+- is_vehicle: true/false. false for kayaks, parts, trailers, wheels, anything
+  that is not a road vehicle for sale. When false, set profile_key "skip".
+- ratings: object with three 0-10 integers and a short rationale each:
+    documentation: {{score, why}} how VERIFIABLE the listing is: VIN shown, records
+      or receipts described, photos of specific areas, history report, seller
+      cooperation. 0-2 = bare claims, 5 = some specifics, 8+ = receipts/reports.
+    condition: {{score, why}} evidence-based condition: leaks, warning lights,
+      tires, rust, structure, deferred work, accident history. Unknown pulls it
+      down; "runs great" is not evidence.
+    spec: {{score, why}} desirability of THIS spec for an enthusiast buyer:
+      manual, colors, options, body style, originality. 5 = ordinary.
 - year (int), make, model (short, e.g. "Z3 M coupe", "GX470", "911 Carrera"),
   generation (chassis/gen code if known, e.g. "E36/8", "J120", "997.2"),
   trim, engine (short label, e.g. "S54", "4.7L V8"), engine_liters (number),
