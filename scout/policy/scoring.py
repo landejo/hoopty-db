@@ -60,11 +60,11 @@ def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: 
 
 def compute_confidence(evidence: EvidenceInterpretation, gates: list[Gate], listing: dict[str, Any]) -> int:
     """Confidence in the assessment, not the car (§9)."""
-    c = 20 + evidence.evidence_quality * 7          # 20..90 from verifiable evidence
+    c = 25 + evidence.evidence_quality * 6          # 25..85 from verifiable evidence
     unknown_facts = sum(1 for f in evidence.facts if f.status == "unknown")
-    c -= min(20, 3 * unknown_facts)
-    c -= 10 * sum(1 for g in gates if g.key.startswith("critical_missing"))
-    c -= 5 * len(evidence.contradictions)
+    c -= min(12, 2 * unknown_facts)
+    c -= min(20, 5 * sum(1 for g in gates if g.key.startswith("critical_missing")))   # capped: profiles differ in item count
+    c -= min(9, 3 * len(evidence.contradictions))
     if not (listing.get("photos") or []):
         c -= 5
     if len(listing.get("raw_text") or "") < 400:

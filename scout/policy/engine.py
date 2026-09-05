@@ -49,6 +49,12 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
                            f"the new ${listing.get('price') or 0:,} ask is not the anchor" + (" (cap applied)." if capped else "."))
     score = compute_score(evidence, gates, listing, mission, state, vin_history)
     confidence = compute_confidence(evidence, gates, listing)
+    if not (evidence.next_action or "").strip():
+        # The model must always leave one concrete step; derive it from its own lists.
+        first_q = next(iter(evidence.seller_questions), None)
+        first_u = next(iter(evidence.unknowns), None)
+        evidence.next_action = (f"Ask the seller: {first_q}" if first_q else f"Resolve first: {first_u}" if first_u
+                                else "Arrange an independent PPI before any money moves.")
     verdict, reason = verdict_from(score, confidence, gates)
     return Assessment(
         policy_version=POLICY_VERSION, mission=mission, urgency_mode=state.get("urgency_mode", "accelerated_bridge"),
