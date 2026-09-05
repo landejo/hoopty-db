@@ -350,10 +350,13 @@
         <div><h1>${esc(title(l))}</h1><div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>
         <div class="row" style="gap:18px">
           <div><div class="price">${money(l.sold_price || l.price)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
-          ${S ? `<div class="dial" style="--pct:${S.total}"><span>${S.total}</span><small>/100</small></div>` : ""}
-          ${A ? `<div><div class="verdict ${esc(A.verdict.split(" ")[0])}">${esc(A.verdict)}</div><div class="muted small">confidence ${A.confidence}/100 · policy ${esc(A.policy_version)}</div></div>` : ""}
+          ${S ? `<div class="dial" style="--pct:${S.total}"><span>${S.total}</span><small>/100</small></div>`
+              : prelimOf(l) != null ? `<div class="dial prelim" style="--pct:${Math.round(calibrated(l))}"><span>${state.data.calibration?.offset != null ? "≈" : ""}${Math.round(calibrated(l))}</span><small>prelim</small></div>` : ""}
+          ${A ? `<div><div class="verdict ${esc(A.verdict.split(" ")[0])}">${esc(A.verdict)}</div><div class="muted small">confidence ${A.confidence}/100 · policy ${esc(A.policy_version)}</div></div>`
+              : `<div><div class="verdict" style="color:var(--muted)">Not assessed</div><div class="muted small">${(() => { const r = rankOf(l); return r ? `#${r.rank} of ${r.of} in profile · ` : ""; })()}preliminary read only</div></div>`}
         </div>
-      </div></div>`));
+      </div>
+      ${(S || N.prelim_breakdown) ? `<div class="catstrip">${CATS.map(([k, label, max]) => { const pts = S ? S[k] : (N.prelim_breakdown[k] || {}).points; const why = S ? (E.ratings?.[k]?.rationale || "") : (N.prelim_breakdown[k] || {}).why || ""; return `<span class="cat" title="${esc(why)}"><b>${label.split(" ")[0].replace("&", "")}</b> <span class="mono">${pts ?? "—"}/${max}</span><i style="width:${Math.round(((pts || 0) / max) * 100)}%"></i></span>`; }).join("")}${S?.caps_applied?.length ? `<span class="muted small">caps: ${S.caps_applied.length}</span>` : ""}</div>` : ""}</div>`));
 
     const main = h(`<div></div>`), side = h(`<div></div>`);
     const grid = h(`<div class="detail"></div>`); grid.append(main, side); app.appendChild(grid);
