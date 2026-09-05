@@ -326,7 +326,20 @@ def test_contradiction_with_tracker_metadata_or_missing_vin_is_not_a_gate():
     assert any(g.key == "identity_contradiction" for g in a.gates)
 
 
-def test_generated_profile_reserve_is_clamped():
+def test_generated_profile_reserve_is_clamped_and_never_hard():
     from scout import coerce
-    p = coerce.profile({"key": "x", "label": "X", "weights": {"reliability": 1, "value": 1, "condition": 1}, "risk_reserve": 7500})
-    assert p["risk_reserve"] == 4000
+    p = coerce.profile({"key": "x", "label": "X", "weights": {"reliability": 1, "value": 1, "condition": 1}, "risk_reserve": 7500,
+                        "critical_evidence": [{"key": "belt", "label": "Belt receipt", "severity": "hard"}]})
+    assert p["risk_reserve"] == 4000 and p["critical_evidence"][0]["severity"] == "conditional"
+
+
+def test_failed_conditional_item_is_strong_reservations_not_reject():
+    ev = _ev(doc=7, cond=7, val=7, fit=8, log=9, emo=7, quality=7,
+             critical={"rear_structure": "failed", "cooling_history": "satisfied"})
+    a = assess(_listing(), _profile("z3_30i"), ev, STATE)
+    assert a.verdict == "Maybe / verify"
+    assert any(g.kind == "conditional" and g.key == "critical_reservation:rear_structure" and "strong reservations" in g.reason for g in a.gates)
+    # A failed HARD item still rejects (Cayman S borescope showing scoring).
+    l = _listing(make="Porsche", model="Cayman S", trim="S", engine_liters=3.4, year=2007, price=24000)
+    a2 = assess(l, _profile("porsche_987_cayman"), _ev(quality=8, critical={"borescope": "failed", "dme_overrev": "satisfied", "cooling_aos_service": "satisfied"}), STATE, mission="future_keeper")
+    assert a2.verdict == "Reject" and any(g.key == "critical_failed:borescope" for g in a2.gates)

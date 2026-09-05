@@ -71,8 +71,11 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
             continue
         label = req.get("label", req["key"])
         detail = f" ({ce.evidence})" if ce and ce.evidence else ""
-        if st == "failed":
+        if st == "failed" and req.get("severity") == "hard":
             gates.append(Gate(kind="hard", key=f"critical_failed:{req['key']}", reason=f"{label}: failed{detail}"))
+        elif st == "failed":
+            gates.append(Gate(kind="conditional", key=f"critical_reservation:{req['key']}",
+                              reason=f"{label}: strong reservations{detail}"))
         elif req.get("severity") == "hard":
             gates.append(Gate(kind="hard", key=f"critical_missing:{req['key']}",
                               reason=f"{label}: {'seller assurance only' if st == 'claimed_only' else 'missing'}{detail}"))
