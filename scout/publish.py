@@ -36,6 +36,12 @@ def scrub_listing(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _budget_signature(budget: dict[str, Any], urgency: str | None) -> str:
+    import hashlib
+    keys = ("ideal_low", "ideal_high", "max_price", "acceptable_all_in", "defeats_purpose_all_in")
+    return hashlib.sha1(("|".join(str(budget.get(k)) for k in keys) + "|" + str(urgency)).encode()).hexdigest()[:12]
+
+
 def scrub_assessment(a: dict[str, Any]) -> dict[str, Any]:
     """Drop the VIN itself and seller-identifying facts; keep everything else."""
     out = dict(a)
@@ -87,6 +93,19 @@ def build_export() -> dict[str, Any]:
     )
     calibration = {"samples": len(gaps), "offset": int(gaps[len(gaps) // 2]) if len(gaps) >= 3 else None,
                    "note": "median(assessed - preliminary) over assessed listings; applied to unassessed cards for sorting when samples >= 3"}
+    from scout.policy.state import load_state
+    st = load_state()
+    budget_sig = _budget_signature(st.get("budget") or {}, st.get("urgency_mode"))
+    for l in listings:
+        a = l.get("assessment")
+        if a:
+            ctx = a.get("context") or {}
+            a["context_changed"] = []
+            if ctx.get("budget") and _budget_signature(ctx["budget"], ctx.get("urgency_mode")) != budget_sig:
+                a["context_changed"].append("budget or urgency")
+            if a.get("mission") and l.get("mission") and a["mission"] != l["mission"]:
+                a["context_changed"].append(f"mission ({a['mission'].replace('_', ' ')} → {l['mission'].replace('_', ' ')})")
+            a.pop("context", None)   # keep the numbers off the public page
     return {
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "policy_version": POLICY_VERSION,

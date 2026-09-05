@@ -417,6 +417,7 @@
       const cond = A.gates.filter((g) => g.kind === "conditional");
       main.appendChild(h(`<div class="panel ${verdictTone(A.verdict) === "rose" ? "accent-rose" : verdictTone(A.verdict) === "mustard" ? "accent-mustard" : "accent-olive"}">
         <h3>Verdict: ${esc(A.verdict)} <span class="muted small">${ago(A.assessed_at)} · ${esc(A.mission.replace("_", " "))} · ${esc(A.urgency_mode.replace("_", " "))}</span></h3>
+        ${(A.context_changed || []).length ? `<p class="small" style="background:var(--chip-mustard);border-radius:8px;padding:6px 10px"><b>Context changed since this assessment:</b> ${esc(A.context_changed.join("; "))}. The arithmetic has been re-derived, but the model's ratings were formed under the old settings. Re-assess to refresh them.</p>` : ""}
         <p><b>${esc(A.verdict_reason)}</b></p>
         ${E.mission_note ? `<p><b>Jason fit:</b> ${esc(E.mission_note)}</p>` : ""}
         <p>${esc(E.rationale)}</p>
