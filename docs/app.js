@@ -403,7 +403,8 @@
         <label><input type="checkbox" id="pin" ${l.pinned ? "checked" : ""}> pinned</label>
         <label>Role <select id="role"><option value="candidate" ${l.role === "candidate" ? "selected" : ""}>candidate</option><option value="comp" ${l.role === "comp" ? "selected" : ""}>comp</option><option value="ignored" ${l.role === "ignored" ? "selected" : ""}>ignored (not a car / not for me)</option></select></label></div>
         <label style="display:block;margin-top:10px">Profile <select id="prof"><option value="">— none —</option>${state.data.profiles.map((p) => `<option value="${p.key}" ${l.profile_key === p.key ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select></label>
-        <textarea class="notes" id="notes" placeholder="Your notes (saved on blur)">${esc(l.notes || "")}</textarea></div>`);
+        <textarea class="notes" id="notes" placeholder="Your notes (saved on blur)">${esc(l.notes || "")}</textarea>
+        <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn sm ghost" id="delete" title="Remove this listing and its history from the workbench">Delete listing</button></div></div>`);
       side.appendChild(act);
       $("#analyze", act).onclick = async (e) => {
         e.target.disabled = true; e.target.textContent = "Assessing… (30–90s)";
@@ -418,6 +419,10 @@
       api(`/api/listings/${l.id}/provenance`).then((r) => { const j = (r.jobs || [])[0]; if (j && j.status !== "done") $("#inv-status", act).textContent = `Investigation ${j.status}${j.hits ? ` · ${j.hits} hits` : ""}${j.error ? ` · ${j.error}` : ""}`; }).catch(() => {});
       $("#renorm", act).onclick = async (e) => { e.target.disabled = true; try { await api(`/api/listings/${l.id}/renormalize`, "POST"); await loadData(); route(); toast("Re-normalized"); } catch (err) { toast(err.message, 4000); e.target.disabled = false; } };
       const patch = async (body) => { try { await api(`/api/listings/${l.id}`, "PATCH", body); Object.assign(l, body); toast("Saved"); } catch (err) { toast(err.message, 4000); } };
+      $("#delete", act).onclick = async () => {
+        if (!confirm(`Delete "${title(l)}" and its snapshots, assessments and provenance? A future sync will re-add it as new if it is still saved on the site.`)) return;
+        try { await api(`/api/listings/${l.id}`, "DELETE"); await loadData(); location.hash = "#/"; toast("Deleted"); } catch (err) { toast(err.message, 4000); }
+      };
       $("#mission", act).onchange = (e) => patch({ mission: e.target.value });
       $("#status", act).onchange = (e) => patch({ status: e.target.value });
       $("#pin", act).onchange = (e) => patch({ pinned: e.target.checked });

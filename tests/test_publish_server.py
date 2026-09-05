@@ -54,3 +54,6 @@ def test_server_roundtrip():
         # Analyze without an API key is a clean 400, never a paid call.
         assert c.post(f"/api/listings/{lid}/analyze").status_code == 400
         assert len(c.get("/api/profiles").json()) >= 4
+        assert c.delete(f"/api/listings/{lid}").status_code == 200
+        assert c.get(f"/api/listings/{lid}").status_code == 404
+        assert c.delete(f"/api/listings/{lid}").status_code == 404
