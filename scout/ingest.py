@@ -173,9 +173,17 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     elif norm.get("availability") == "pending" and scraper_availability == "active":
         updates["availability"] = "pending"
     updates["normalized"] = {k: norm.get(k) for k in ("highlights", "red_flags", "prelim_summary", "prelim_scores", "profile_confidence", "price_drops", "days_listed", "ratings")}
-    if norm.get("is_vehicle") is False or norm.get("profile_key") == "skip":
+    # Only an explicit "not a vehicle" answer ignores a listing, and never one we
+    # already know to be a car (a removed listing page is not a kayak).
+    known_car = bool((norm.get("year") or current_year_hint(lid)) and (norm.get("make") or norm.get("model")))
+    if norm.get("is_vehicle") is False and not known_car:
         updates["role"] = "ignored"
         updates["normalized"]["ignored_reason"] = "not a vehicle (normalizer)"
+    # A captured title without a year is site chrome ("Buying", "Price drop -$5,000"):
+    # build one from what the reader established.
+    cur_title = (db.get_listing(lid) or {}).get("title") or ""
+    if not re.search(r"\b(19|20)\d{2}\b", cur_title) and norm.get("year") and (norm.get("make") or norm.get("model")):
+        updates["title"] = " ".join(str(x) for x in (norm.get("year"), norm.get("make"), norm.get("model"), norm.get("trim")) if x)[:120]
     updates["normalized_at"] = db.now()
 
     # Profile: deterministic match first, then the model's pick, then generate.
@@ -233,6 +241,11 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     rescore_listing(lid, state)
     from scout.provenance import link_listing_vehicle  # lazy
     link_listing_vehicle(lid)
+
+
+def current_year_hint(lid: int) -> int | None:
+    row = db.get_listing(lid)
+    return (row or {}).get("year")
 
 
 def rescore_listing(lid: int, state: dict[str, Any] | None = None) -> int | None:
