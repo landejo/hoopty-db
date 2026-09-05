@@ -27,7 +27,8 @@ def test_export_shape_and_market_percentile(tmp_path):
     for r in db.list_listings():
         db.update_listing(r["id"], {"profile_key": "z3_m", "sold_price": 50000 if r["role"] == "comp" else None})
     data = build_export()
-    assert set(data) == {"generated_at", "policy_version", "sites", "profiles", "markets", "listings"}
+    assert set(data) == {"generated_at", "policy_version", "calibration", "sites", "profiles", "markets", "listings"}
+    assert data["calibration"]["samples"] == 0 and data["calibration"]["offset"] is None
     assert all("assessment" in l for l in data["listings"])
     assert data["markets"]["z3_m"]["sold_count"] == 1
     active = next(l for l in data["listings"] if l["role"] == "candidate")

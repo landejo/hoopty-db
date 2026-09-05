@@ -76,9 +76,19 @@ def build_export() -> dict[str, Any]:
         for l in actives:
             l["price_pct_vs_sold"] = price_percentile(l.get("price"), pool)
         markets[p["key"]] = stats
+    # Calibration: how far assessed scores land from their preliminary ones.
+    # Applied to unassessed cards for sorting once there are enough samples.
+    gaps = sorted(
+        (l["assessment"]["score"]["total"] - l["prelim_score"])
+        for l in listings if l.get("assessment") and l.get("prelim_score") is not None
+        and (l["assessment"].get("score") or {}).get("total") is not None
+    )
+    calibration = {"samples": len(gaps), "offset": int(gaps[len(gaps) // 2]) if len(gaps) >= 3 else None,
+                   "note": "median(assessed - preliminary) over assessed listings; applied to unassessed cards for sorting when samples >= 3"}
     return {
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "policy_version": POLICY_VERSION,
+        "calibration": calibration,
         "sites": SITES,
         "profiles": profiles,
         "markets": markets,

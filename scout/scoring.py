@@ -101,7 +101,8 @@ def _price_value_points(price: int | None, reference: int | None, mileage: int |
         adj = max(-0.25, min(0.25, (ref_mileage - mileage) / 10000 * 0.04))
         ratio = price / (reference * (1 + adj))
         note += f", {'+' if adj >= 0 else ''}{adj:.0%} mileage-adjusted"
-    pts = 15 if ratio <= 0.80 else 13 if ratio <= 0.90 else 11 if ratio <= 0.97 else 9 if ratio <= 1.03 else 7 if ratio <= 1.10 else 4 if ratio <= 1.20 else 2
+    # Deliberately no easy 15: the assessment weighs risk the arithmetic cannot see.
+    pts = 13 if ratio <= 0.75 else 11 if ratio <= 0.85 else 9 if ratio <= 0.95 else 7 if ratio <= 1.05 else 5 if ratio <= 1.15 else 3 if ratio <= 1.30 else 1
     return pts, note
 
 
@@ -112,16 +113,23 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
     blocked = bool((listing.get("raw") or {}).get("blocked"))
     flags = len(n.get("red_flags") or [])
 
-    doc = round((r.get("documentation") or {}).get("score", 3) * 3)
+    # Documentation: strict like the assessment. Unread listings start at 1/10, and
+    # nothing scores above 15/30 until model-critical evidence has been examined
+    # (the assessment applies the same cap while that evidence is unresolved).
+    doc = round((r.get("documentation") or {}).get("score", 1) * 3)
     if listing.get("vin"):
         doc = min(30, doc + 2)
     if blocked:
-        doc = min(doc, 6)
-    breakdown["documentation"] = {"points": doc, "max": 30, "why": (r.get("documentation") or {}).get("why", "no rating yet") + (" · VIN present" if listing.get("vin") else " · no VIN") + (" · page blocked" if blocked else "")}
+        doc = min(doc, 4)
+    critical_unknown = bool((profile or {}).get("critical_evidence"))
+    if critical_unknown and doc > 15:
+        doc = 15
+    breakdown["documentation"] = {"points": doc, "max": 30, "why": (r.get("documentation") or {}).get("why", "not read yet") + (" · VIN present" if listing.get("vin") else " · no VIN") + (" · page blocked" if blocked else "") + (" · capped at 15 until model-critical evidence is examined" if critical_unknown and doc == 15 else "")}
 
-    cond = round((r.get("condition") or {}).get("score", 4) * 2.5) - min(10, 2 * flags)
-    cond = max(0, cond)
-    breakdown["condition"] = {"points": cond, "max": 25, "why": (r.get("condition") or {}).get("why", "no rating yet") + (f" · {flags} red flag(s)" if flags else "")}
+    # Condition: the reader's evidence-based score only. Red flags are listed, not
+    # double-counted here (many are documentation or logistics, not condition).
+    cond = round((r.get("condition") or {}).get("score", 4) * 2.5)
+    breakdown["condition"] = {"points": cond, "max": 25, "why": (r.get("condition") or {}).get("why", "not read yet") + (f" · {flags} red flag(s) noted" if flags else "")}
 
     price = listing.get("sold_price") or listing.get("price")
     pool = [c.get("sold_price") or c.get("price") for c in comps if (c.get("sold_price") or c.get("price"))]
@@ -144,7 +152,7 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
     trans = (listing.get("transmission") or "").lower()
     auto_ok = bool((profile or {}).get("automatic_ok"))
     if mission in {"enthusiast_bridge", "future_keeper"} and not auto_ok:
-        fit = 12 if trans == "manual" else 3 if trans == "automatic" else 8
+        fit = 10 if trans == "manual" else 3 if trans == "automatic" else 7
         fit_why = {"manual": "manual, fits the brief", "automatic": "automatic in a manual brief", "": "transmission unknown"}.get(trans, "transmission unknown")
     elif mission == "pragmatic_bridge":
         fit, fit_why = 9, "pragmatic bridge: solves the immediate problem"
@@ -152,7 +160,7 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
         fit, fit_why = 10, "utility / capability mission"
     if price and budget:
         if budget.get("ideal_low", 0) <= price <= budget.get("ideal_high", 10**9):
-            fit += 3; fit_why += " · inside the ideal band"
+            fit += 2; fit_why += " · inside the ideal band"
         elif price <= budget.get("max_price", 10**9):
             fit += 1; fit_why += " · under the max"
         elif mission != "future_keeper":
@@ -160,7 +168,7 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
     year = listing.get("year")
     if year and __import__("datetime").date.today().year - int(year) > 25:
         fit -= 1; fit_why += " · 25+ years old"
-    fit = max(0, min(15, fit))
+    fit = max(0, min(12, fit))  # 13-15 is earned only by evidence the assessment sees
     breakdown["mission_fit"] = {"points": fit, "max": 15, "why": f"{fit_why} ({mission.replace('_', ' ')})"}
 
     band = locality_hint(listing.get("location"))

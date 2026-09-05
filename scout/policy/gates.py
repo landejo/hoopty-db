@@ -91,6 +91,10 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
         gates.append(Gate(kind="configuration", key="automatic_in_manual_search",
                           reason="Automatic transmission in a manual-required search (wrong configuration)"))
 
+    # Contradictions the model reported AND the VIN decode found show once.
+    seen: set[tuple[str, str]] = set()
+    gates = [g for g in gates if not ((g.kind, g.reason) in seen or seen.add((g.kind, g.reason)))]
+
     # Total expected cost defeats the bridge strategy (§8 hard gate).
     cap = (state.get("budget") or {}).get("defeats_purpose_all_in")
     if all_in_high is not None and cap and mission in {"enthusiast_bridge", "pragmatic_bridge"} and all_in_high > cap:
