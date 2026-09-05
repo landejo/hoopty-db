@@ -102,3 +102,26 @@ def test_bot_wall_page_is_never_stored_as_listing_text():
     assert "Verify you are human" not in (row["raw_text"] or "")
     assert row["raw_text"].startswith("2000 BMW M Roadster")  # card text kept as the fallback
     assert row["raw"].get("blocked") is True
+
+
+def test_ignored_listing_never_comes_back_as_candidate():
+    url = "https://www.facebook.com/marketplace/item/kayak/"
+    ingest_items("facebook", [_item(url, title="Two kayaks with paddles", price="$450")], run_ai=False)
+    lid = db.get_listing_by_url(url)["id"]
+    db.update_listing(lid, {"role": "ignored"})
+    ingest_items("facebook", [_item(url, title="Two kayaks with paddles", price="$400")], run_ai=False)
+    assert db.get_listing_by_url(url)["role"] == "ignored"
+    from scout.ingest import rescore_listing
+    assert rescore_listing(lid) is None
+
+
+def test_normalizer_skip_marks_not_a_vehicle(monkeypatch):
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    import scout.ai.normalize as nz
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": False, "profile_key": "skip", "prelim_summary": "kayaks"})
+    url = "https://www.facebook.com/marketplace/item/kayak2/"
+    ing.ingest_items("facebook", [_item(url, title="Two kayaks", price="$450")], run_ai=True)
+    row = db.get_listing_by_url(url)
+    assert row["role"] == "ignored" and row["normalized"]["ignored_reason"].startswith("not a vehicle")

@@ -171,11 +171,21 @@ def normalized_listing(data: dict[str, Any]) -> dict[str, Any]:
     out["prelim_scores"] = scores(data.get("scores"))
     out["prelim_summary"] = str(data.get("summary") or "").strip()[:1200] or None
     out["profile_key"] = str(data.get("profile_key") or "").strip()[:80] or None
+    iv = data.get("is_vehicle")
+    out["is_vehicle"] = iv if isinstance(iv, bool) else None
+    r = data.get("ratings") if isinstance(data.get("ratings"), dict) else {}
+    ratings = {}
+    for k in ("documentation", "condition", "spec"):
+        v = r.get(k)
+        sc = to_int(v.get("score") if isinstance(v, dict) else v, 0, 10)
+        if sc is not None:
+            ratings[k] = {"score": sc, "why": str(v.get("why") if isinstance(v, dict) else "").strip()[:300]}
+    out["ratings"] = ratings
     out["profile_confidence"] = to_int(data.get("profile_confidence"), 1, 5)
     ap = data.get("accidents")
     out["accidents"] = ap if ap in {"yes", "no", "unknown"} else None
     out["num_owners"] = to_int(data.get("num_owners"), 1, 20)
-    return {k: v for k, v in out.items() if v not in (None, [], {})}
+    return {k: v for k, v in out.items() if v not in (None, [], {}) or k == "is_vehicle" and v is False}
 
 
 def analysis(data: dict[str, Any], valid_check_keys: set[str] | None) -> dict[str, Any]:

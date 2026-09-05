@@ -45,3 +45,36 @@ def test_market_stats_and_percentile():
     assert s["sold_count"] == 2 and s["sold_median"] == 35000 and s["asking_median"] == 38000
     assert s["mileage_median"] == 75000
     assert price_percentile(38000, [30000, 40000]) == 50
+
+
+def test_preliminary_score_separates_similar_cars():
+    from scout.scoring import preliminary_score
+    from scout.policy.state import DEFAULT_STATE
+    prof = db.get_profile("z3_30i")
+    base = {"id": 1, "site": "facebook", "year": 2001, "make": "BMW", "model": "Z3 3.0i roadster", "transmission": "Manual",
+            "mileage": 80000, "price": 12500, "location": "San Jose, CA", "vin": "WBACN53431LJ58954", "mission": "enthusiast_bridge",
+            "normalized": {"ratings": {"documentation": {"score": 6, "why": "receipts listed"}, "condition": {"score": 7, "why": "clean"}, "spec": {"score": 7, "why": "sport pkg"}}, "red_flags": []}}
+    peers = [{"id": 2, "price": 14000, "mileage": 90000}, {"id": 3, "price": 15500, "mileage": 70000}, {"id": 4, "price": 13000, "mileage": 85000}]
+    local_cheap, b1 = preliminary_score(base, prof, DEFAULT_STATE, [], peers)
+    remote_auto_pricey, b2 = preliminary_score({**base, "id": 5, "transmission": "Automatic", "price": 17500, "location": "Boston, MA", "vin": None}, prof, DEFAULT_STATE, [], peers)
+    same_but_remote, b3 = preliminary_score({**base, "id": 6, "location": "Boston, MA"}, prof, DEFAULT_STATE, [], peers)
+    assert local_cheap > same_but_remote > remote_auto_pricey
+    assert local_cheap - remote_auto_pricey >= 25          # real distance, not 3.9 vs 3.8
+    assert b1["price_value"]["points"] >= 11 and b2["price_value"]["points"] <= 6   # cheap vs over budget
+    assert b2["mission_fit"]["points"] <= 3 and b1["mission_fit"]["points"] >= 13
+    assert b1["logistics"]["points"] == 10 and b3["logistics"]["points"] == 2
+    assert sum(v["max"] for v in b1.values()) == 100
+
+
+def test_preliminary_score_uses_sold_comps_and_penalizes_red_flags():
+    from scout.scoring import preliminary_score
+    from scout.policy.state import DEFAULT_STATE
+    prof = db.get_profile("z3_30i")
+    l = {"id": 1, "site": "cargurus", "year": 2002, "make": "BMW", "model": "Z3 3.0i", "transmission": "Manual", "mileage": 60000,
+         "price": 20000, "location": "Reno, NV", "mission": "enthusiast_bridge",
+         "normalized": {"ratings": {"condition": {"score": 8, "why": ""}}, "red_flags": ["a", "b", "c"]}}
+    comps = [{"sold_price": 15000, "mileage": 70000}, {"sold_price": 16000, "mileage": 60000}, {"sold_price": 14000, "mileage": 90000}]
+    total, b = preliminary_score(l, prof, DEFAULT_STATE, comps, [])
+    assert "sold comps" in b["price_value"]["why"] and b["price_value"]["points"] <= 4
+    assert b["condition"]["points"] == 20 - 6
+    assert b["documentation"]["points"] == 9  # default rating, no VIN

@@ -7,7 +7,7 @@ from typing import Any
 from scout import db
 from scout.config import AUCTION_SITES, CONFIG
 from scout.profiles import match_profile, suggest_key
-from scout.scoring import locality_hint, weighted_score
+from scout.scoring import locality_hint
 
 CHALLENGE_RE = re.compile(r"just a moment|verify you are human|verifying you are human|checking your browser|security verification|press and hold|cf-chl|attention required|enable javascript and cookies to continue", re.I)
 
@@ -99,6 +99,8 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
         role = "comp" if availability in {"sold", "ended"} else "candidate"
         if existing and existing.get("role") == "comp":
             role = "comp"  # never promote a comp back to candidate
+        if existing and existing.get("role") == "ignored":
+            role = "ignored"  # not a car (or manually ignored): stays out of the way
         values: dict[str, Any] = {
             "site": site, "site_id": item.get("site_id"), "url": url, "role": role,
             "availability": availability, "title": (item.get("title") or existing and existing.get("title") or "")[:300],
@@ -160,7 +162,10 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     if norm.get("availability") in {"sold", "ended"} and scraper_availability == "active":
         updates["availability"] = norm["availability"]
         updates["role"] = "comp"
-    updates["normalized"] = {k: norm.get(k) for k in ("highlights", "red_flags", "prelim_summary", "prelim_scores", "profile_confidence", "price_drops", "days_listed")}
+    updates["normalized"] = {k: norm.get(k) for k in ("highlights", "red_flags", "prelim_summary", "prelim_scores", "profile_confidence", "price_drops", "days_listed", "ratings")}
+    if norm.get("is_vehicle") is False or norm.get("profile_key") == "skip":
+        updates["role"] = "ignored"
+        updates["normalized"]["ignored_reason"] = "not a vehicle (normalizer)"
     updates["normalized_at"] = db.now()
 
     # Profile: deterministic match first, then the model's pick, then generate.
@@ -190,12 +195,6 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     if prof:
         updates["profile_key"] = prof["key"]
         updates["profile_confidence"] = norm.get("profile_confidence")
-        scores = dict(norm.get("prelim_scores") or {})
-        loc = locality_hint(norm.get("location"))
-        if loc and "locality" not in scores:
-            scores["locality"] = loc
-        updates["prelim_score"] = weighted_score(scores, prof.get("weights") or {})
-        updates["normalized"]["prelim_scores"] = scores
 
     # Free VIN decode (NHTSA) + deterministic identity checks, and the sync-time
     # policy flags shown on cards. None of this needs the paid model.
@@ -218,5 +217,34 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
         updates["mission"] = mission
     updates["normalized"]["quick_gates"] = quick_gates(merged, prof, mission, state)
     db.update_listing(lid, updates)
+    rescore_listing(lid, state)
     from scout.provenance import link_listing_vehicle  # lazy
     link_listing_vehicle(lid)
+
+
+def rescore_listing(lid: int, state: dict[str, Any] | None = None) -> int | None:
+    """Deterministic preliminary score (0-100) from stored data; no AI."""
+    from scout.policy.state import load_state
+    from scout.scoring import preliminary_score
+    row = db.get_listing(lid)
+    if not row or row.get("role") == "ignored":
+        return None
+    prof = db.get_profile(row["profile_key"]) if row.get("profile_key") else None
+    comps = db.list_listings(role="comp", profile_key=row["profile_key"]) if row.get("profile_key") else []
+    peers = [p for p in (db.list_listings(role="candidate", profile_key=row["profile_key"]) if row.get("profile_key") else [])
+             if p["availability"] == "active"]
+    total, breakdown = preliminary_score(row, prof, state or load_state(), comps, peers)
+    n = dict(row.get("normalized") or {})
+    n["prelim_breakdown"] = breakdown
+    db.update_listing(lid, {"prelim_score": total, "normalized": n})
+    return total
+
+
+def rescore_all() -> int:
+    from scout.policy.state import load_state
+    state = load_state()
+    n = 0
+    for r in db.list_listings():
+        if rescore_listing(r["id"], state) is not None:
+            n += 1
+    return n

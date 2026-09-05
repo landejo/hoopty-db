@@ -63,11 +63,19 @@
   const MISSIONS = ["enthusiast_bridge", "pragmatic_bridge", "future_keeper", "utility_capability"];
   const missionLabel = (m) => ({ enthusiast_bridge: "enthusiast bridge", pragmatic_bridge: "pragmatic bridge", future_keeper: "future keeper", utility_capability: "utility / capability" }[m] || m || "—");
   function prelimOf(l) { return l.prelim_score ?? null; }
+  function rankOf(l) {
+    if (l.role !== "candidate" || !l.profile_key) return null;
+    const pool = state.data.listings.filter((x) => x.role === "candidate" && x.availability === "active" && x.profile_key === l.profile_key && (scoreOf(x) ?? prelimOf(x)) != null);
+    if (pool.length < 2) return null;
+    pool.sort((a, b) => (scoreOf(b) ?? prelimOf(b)) - (scoreOf(a) ?? prelimOf(a)));
+    const i = pool.findIndex((x) => x.id === l.id);
+    return i < 0 ? null : { rank: i + 1, of: pool.length };
+  }
   function badge(l) {
     const s = scoreOf(l);
     if (s != null) return `<span class="badge ${s >= 75 ? "hi" : s >= 60 ? "mid" : "lo"}" title="Score /100 · policy ${esc(l.assessment.policy_version)}">${s}</span>`;
     const p = prelimOf(l);
-    if (p != null) return `<span class="badge prelim ${p >= 3.8 ? "hi" : p >= 2.8 ? "mid" : "lo"}" title="Preliminary score (Haiku, 1–5)">${p.toFixed(1)}</span>`;
+    if (p != null) return `<span class="badge prelim ${p >= 75 ? "hi" : p >= 60 ? "mid" : "lo"}" title="Preliminary score /100 (same rubric, cheap inputs; dashed = not yet assessed)">${Math.round(p)}</span>`;
     return `<span class="badge none">n/a</span>`;
   }
   function availChip(a) { const c = { active: "olive", sold: "rose", ended: "walnut", removed: "slate", withdrawn: "rose" }[a] || ""; return `<span class="chip ${c === "walnut" ? "mustard" : c}">${esc(a)}</span>`; }
@@ -98,6 +106,7 @@
     const f = state.filters, q = state.q.trim().toLowerCase();
     let rows = state.data.listings.filter((l) => {
       if (f.role && l.role !== f.role) return false;
+      if (!f.role && l.role === "ignored") return false;
       if (f.profiles.length && !f.profiles.includes(l.profile_key || "__none__")) return false;
       if (f.site && l.site !== f.site) return false;
       if (f.avail && l.availability !== f.avail) return false;
@@ -142,13 +151,14 @@
     const analyzed = cands.filter((l) => l.assessment).length;
     const comps = L.filter((l) => l.role === "comp").length;
     const pursue = cands.filter((l) => l.status === "Pursue" || /^Pursue/.test(verdictOf(l) || "")).length;
+    const ignored = L.filter((l) => l.role === "ignored").length;
     app.appendChild(h(`
       <div class="hero">
         <div><h1>The board</h1><p>Everything you've saved, normalized and scored. Sold and ended listings feed the <a href="#/market">market view</a>.</p></div>
         <div class="tiles" style="margin:0;min-width:520px">
           <div class="tile"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} deep-analyzed</div></div>
           <div class="tile"><div class="k">Pursue</div><div class="v">${pursue}</div><div class="s">by verdict or status</div></div>
-          <div class="tile"><div class="k">Market comps</div><div class="v">${comps}</div><div class="s">sold + ended</div></div>
+          <div class="tile"><div class="k">Market comps</div><div class="v">${comps}</div><div class="s">sold + ended${ignored ? ` · ${ignored} ignored` : ""}</div></div>
           <div class="tile"><div class="k">Profiles</div><div class="v">${state.data.profiles.length}</div><div class="s">${state.data.profiles.filter((p) => !p.verified).length} unverified</div></div>
         </div>
       </div>`));
@@ -156,7 +166,7 @@
     const sites = Object.entries(state.data.sites);
     const bar = h(`
       <div class="filters">
-        <span class="seg" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span>
+        <span class="seg" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span>
         <span class="chips" id="f-profiles" title="Click to toggle · Option-click for only this one"><button data-k="" class="${f.profiles.length ? "" : "on"}">All</button>${profileChips(f)}</span>
         <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
         <select id="f-avail"><option value="">Any availability</option>${["active", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
@@ -182,7 +192,7 @@
       }));
     };
     const rerender = () => { save("filters", f); bindChips(); renderList(); };
-    bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp") f.avail = ""; if (f.role === "candidate") f.avail = f.avail || "active"; route(); }));
+    bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp" || f.role === "ignored") f.avail = ""; if (f.role === "candidate") f.avail = f.avail || "active"; route(); }));
     bar.querySelectorAll("#view button").forEach((b) => (b.onclick = () => { f.view = b.dataset.v; route(); }));
     bindChips();
     $("#f-site", bar).onchange = (e) => { f.site = e.target.value; rerender(); };
@@ -249,7 +259,7 @@
         <div class="photo">${p ? `<img loading="lazy" src="${esc(p)}" alt="">` : `<div class="nophoto">⌁</div>`}
           <span class="score">${badge(l)}</span><span class="site">${siteChip(l.site)}</span></div>
         <div class="body">
-          <div class="title">${esc(title(l))}</div>
+          <div class="title">${esc(title(l))}${(() => { const r = rankOf(l); return r ? ` <span class="chip" title="rank among active candidates in this profile">#${r.rank} of ${r.of}</span>` : ""; })()}</div>
           <div class="price">${l.role === "comp" && (l.sold_price || l.price) ? money(l.sold_price || l.price) + `<small>${l.availability === "sold" ? "sold" : esc(l.price_kind || "")}</small>` : money(l.price) + (l.price_kind && l.price_kind !== "asking" ? `<small>${esc(l.price_kind.replace("_", " "))}</small>` : "")}</div>
           <div class="meta"><span class="mono">${l.mileage ? num(l.mileage) + " mi" : "— mi"}</span><span>${esc(l.location || "—")}</span><span>${listedAge(l)}</span>${l.transmission ? `<span>${esc(l.transmission)}</span>` : ""}</div>
           ${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
@@ -391,7 +401,7 @@
         <label style="display:block;margin-top:10px">Mission <select id="mission">${MISSIONS.map((m) => `<option value="${m}" ${l.mission === m ? "selected" : ""}>${missionLabel(m)}</option>`).join("")}</select> <span class="muted small">pragmatic bridge lifts the manual gate</span></label>
         <div class="row" style="margin-top:10px"><label>Status <select id="status">${STATUSES.map((s) => `<option ${l.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
         <label><input type="checkbox" id="pin" ${l.pinned ? "checked" : ""}> pinned</label>
-        <label>Role <select id="role"><option value="candidate" ${l.role === "candidate" ? "selected" : ""}>candidate</option><option value="comp" ${l.role === "comp" ? "selected" : ""}>comp</option></select></label></div>
+        <label>Role <select id="role"><option value="candidate" ${l.role === "candidate" ? "selected" : ""}>candidate</option><option value="comp" ${l.role === "comp" ? "selected" : ""}>comp</option><option value="ignored" ${l.role === "ignored" ? "selected" : ""}>ignored (not a car / not for me)</option></select></label></div>
         <label style="display:block;margin-top:10px">Profile <select id="prof"><option value="">— none —</option>${state.data.profiles.map((p) => `<option value="${p.key}" ${l.profile_key === p.key ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select></label>
         <textarea class="notes" id="notes" placeholder="Your notes (saved on blur)">${esc(l.notes || "")}</textarea></div>`);
       side.appendChild(act);
@@ -411,7 +421,7 @@
       $("#mission", act).onchange = (e) => patch({ mission: e.target.value });
       $("#status", act).onchange = (e) => patch({ status: e.target.value });
       $("#pin", act).onchange = (e) => patch({ pinned: e.target.checked });
-      $("#role", act).onchange = (e) => patch({ role: e.target.value });
+      $("#role", act).onchange = (e) => patch({ role: e.target.value }).then(() => { if (e.target.value === "ignored") { toast("Hidden from the board"); location.hash = "#/"; } });
       $("#prof", act).onchange = (e) => patch({ profile_key: e.target.value });
       $("#notes", act).onblur = (e) => { if (e.target.value !== (l.notes || "")) patch({ notes: e.target.value }); };
     } else {
@@ -435,8 +445,11 @@
     if (S) {
       side.appendChild(h(`<div class="panel accent-teal"><h3>Score ${S.total}/100 <span class="muted small">confidence ${A.confidence}</span></h3><div class="scores">${CATS.map(([k, label, max]) => `<div class="score-row"><span title="${esc(E.ratings?.[k]?.rationale || "")}">${label}</span><span class="bar"><i style="width:${(S[k] / max) * 100}%"></i></span><span class="mono">${S[k]}/${max}</span></div>`).join("")}</div>
         ${S.caps_applied?.length ? `<p class="muted small" style="margin:8px 0 0">Caps: ${S.caps_applied.map(esc).join("; ")}</p>` : ""}</div>`));
-    } else if (N.prelim_scores && Object.keys(N.prelim_scores).length) {
-      side.appendChild(h(`<div class="panel accent-mustard"><h3>Preliminary scores <span class="muted small">${prelimOf(l) != null ? prelimOf(l).toFixed(2) + " weighted" : ""}</span></h3><div class="scores">${Object.entries(N.prelim_scores).map(([k, v]) => `<div class="score-row"><span>${esc(k.replace("_", " "))}</span><span class="bar"><i class="prelim" style="width:${v * 20}%"></i></span><span class="mono">${v}</span></div>`).join("")}</div></div>`));
+    } else if (N.prelim_breakdown) {
+      const B = N.prelim_breakdown;
+      side.appendChild(h(`<div class="panel accent-mustard"><h3>Preliminary ${Math.round(prelimOf(l) ?? 0)}/100 <span class="muted small">same rubric, cheap inputs</span></h3><div class="scores">${CATS.map(([k, label, max]) => B[k] ? `<div class="score-row"><span title="${esc(B[k].why)}">${label}</span><span class="bar"><i class="prelim" style="width:${(B[k].points / max) * 100}%"></i></span><span class="mono">${B[k].points}/${max}</span></div>` : "").join("")}</div>
+        <p class="muted small" style="margin:8px 0 0">${CATS.map(([k]) => B[k] ? `<b>${esc(k.replace(/_/g, " "))}:</b> ${esc(B[k].why)}` : "").filter(Boolean).join(" · ")}</p>
+        ${N.ratings ? "" : `<p class="small" style="margin:8px 0 0">Documentation, condition and spec are defaults until this listing is re-normalized (Policy page → Re-normalize).</p>`}</div>`));
     }
     side.appendChild(h(`<div class="panel"><h3>Facts</h3><div class="facts">${[["Year", l.year], ["Mileage", l.mileage ? num(l.mileage) + " mi" : null], ["Engine", l.engine || (l.engine_liters ? l.engine_liters + "L" : null)], ["Transmission", l.transmission], ["Drivetrain", l.drivetrain], ["Body", l.body_style], ["Exterior", l.exterior_color], ["Interior", l.interior_color], ["Title", l.title_status], ["Accidents", l.accidents], ["Owners", l.num_owners], ["Seller", [l.seller_type, l.seller_name].filter(Boolean).join(" · ")], ["Listed", l.listing_date], ["Auction ends", l.auction_end || l.raw?.time_left]].filter(([, v]) => v != null && v !== "").map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join("")}</div></div>`));
 
@@ -519,6 +532,12 @@
     if (!state.local) return app.appendChild(h(`<div class="empty"><h2>Local only</h2><p>Edit policy state on the local workbench. Published policy version: ${esc(state.data.policy_version || "—")}</p></div>`));
     let cfg;
     try { cfg = await api("/api/settings"); } catch (e) { return app.appendChild(h(`<div class="empty"><h2>${esc(e.message)}</h2></div>`)); }
+    const tools = h(`<div class="panel"><h3>Scores</h3><div class="row"><button class="btn sm" id="rescore">Recompute preliminary scores (free)</button><button class="btn sm warm" id="renorm-missing">Re-normalize listings missing ratings (Haiku, ~1¢ each)</button><button class="btn sm ghost" id="renorm-all">Re-normalize everything</button><span class="muted small" id="tool-status"></span></div><p class="muted small" style="margin:8px 0 0">Preliminary scores use the guide's 100-point rubric: documentation 30, condition 25, price/value 15, mission fit 15, logistics 10, spec 5. Price, budget, transmission and location are computed; documentation, condition and spec come from the fast model's read of the listing.</p></div>`);
+    app.appendChild(tools);
+    const run = async (path, label, q = "") => { $("#tool-status", tools).textContent = label + "…"; try { const r = await api(path + q, "POST"); $("#tool-status", tools).textContent = JSON.stringify(r).slice(0, 200); await loadData(); } catch (e) { $("#tool-status", tools).textContent = e.message; } };
+    $("#rescore", tools).onclick = () => run("/api/rescore", "Rescoring");
+    $("#renorm-missing", tools).onclick = () => run("/api/renormalize-all", "Re-normalizing (this can take a few minutes)");
+    $("#renorm-all", tools).onclick = () => { if (confirm("Re-run the fast model on every listing?")) run("/api/renormalize-all", "Re-normalizing everything", "?only_missing_ratings=false"); };
     const panel = h(`<div class="panel"><div class="row" style="justify-content:space-between"><h3>Policy ${esc(cfg.policy_version)}</h3><div class="row"><button class="btn sm" id="save">Save</button><button class="btn sm ghost" id="reset">Reset to defaults</button></div></div>
       <p class="muted small">JSON. Unknown keys are kept; nested objects merge. Urgency mode must be one of accelerated_bridge, emergency, casual_search.</p>
       <textarea class="notes mono" id="json" style="min-height:420px">${esc(JSON.stringify(cfg.state, null, 2))}</textarea></div>`);
