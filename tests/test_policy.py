@@ -169,12 +169,19 @@ def test_excluded_model_is_do_not_pursue():
 
 
 # Cost gate: a bridge car whose risk-adjusted all-in defeats the purpose is a hard reject.
-def test_all_in_cost_defeats_bridge_purpose():
+def test_all_in_cost_defeats_bridge_purpose_on_the_midpoint():
     l = _listing(price=17500, location="Boston, MA")
     ev = _ev(quality=8, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}, imm=(2500, 4000))
     a = assess(l, _profile("z3_30i"), ev, STATE)
-    assert a.costs.all_in_high > STATE["budget"]["defeats_purpose_all_in"]
+    assert (a.costs.all_in_low + a.costs.all_in_high) // 2 > STATE["budget"]["defeats_purpose_all_in"]
     assert a.verdict == "Reject" and any(g.key == "cost_defeats_bridge_purpose" for g in a.gates)
+    # Over only at the high end: no gate, a note instead.
+    l2 = _listing(price=11000, location="Boston, MA")
+    ev2 = _ev(quality=8, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}, imm=(500, 5500))
+    a2 = assess(l2, _profile("z3_30i"), ev2, STATE)
+    mid = (a2.costs.all_in_low + a2.costs.all_in_high) // 2
+    assert mid <= STATE["budget"]["defeats_purpose_all_in"] < a2.costs.all_in_high
+    assert not any(g.key == "cost_defeats_bridge_purpose" for g in a2.gates) and any("High end" in n for n in a2.costs.notes)
 
 
 # Schema: the model cannot smuggle in scores, verdicts, or bad enums.
@@ -317,3 +324,9 @@ def test_contradiction_with_tracker_metadata_or_missing_vin_is_not_a_gate():
     ev.contradictions = [Contradiction(topic="mileage", detail="Listing states 58,000 miles in the title and 85,000 miles in the description.", severity="identity")]
     a = assess(_listing(model="Z3 M roadster", engine_liters=3.2, year=1999), _profile("z3_m"), ev, STATE, mission="future_keeper")
     assert any(g.key == "identity_contradiction" for g in a.gates)
+
+
+def test_generated_profile_reserve_is_clamped():
+    from scout import coerce
+    p = coerce.profile({"key": "x", "label": "X", "weights": {"reliability": 1, "value": 1, "condition": 1}, "risk_reserve": 7500})
+    assert p["risk_reserve"] == 4000

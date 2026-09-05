@@ -136,3 +136,19 @@ def test_pending_stays_a_candidate_until_sold():
     assert row["availability"] == "pending" and row["role"] == "candidate"
     ingest_items("facebook", [_item(url, sold=True)], run_ai=False)
     assert db.get_listing_by_url(url)["role"] == "comp"
+
+
+def test_auto_mission_follows_profile_until_user_sets_it(monkeypatch):
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    import scout.ai.normalize as nz
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": True, "year": 2000, "make": "BMW", "model": "M roadster", "profile_key": "z3_m", "prelim_summary": "x"})
+    monkeypatch.setattr("scout.vin.decode_vin", lambda *a, **k: None)
+    url = "https://www.cars.com/vehicledetail/m/"
+    ing.ingest_items("carscom", [_item(url)], run_ai=True)
+    row = db.get_listing_by_url(url)
+    assert row["mission"] == "future_keeper" and not row["mission_user_set"]
+    db.update_listing(row["id"], {"mission": "pragmatic_bridge", "mission_user_set": 1})
+    ing.ingest_items("carscom", [_item(url, text="changed " * 200)], run_ai=True)
+    assert db.get_listing_by_url(url)["mission"] == "pragmatic_bridge"

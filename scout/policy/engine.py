@@ -25,8 +25,12 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
     prov = vin_history.get("provenance") or {}
     gates = evaluate_gates(listing, profile, evidence, mission, state, provenance=prov)
     costs = compute_costs(listing, profile, evidence, gates, state, comps_median)
-    gates = evaluate_gates(listing, profile, evidence, mission, state, all_in_high=costs.all_in_high, provenance=prov)
+    gates = evaluate_gates(listing, profile, evidence, mission, state, all_in_high=costs.all_in_high, provenance=prov,
+                           all_in_mid=(costs.all_in_low + costs.all_in_high) // 2)
     costs = compute_costs(listing, profile, evidence, gates, state, comps_median)
+    cap = (state.get("budget") or {}).get("defeats_purpose_all_in")
+    if cap and mission in {"enthusiast_bridge", "pragmatic_bridge"} and costs.all_in_high > cap >= (costs.all_in_low + costs.all_in_high) // 2:
+        costs.notes.append(f"High end of the all-in range (${costs.all_in_high:,}) is above the bridge ceiling ${cap:,}; the midpoint is under it. The PPI decides.")
     # Price ceiling anchors to the last documented price when the car was
     # recently resold/relisted at a markup (guide: transaction costs are not
     # improvements; only documented post-sale work moves the ceiling).
