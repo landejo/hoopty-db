@@ -81,6 +81,32 @@ def price_percentile(price: int | None, pool: list[int]) -> int | None:
     return int(round(100 * below / len(pool)))
 
 
+def listing_age_days(l: dict, today=None) -> int | None:
+    """Days since the site's listing date, else since we first saw it. None for live auctions."""
+    from datetime import date
+    if l.get("site") in {"bat", "carsandbids"} and l.get("availability") == "active":
+        return None
+    src = l.get("listing_date") or (l.get("first_seen") or "")[:10]
+    if not src:
+        return None
+    try:
+        d = date.fromisoformat(str(src)[:10])
+    except ValueError:
+        return None
+    return max(0, ((today or date.today()) - d).days)
+
+
+def age_penalty(age: int | None, state: dict) -> tuple[int, str]:
+    cfg = state.get("listing_age") or {}
+    if age is None or age <= cfg.get("fresh_days", 45):
+        return 0, ""
+    for limit, pts in cfg.get("steps") or [[90, 2], [180, 4], [365, 6], [99999, 8]]:
+        if age <= limit:
+            months = round(age / 30)
+            return int(pts), f"listed {months} month{'s' if months != 1 else ''} ago"
+    return 8, "very old listing"
+
+
 # ---------- preliminary score: the guide's 100-point rubric, cheap inputs ----------
 # documentation 30 · condition 25 · price/value 15 · mission fit 15 · logistics 10 · spec 5
 # Haiku rates documentation / condition / spec (0-10); everything else is arithmetic
@@ -168,6 +194,9 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
     year = listing.get("year")
     if year and __import__("datetime").date.today().year - int(year) > 25:
         fit -= 1; fit_why += " · 25+ years old"
+    pen, pen_why = age_penalty(listing_age_days(listing), state)
+    if pen:
+        fit -= pen; fit_why += f" · {pen_why} (−{pen})"
     fit = max(0, min(12, fit))  # 13-15 is earned only by evidence the assessment sees
     breakdown["mission_fit"] = {"points": fit, "max": 15, "why": f"{fit_why} ({mission.replace('_', ' ')})"}
 

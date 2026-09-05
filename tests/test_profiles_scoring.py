@@ -90,3 +90,22 @@ def test_unread_listing_scores_below_a_typical_assessment():
          "price": 12500, "location": "San Jose, CA", "mission": "enthusiast_bridge", "normalized": {}}
     total, b = preliminary_score(l, prof, DEFAULT_STATE, [], [])
     assert total <= 55 and b["documentation"]["points"] == 3
+
+
+def test_listing_age_penalty_and_stale_gate():
+    from datetime import date, timedelta
+    from scout.scoring import age_penalty, listing_age_days, preliminary_score
+    from scout.policy.state import DEFAULT_STATE
+    from scout.policy.gates import quick_gates
+    prof = db.get_profile("z3_30i")
+    base = {"id": 1, "site": "facebook", "year": 2001, "make": "BMW", "model": "Z3 3.0i", "transmission": "Manual", "mileage": 80000,
+            "price": 12500, "location": "San Jose, CA", "mission": "enthusiast_bridge", "normalized": {}, "availability": "active"}
+    fresh = {**base, "listing_date": (date.today() - timedelta(days=21)).isoformat()}
+    old = {**base, "listing_date": (date.today() - timedelta(days=365)).isoformat()}
+    assert age_penalty(listing_age_days(fresh), DEFAULT_STATE) == (0, "")
+    assert age_penalty(listing_age_days(old), DEFAULT_STATE)[0] == 6
+    assert preliminary_score(fresh, prof, DEFAULT_STATE, [], [])[0] - preliminary_score(old, prof, DEFAULT_STATE, [], [])[0] == 6
+    assert any(g.startswith("stale") for g in quick_gates(old, prof, "enthusiast_bridge", DEFAULT_STATE))
+    assert not any(g.startswith("stale") for g in quick_gates(fresh, prof, "enthusiast_bridge", DEFAULT_STATE))
+    live_auction = {**old, "site": "bat"}
+    assert listing_age_days(live_auction) is None  # auctions end on a clock; age does not apply

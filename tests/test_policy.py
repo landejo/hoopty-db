@@ -217,3 +217,11 @@ def test_vin_history_markup_and_disclosure():
     assert abs(h["markup_vs_last_sale"] - 0.321) < 0.01
     assert h["mileage_changes"] and "DOWN" in h["mileage_changes"][0]["note"]
     assert h["disclosure_changes"][0]["previously_disclosed"] == "rear-structure photos not provided"
+
+
+def test_year_old_listing_is_capped_until_availability_confirmed():
+    from datetime import date, timedelta
+    l = _listing(listing_date=(date.today() - timedelta(days=400)).isoformat())
+    ev = _ev(doc=9, cond=9, val=9, fit=9, log=10, emo=8, quality=9, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"})
+    a = assess(l, _profile("z3_30i"), ev, STATE)
+    assert a.verdict == "Maybe / verify" and any(g.key == "stale_listing" for g in a.gates)
