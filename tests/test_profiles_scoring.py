@@ -103,8 +103,8 @@ def test_listing_age_penalty_and_stale_gate():
     fresh = {**base, "listing_date": (date.today() - timedelta(days=21)).isoformat()}
     old = {**base, "listing_date": (date.today() - timedelta(days=365)).isoformat()}
     assert age_penalty(listing_age_days(fresh), DEFAULT_STATE) == (0, "")
-    assert age_penalty(listing_age_days(old), DEFAULT_STATE)[0] == 6
-    assert preliminary_score(fresh, prof, DEFAULT_STATE, [], [])[0] - preliminary_score(old, prof, DEFAULT_STATE, [], [])[0] == 6
+    assert age_penalty(listing_age_days(old), DEFAULT_STATE)[0] == 8  # a year old: heaviest step
+    assert preliminary_score(fresh, prof, DEFAULT_STATE, [], [])[0] - preliminary_score(old, prof, DEFAULT_STATE, [], [])[0] == 8
     assert any(g.startswith("stale") for g in quick_gates(old, prof, "enthusiast_bridge", DEFAULT_STATE))
     assert not any(g.startswith("stale") for g in quick_gates(fresh, prof, "enthusiast_bridge", DEFAULT_STATE))
     live_auction = {**old, "site": "bat"}
