@@ -249,7 +249,7 @@ def test_schema_maps_vocabulary_drift_and_drops_only_the_bad_entry():
         "evidence_quality": 5, "immediate_service_estimate": {"low": 1, "high": 2},
         "facts": [{"key": "tires", "status": "missing", "source": "listing"},            # drift -> unknown / listing_text
                   {"key": "vin", "status": "confirmed", "source": "NHTSA"},              # -> verified / external_vin
-                  {"key": "junk", "status": "verified"},                                 # no source -> default ai_inference
+                  {"key": "junk", "status": "verified"},                                 # no source -> kept as ai_inference
                   {"status": "verified", "source": "photo"},                             # no key: dropped, not fatal
                   "not even a dict"],
         "critical_evidence": [{"key": "rear_structure", "status": "unknown"}, {"key": "cooling_history", "status": "claimed"}],
@@ -262,3 +262,24 @@ def test_schema_maps_vocabulary_drift_and_drops_only_the_bad_entry():
     assert ev.flags.salvage_or_rebuilt_title == "yes" and ev.flags.permanent_warning_lights == "unknown"
     assert ev.contradictions[0].severity == "material"
     assert ev.concerns == ["Observed: leak", "plain"]
+
+
+def test_renamed_critical_evidence_keys_still_match_the_profile():
+    from scout.policy.gates import match_reported
+    from scout.policy.schema import CriticalEvidence
+    reported = [CriticalEvidence(key="subframe_inspection_photos", status="satisfied", evidence="underside photos show intact welds", source="photo"),
+                CriticalEvidence(key="cooling_system_receipts", status="claimed_only"),
+                CriticalEvidence(key="s54_rod_bearing_records", status="missing"),
+                CriticalEvidence(key="mod_reversibility", status="missing")]
+    prof = _profile("z3_m")
+    by = {req["key"]: match_reported(req, reported) for req in prof["critical_evidence"]}
+    assert by["rear_structure"].key == "subframe_inspection_photos" and by["rear_structure"].status == "satisfied"
+    assert by["cooling_history"].status == "claimed_only"
+    assert by["s54_rod_bearings"].key == "s54_rod_bearing_records"
+    # And through the engine: the satisfied rear structure raises no gate, the other two do.
+    ev = _ev(critical={}, quality=8)
+    ev.critical_evidence = reported
+    a = assess(_listing(model="Z3 M coupe", engine_liters=3.2, year=2001), prof, ev, STATE, mission="future_keeper")
+    keys = [g.key for g in a.gates]
+    assert "critical_missing:rear_structure" not in keys
+    assert "critical_missing:cooling_history" in keys and "critical_missing:s54_rod_bearings" in keys
