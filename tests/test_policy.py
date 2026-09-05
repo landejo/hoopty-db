@@ -350,3 +350,13 @@ def test_assessment_records_context_and_export_flags_changes():
     a = assess(_listing(), _profile("z3_30i"), _ev(critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}), STATE)
     assert a.context["budget"]["max_price"] == STATE["budget"]["max_price"] and a.context["urgency_mode"] == "accelerated_bridge"
     assert _budget_signature(STATE["budget"], "accelerated_bridge") != _budget_signature({**STATE["budget"], "max_price": 27000}, "accelerated_bridge")
+
+
+def test_confidence_is_not_floored_by_item_count_and_next_action_is_never_blank():
+    many = {k: "missing" for k in ("timing_belt_water_pump", "suspension_condition", "rust_evaluation", "warning_lights", "matching_tires", "leaks_cooling_history")}
+    ev = _ev(quality=3, critical=many, seller_questions=["Do you have the timing-belt invoice?"])
+    ev.next_action = ""
+    l = _listing(make="Lexus", model="GX470", transmission="Automatic", year=2007, engine_liters=4.7, mileage=160000, price=14000)
+    a = assess(l, _profile("gx470"), ev, STATE, mission="utility_capability")
+    assert 15 <= a.confidence <= 40          # thin but not the floor
+    assert a.evidence.next_action.startswith("Ask the seller: Do you have")
