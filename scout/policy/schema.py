@@ -3,7 +3,8 @@ return (interpretation only: facts, provenance, contradictions, flags, ratings,
 qualitative lists). `Assessment` is what the deterministic engine stores."""
 from __future__ import annotations
 
-from typing import Literal
+from types import UnionType
+from typing import Literal, Union, get_args, get_origin
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -21,7 +22,8 @@ class Trimmed(BaseModel):
         for name, field in cls.model_fields.items():
             v = out.get(name)
             ann = field.annotation
-            str_field = ann is str or str in (getattr(ann, "__args__", None) or ())
+            origin = get_origin(ann)
+            str_field = ann is str or (origin in (Union, UnionType) and str in get_args(ann))
             if isinstance(v, str) and str_field:
                 cap = next((m.max_length for m in field.metadata if getattr(m, "max_length", None)), None)
                 if cap and len(v) > cap:
