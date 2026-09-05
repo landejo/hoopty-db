@@ -60,9 +60,9 @@ def test_preliminary_score_separates_similar_cars():
     same_but_remote, b3 = preliminary_score({**base, "id": 6, "location": "Boston, MA"}, prof, DEFAULT_STATE, [], peers)
     assert local_cheap > same_but_remote > remote_auto_pricey
     assert local_cheap - remote_auto_pricey >= 25          # real distance, not 3.9 vs 3.8
-    assert b1["price_value"]["points"] >= 9 and b2["price_value"]["points"] <= 6   # cheap vs over budget
+    assert b1["price_value"]["points"] >= 9 and b2["price_value"]["points"] <= 4   # cheap vs pricey, market-relative only
     assert b2["mission_fit"]["points"] <= 3 and b1["mission_fit"]["points"] >= 11
-    assert b1["documentation"]["points"] <= 15                                        # capped until critical evidence is examined
+    assert b1["documentation"]["points"] == 17                                        # 6/10 * 2.5 + VIN, no pre-cap
     assert b1["logistics"]["points"] == 10 and b3["logistics"]["points"] == 2
     assert sum(v["max"] for v in b1.values()) == 100
 
@@ -78,7 +78,7 @@ def test_preliminary_score_uses_sold_comps_and_penalizes_red_flags():
     total, b = preliminary_score(l, prof, DEFAULT_STATE, comps, [])
     assert "sold comps" in b["price_value"]["why"] and b["price_value"]["points"] <= 4
     assert b["condition"]["points"] == 20      # red flags are noted, not double-counted
-    assert b["documentation"]["points"] == 3   # unread listing starts at 1/10, no VIN
+    assert b["documentation"]["points"] == 2   # unread listing starts at 1/10, no VIN
 
 
 def test_unread_listing_scores_below_a_typical_assessment():
@@ -89,7 +89,7 @@ def test_unread_listing_scores_below_a_typical_assessment():
     l = {"id": 1, "site": "facebook", "year": 2001, "make": "BMW", "model": "Z3 3.0i", "transmission": "Manual", "mileage": 80000,
          "price": 12500, "location": "San Jose, CA", "mission": "enthusiast_bridge", "normalized": {}}
     total, b = preliminary_score(l, prof, DEFAULT_STATE, [], [])
-    assert total <= 55 and b["documentation"]["points"] == 3
+    assert total <= 55 and b["documentation"]["points"] == 2
 
 
 def test_listing_age_penalty_and_stale_gate():

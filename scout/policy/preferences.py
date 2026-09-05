@@ -9,13 +9,13 @@ VERDICTS = ["Pursue", "Pursue conditionally", "Maybe / verify", "Reject", "Do no
 VERDICT_RANK = {v: i for i, v in enumerate(VERDICTS)}  # higher index = worse
 
 # §9 scoring model (points per category, total 100).
-CATEGORY_POINTS: dict[str, int] = {
-    "documentation": 30,
+CATEGORY_POINTS: dict[str, int] = {   # 1.2.0: 30/5 -> 25/10, see POLICY_CHANGES.md
+    "documentation": 25,
     "condition": 25,
     "price_value": 15,
     "mission_fit": 15,
     "logistics": 10,
-    "emotional_spec_fit": 5,
+    "emotional_spec_fit": 10,
 }
 CATEGORY_LABELS: dict[str, str] = {
     "documentation": "Documentation & verifiability",
@@ -28,7 +28,7 @@ CATEGORY_LABELS: dict[str, str] = {
 assert sum(CATEGORY_POINTS.values()) == 100
 
 # §9 interpretation bands (score -> verdict before caps).
-SCORE_BANDS = [(85, "Pursue"), (75, "Pursue conditionally"), (60, "Maybe / verify"), (0, "Reject")]
+SCORE_BANDS = [(85, "Pursue"), (75, "Pursue conditionally"), (45, "Maybe / verify"), (0, "Reject")]  # 1.2.0: Maybe floor 60 -> 45
 
 # §9 confidence: below this, verdict should rarely exceed Maybe / verify.
 CONFIDENCE_PROVISIONAL = 50
@@ -55,7 +55,7 @@ RELIST_MARKUP_FLAG = 0.20  # "major markup" per the provenance brief; >10% is fl
 RELIST_PRICE_VALUE_CAP = 8
 
 # Documentation caps when model-critical evidence is missing (§9 score caps).
-DOC_CAP_CONDITIONAL_MISSING = 15
+DOC_CAP_CONDITIONAL_MISSING = 20   # 1.2.0: 15 -> 20; the verdict cap carries the weight
 DOC_CAP_HARD_MISSING = 10
 
 # Compact context block (§18) handed to the model verbatim.

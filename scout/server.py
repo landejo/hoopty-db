@@ -393,10 +393,27 @@ def get_provenance(listing_id: int) -> dict[str, Any]:
 
 
 @app.post("/api/rescore")
-def rescore() -> dict[str, Any]:
-    """Recompute every preliminary score from stored data. Free."""
+def rescore(assessments: bool = True) -> dict[str, Any]:
+    """Recompute every preliminary score from stored data, and re-derive stored
+    assessments under the current policy from their stored evidence. Free."""
     from scout.ingest import rescore_all
-    return {"ok": True, "rescored": rescore_all()}
+    from scout.policy.engine import rescore_assessment
+    n = rescore_all()
+    redone = 0
+    if assessments:
+        state = load_state()
+        for lid, a in db.latest_assessments().items():
+            if a.get("policy_version") == POLICY_VERSION:
+                continue
+            row = db.get_listing(lid)
+            prof = db.get_profile(row["profile_key"]) if row and row.get("profile_key") else None
+            if not (row and prof):
+                continue
+            d = rescore_assessment(row, prof, a, state)
+            if d:
+                db.add_assessment(lid, d)
+                redone += 1
+    return {"ok": True, "rescored": n, "assessments_rederived": redone, "policy_version": POLICY_VERSION}
 
 
 @app.post("/api/renormalize-all")

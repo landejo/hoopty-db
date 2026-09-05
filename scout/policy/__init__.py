@@ -5,5 +5,5 @@
 state, `gates.py` / `scoring.py` / `costs.py` the deterministic rules, and
 `schema.py` the validated shape of what the language model may return.
 Every stored assessment records POLICY_VERSION."""
-POLICY_VERSION = "1.1.0"   # major.minor track the guide version (1.1); patch = code changes
+POLICY_VERSION = "1.2.0"   # 1.1 = guide 1.1 as written; 1.2 = weight/band deviations in POLICY_CHANGES.md
 GUIDE_FILENAME = "Jason_Car_Assessment_Guide.md"
