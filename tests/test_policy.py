@@ -105,13 +105,13 @@ def test_early_bid_on_reserve_auction_is_not_a_price():
     assert a.costs.price_basis == "expected_hammer" and a.costs.price == 15000
     assert a.costs.buyer_fee == 750 and a.costs.transport == 900
     assert any("early bid" in n for n in a.costs.notes)
-    # max hammer solved backward from acceptable all-in and everything else
+    # max hammer solved backward from acceptable all-in: fee, transport, tax, known work only
     c = a.costs
-    assert c.max_price + c.buyer_fee * 0 <= STATE["budget"]["acceptable_all_in"]
     fee_at_max = min(max(c.max_price * 0.05, 250), 7500)
     tax_at_max = c.max_price * STATE["tax_rate"] + STATE["registration_fee"]
-    total = c.max_price + fee_at_max + c.transport + c.immediate_service_high + c.overdue_allowance + c.risk_reserve + tax_at_max
+    total = c.max_price + fee_at_max + c.transport + c.known_work_high + tax_at_max
     assert abs(total - STATE["budget"]["acceptable_all_in"]) < 60
+    assert c.with_catchup_high == c.all_in_high + c.immediate_service_high + c.overdue_allowance + c.risk_reserve
 
 
 # 7. Relisted car with a substantial VIN-linked markup -> price/value capped, markup surfaced.
@@ -171,13 +171,15 @@ def test_excluded_model_is_do_not_pursue():
 # Cost gate: a bridge car whose risk-adjusted all-in defeats the purpose is a hard reject.
 def test_all_in_cost_defeats_bridge_purpose_on_the_midpoint():
     l = _listing(price=17500, location="Boston, MA")
-    ev = _ev(quality=8, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}, imm=(2500, 4000))
+    ev = _ev(quality=8, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}, imm=(2500, 4000),
+             known_work_estimate=MoneyRange(low=1500, high=2500), known_work_items=["cracked windshield", "check-engine light"])
     a = assess(l, _profile("z3_30i"), ev, STATE)
     assert (a.costs.all_in_low + a.costs.all_in_high) // 2 > STATE["budget"]["defeats_purpose_all_in"]
     assert a.verdict == "Reject" and any(g.key == "cost_defeats_bridge_purpose" for g in a.gates)
     # Over only at the high end: no gate, a note instead.
-    l2 = _listing(price=11000, location="Boston, MA")
-    ev2 = _ev(quality=8, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}, imm=(500, 5500))
+    l2 = _listing(price=15000, location="Boston, MA")
+    ev2 = _ev(quality=8, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}, imm=(500, 5500),
+              known_work_estimate=MoneyRange(low=0, high=4000), known_work_items=["seller states clutch is slipping"])
     a2 = assess(l2, _profile("z3_30i"), ev2, STATE)
     mid = (a2.costs.all_in_low + a2.costs.all_in_high) // 2
     assert mid <= STATE["budget"]["defeats_purpose_all_in"] < a2.costs.all_in_high
@@ -360,3 +362,12 @@ def test_confidence_is_not_floored_by_item_count_and_next_action_is_never_blank(
     a = assess(l, _profile("gx470"), ev, STATE, mission="utility_capability")
     assert 15 <= a.confidence <= 40          # thin but not the floor
     assert a.evidence.next_action.startswith("Ask the seller: Do you have")
+
+
+def test_generic_catchup_is_shown_but_not_counted():
+    ev = _ev(quality=8, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}, imm=(3000, 8000))
+    a = assess(_listing(price=12000), _profile("z3_30i"), ev, STATE)
+    c = a.costs
+    assert c.all_in_low == c.all_in_high == 12000 + c.buyer_fee + c.transport + c.tax_and_registration
+    assert c.immediate_service_high == 8000 and c.with_catchup_high == c.all_in_high + 8000 + c.overdue_allowance + c.risk_reserve
+    assert c.max_price > 14000   # no longer eaten by the generic estimate (default acceptable all-in is $16,500)

@@ -4,6 +4,19 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.2.1 (2026-09-05)
+
+**All-in cost counts only what is known.** All-in = price (or expected hammer)
++ buyer fee + transport + California tax/registration + work the listing
+itself establishes as needed (stated fault, visible defect, disclosed warning
+light, old tires, open recall). The generic first-30-day catch-up estimate,
+the age/mileage overdue allowance and the model risk reserve are still
+computed and shown, labelled "not counted", with an "if all of that lands"
+total, but they no longer drive the maximum price or the cost gate. Reason:
+with a $27k price ceiling the guide-era arithmetic solved every car needing
+work to a hammer far below its asking, which is not a usable negotiating
+number. Jason's instruction, 2026-09-05.
+
 ## 1.2.0 (2026-09-05)
 
 Measured on 32 active candidates and 15 Opus/Sonnet assessments: totals ran

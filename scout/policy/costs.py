@@ -85,21 +85,27 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
     fee = buyer_fee(site, price, state)
     transport = transport_cost(listing.get("location"), state)
     imm_lo, imm_hi = evidence.immediate_service_estimate.low, evidence.immediate_service_estimate.high
+    kw = evidence.known_work_estimate
+    kw_lo, kw_hi = (kw.low, kw.high) if kw else (0, 0)
     overdue = overdue_allowance(listing, evidence, state)
     reserve = risk_reserve(profile, gates, state)
     tax = int(price * float(state.get("tax_rate", 0)) + int(state.get("registration_fee", 0)))
-    fixed = transport + overdue + reserve
-    all_in_lo = price + fee + transport + imm_lo + overdue + reserve + tax
-    all_in_hi = price + fee + transport + imm_hi + overdue + reserve + tax
+    # All-in = what it costs to own the car as listed: price, fee, transport, tax,
+    # plus work the listing itself establishes as needed. Generic catch-up and the
+    # risk reserve are reported alongside but not counted (policy 1.2.1).
+    all_in_lo = price + fee + transport + tax + kw_lo
+    all_in_hi = price + fee + transport + tax + kw_hi
+    catch_lo = all_in_lo + imm_lo + overdue + reserve
+    catch_hi = all_in_hi + imm_hi + overdue + reserve
 
-    # maximum hammer = acceptable all-in - fee - transport - immediate (high) - overdue - reserve - tax
+    # maximum hammer = acceptable all-in - fee - transport - tax - known work (high)
     acceptable = int((state.get("budget") or {}).get("acceptable_all_in") or 0)
     max_price = 0
     if acceptable:
-        # fee and tax depend on the hammer; iterate to a fixed point.
-        h = acceptable - fixed - imm_hi
-        for _ in range(12):
-            h2 = acceptable - fixed - imm_hi - buyer_fee(site, max(h, 0), state) - int(max(h, 0) * float(state.get("tax_rate", 0)) + int(state.get("registration_fee", 0)))
+        fixed = transport + kw_hi
+        h = acceptable - fixed
+        for _ in range(12):   # fee and tax depend on the hammer; iterate to a fixed point
+            h2 = acceptable - fixed - buyer_fee(site, max(h, 0), state) - int(max(h, 0) * float(state.get("tax_rate", 0)) + int(state.get("registration_fee", 0)))
             if abs(h2 - h) < 5:
                 break
             h = h2
@@ -109,10 +115,13 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
     offer_lo = int(anchor * 0.92)
     if price and max_price and max_price < 0.6 * price:
         notes.append(f"Maximum price ${max_price:,} is far below the ${price:,} {basis.replace('_', ' ')}; price mismatch.")
+    if kw_hi:
+        notes.append(f"Known repairs counted in the all-in: {', '.join(evidence.known_work_items[:5]) or 'stated by the listing'} (${kw_lo:,}–${kw_hi:,}).")
     if imm_hi - imm_lo > 2500:
-        notes.append("Immediate-service estimate has a wide swing; the PPI decides it.")
+        notes.append("Likely catch-up estimate has a wide swing; the PPI decides it. It is shown for planning and not counted in the all-in.")
     return CostBreakdown(price_basis=basis, price=price, buyer_fee=fee, transport=transport,
+                         known_work_low=kw_lo, known_work_high=kw_hi, known_work_items=list(evidence.known_work_items),
                          immediate_service_low=imm_lo, immediate_service_high=imm_hi,
                          overdue_allowance=overdue, risk_reserve=reserve, tax_and_registration=tax,
-                         all_in_low=all_in_lo, all_in_high=all_in_hi, max_price=max_price,
-                         offer_low=offer_lo, offer_high=offer_hi, notes=notes)
+                         all_in_low=all_in_lo, all_in_high=all_in_hi, with_catchup_low=catch_lo, with_catchup_high=catch_hi,
+                         max_price=max_price, offer_low=offer_lo, offer_high=offer_hi, notes=notes)
