@@ -52,6 +52,7 @@ def build_export() -> dict[str, Any]:
     listings = [scrub_listing(r) for r in db.list_listings()]
     snaps = db.all_snapshots()
     assessments = db.latest_assessments()
+    errors = db.last_errors()
     timelines: dict[int, list] = {}
     for l in listings:
         if l.get("vehicle_id"):
@@ -60,6 +61,7 @@ def build_export() -> dict[str, Any]:
             l["timeline"] = timelines[l["vehicle_id"]]
         a = assessments.get(l["id"])
         l["assessment"] = scrub_assessment(a) if a else None
+        l["last_error"] = errors.get(l["id"])
         l["history"] = [
             {"t": s["seen_at"], "price": s.get("price"), "kind": s.get("price_kind"),
              "availability": s.get("availability"), "bids": s.get("bid_count")}

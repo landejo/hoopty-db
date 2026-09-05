@@ -109,3 +109,22 @@ def test_listing_age_penalty_and_stale_gate():
     assert not any(g.startswith("stale") for g in quick_gates(fresh, prof, "enthusiast_bridge", DEFAULT_STATE))
     live_auction = {**old, "site": "bat"}
     assert listing_age_days(live_auction) is None  # auctions end on a clock; age does not apply
+
+
+def test_early_bid_is_not_a_price_until_the_last_day():
+    from datetime import datetime, timedelta, timezone
+    from scout.scoring import auction_hours_left, is_early_bid, preliminary_score
+    from scout.policy.state import DEFAULT_STATE
+    now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+    l = {"id": 1, "site": "bat", "availability": "active", "price": 3600, "price_kind": "current_bid", "year": 2007, "make": "Lexus",
+         "model": "GX470", "transmission": "Automatic", "mileage": 160000, "location": "Reno, NV", "mission": "utility_capability",
+         "raw": {"time_left": "5 days", "time_left_seen_at": now.isoformat()}, "normalized": {}}
+    assert abs(auction_hours_left(l, now) - 120) < 0.01
+    assert is_early_bid(l, DEFAULT_STATE, now) == (True, 120.0)
+    closing = {**l, "raw": {"time_left": "2:39:23", "time_left_seen_at": now.isoformat()}}
+    assert is_early_bid(closing, DEFAULT_STATE, now)[0] is False
+    prof = db.get_profile("gx470")
+    comps = [{"sold_price": 12000, "mileage": 150000}, {"sold_price": 14000, "mileage": 140000}, {"sold_price": 13000, "mileage": 170000}]
+    total, b = preliminary_score(l, prof, DEFAULT_STATE, comps, [])
+    assert "early bid" in b["price_value"]["why"] and "ignored" in b["price_value"]["why"]
+    assert b["price_value"]["points"] <= 9  # valued at the comp median, not at the $3,600 bid

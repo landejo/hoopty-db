@@ -168,6 +168,9 @@ def normalized_listing(data: dict[str, Any]) -> dict[str, Any]:
         if prior and amt:
             drops.append({"prior_price": prior, "amount": amt, "note": str(d.get("note") or "").strip()[:200]})
     out["price_drops"] = drops
+    ae = str(data.get("auction_end") or "").strip()
+    out["auction_end"] = ae[:16] if re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", ae) else None
+    out["auction_time_left"] = str(data.get("auction_time_left") or "").strip()[:60] or None
     out["days_listed"] = to_int(data.get("days_listed"), 0, 3650)
     out["red_flags"] = str_list(data.get("red_flags"), cap=12)
     out["highlights"] = str_list(data.get("highlights"), cap=12)

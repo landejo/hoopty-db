@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from scout import coerce
-from scout.ai import call_text
+from scout.ai import call_json_text
 from scout.config import AXES, CONFIG
 
 SYSTEM = """You are a veteran independent mechanic and used-car buyer's advocate.
@@ -56,6 +56,6 @@ def generate_profile(make: str, model: str, generation: str | None, year: int | 
         f"EXAMPLE YEAR: {year or 'unknown'}\n\n"
         f"EXAMPLE LISTING (for context only):\n{sample_text[:6000]}"
     )
-    text = call_text(CONFIG.model_deep, system, user, max_tokens=8000,
-                     log_name="last_profile_gen", effort="high")
+    text = call_json_text(CONFIG.model_deep, system, user, max_tokens=24000,
+                          log_name="last_profile_gen", effort="high")
     return coerce.profile(coerce.parse_json(text))

@@ -5,7 +5,30 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class Trimmed(BaseModel):
+    """Long strings are trimmed to each field's max_length rather than failing
+    validation: a 700-character rationale must never cost a paid assessment."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _trim_strings(cls, data):
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for name, field in cls.model_fields.items():
+            v = out.get(name)
+            if isinstance(v, str):
+                cap = next((m.max_length for m in field.metadata if getattr(m, "max_length", None)), None)
+                if cap and len(v) > cap:
+                    out[name] = v[:cap]
+            elif isinstance(v, list) and field.annotation is not None:
+                lim = next((m.max_length for m in field.metadata if getattr(m, "max_length", None)), None)
+                if lim and len(v) > lim:
+                    out[name] = v[:lim]
+        return out
 
 from scout.policy.preferences import EVIDENCE_SOURCES, FACT_STATUSES, MISSIONS, URGENCY_MODES, VERDICTS
 
@@ -15,7 +38,7 @@ Tri = Literal["yes", "no", "unknown"]
 CriticalStatus = Literal["satisfied", "claimed_only", "missing", "failed"]
 
 
-class Fact(BaseModel):
+class Fact(Trimmed):
     key: str = Field(max_length=60)
     value: str | None = Field(default=None, max_length=300)
     status: FactStatus
@@ -32,13 +55,13 @@ class Fact(BaseModel):
         return str(v)[:300]
 
 
-class Contradiction(BaseModel):
+class Contradiction(Trimmed):
     topic: str = Field(max_length=80)
     detail: str = Field(max_length=500)
     severity: Literal["minor", "material", "identity"]
 
 
-class CriticalEvidence(BaseModel):
+class CriticalEvidence(Trimmed):
     key: str = Field(max_length=60)
     status: CriticalStatus
     evidence: str = Field(default="", max_length=500)
@@ -65,9 +88,9 @@ class Flags(BaseModel):
     reserve_auction: Tri = "unknown"
 
 
-class CategoryRating(BaseModel):
+class CategoryRating(Trimmed):
     rating: int = Field(ge=0, le=10)
-    rationale: str = Field(max_length=600)
+    rationale: str = Field(max_length=1500)
 
 
 class Ratings(BaseModel):
@@ -90,7 +113,7 @@ class MoneyRange(BaseModel):
         return max(v, low)
 
 
-class EvidenceInterpretation(BaseModel):
+class EvidenceInterpretation(Trimmed):
     facts: list[Fact] = Field(default_factory=list, max_length=60)
     contradictions: list[Contradiction] = Field(default_factory=list, max_length=15)
     critical_evidence: list[CriticalEvidence] = Field(default_factory=list, max_length=20)
@@ -105,14 +128,16 @@ class EvidenceInterpretation(BaseModel):
     seller_questions: list[str] = Field(default_factory=list, max_length=12)
     ppi_focus: list[str] = Field(default_factory=list, max_length=12)
     what_would_change_verdict: list[str] = Field(default_factory=list, max_length=6)
-    mission_note: str = Field(default="", max_length=600)
-    rationale: str = Field(default="", max_length=2500)
-    next_action: str = Field(default="", max_length=400)
+    mission_note: str = Field(default="", max_length=1500)
+    rationale: str = Field(default="", max_length=4000)
+    next_action: str = Field(default="", max_length=800)
 
-    @field_validator("positives", "concerns", "unknowns", "seller_questions", "ppi_focus", "what_would_change_verdict")
+    @field_validator("positives", "concerns", "unknowns", "seller_questions", "ppi_focus", "what_would_change_verdict", mode="before")
     @classmethod
     def _trim(cls, v):
-        return [str(x).strip()[:400] for x in v if str(x).strip()]
+        if isinstance(v, str):
+            v = [v]
+        return [str(x).strip()[:600] for x in (v or []) if str(x).strip()]
 
 
 # ---------- provenance (same-car investigation) ----------
@@ -125,7 +150,7 @@ StatementKind = Literal["withdrawn", "keep", "sold", "reason_for_selling", "rece
                         "track_use", "failed_sale", "earlier_price", "condition_opinion", "contradiction", "other"]
 
 
-class ProvenanceEvent(BaseModel):
+class ProvenanceEvent(Trimmed):
     date: str | None = None
     venue: str = Field(default="", max_length=80)
     url: str = Field(default="", max_length=1000)
@@ -147,7 +172,7 @@ class ProvenanceEvent(BaseModel):
         return v[:10] if _re.match(r"^\d{4}-\d{2}-\d{2}", str(v)) else None
 
 
-class SellerStatement(BaseModel):
+class SellerStatement(Trimmed):
     date: str | None = None
     url: str = Field(default="", max_length=1000)
     venue: str = Field(default="", max_length=80)
@@ -164,7 +189,7 @@ class SellerStatement(BaseModel):
         return v[:10] if _re.match(r"^\d{4}-\d{2}-\d{2}", str(v)) else None
 
 
-class ProvenanceInterpretation(BaseModel):
+class ProvenanceInterpretation(Trimmed):
     events: list[ProvenanceEvent] = Field(default_factory=list, max_length=40)
     seller_statements: list[SellerStatement] = Field(default_factory=list, max_length=25)
     work_before_prior_sale: list[str] = Field(default_factory=list, max_length=15)

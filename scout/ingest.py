@@ -155,9 +155,14 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     for k in ("year", "make", "model", "generation", "trim", "engine", "engine_liters",
               "transmission", "drivetrain", "body_style", "exterior_color", "interior_color",
               "mileage", "price", "price_kind", "sold_price", "location", "vin", "seller_type",
-              "seller_name", "title_status", "accidents", "num_owners", "listing_date", "options"):
+              "seller_name", "title_status", "accidents", "num_owners", "listing_date", "options", "auction_end"):
         if norm.get(k) is not None:
             updates[k] = norm[k]
+    if norm.get("auction_time_left"):
+        raw = dict((db.get_listing(lid) or {}).get("raw") or {})
+        raw["time_left"] = norm["auction_time_left"]
+        raw.setdefault("time_left_seen_at", db.now())
+        updates["raw"] = raw
     # The model reading "sold" in the text beats the scraper's "active" but never the reverse.
     if norm.get("availability") in {"sold", "ended"} and scraper_availability == "active":
         updates["availability"] = norm["availability"]

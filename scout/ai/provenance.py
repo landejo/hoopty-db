@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from scout import coerce
-from scout.ai import call_text
+from scout.ai import call_json_text
 from scout.config import CONFIG
 from scout.policy.schema import ProvenanceInterpretation
 from scout.provenance import IDENTITY, PRICE_TYPES, STATUSES
@@ -80,7 +80,7 @@ def interpret_hits(listing: dict[str, Any], events: list[dict[str, Any]], hits: 
         f"CURRENT LISTING TEXT (excerpt):\n{(listing.get('raw_text') or '')[:8000]}\n\n"
         f"SEARCH HITS ({len(hits)}):\n\n" + "\n\n".join(hits_txt)
     )
-    text = call_text(CONFIG.model_deep, system, user, max_tokens=12000, log_name="last_provenance", effort="high")
+    text = call_json_text(CONFIG.model_deep, system, user, max_tokens=32000, log_name="last_provenance", effort="high")
     try:
         return ProvenanceInterpretation.model_validate(coerce.parse_json(text))
     except ValidationError as e:

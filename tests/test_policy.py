@@ -225,3 +225,13 @@ def test_year_old_listing_is_capped_until_availability_confirmed():
     ev = _ev(doc=9, cond=9, val=9, fit=9, log=10, emo=8, quality=9, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"})
     a = assess(l, _profile("z3_30i"), ev, STATE)
     assert a.verdict == "Maybe / verify" and any(g.key == "stale_listing" for g in a.gates)
+
+
+def test_schema_trims_long_strings_instead_of_rejecting():
+    ev = EvidenceInterpretation.model_validate({
+        "ratings": {k: {"rating": 5, "rationale": "x" * 3000} for k in ("documentation", "condition", "price_value", "mission_fit", "logistics", "emotional_spec_fit")},
+        "evidence_quality": 5, "immediate_service_estimate": {"low": 1, "high": 2},
+        "mission_note": "m" * 5000, "rationale": "r" * 9000, "positives": "one string, not a list",
+        "facts": [{"key": "vin", "value": "x", "status": "verified", "source": "listing_text", "note": "n" * 2000}]})
+    assert len(ev.ratings.condition.rationale) == 1500 and len(ev.rationale) == 4000 and ev.positives == ["one string, not a list"]
+    assert len(ev.facts[0].note) == 400
