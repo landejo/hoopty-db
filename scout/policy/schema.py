@@ -20,7 +20,9 @@ class Trimmed(BaseModel):
         out = dict(data)
         for name, field in cls.model_fields.items():
             v = out.get(name)
-            if isinstance(v, str):
+            ann = field.annotation
+            str_field = ann is str or str in (getattr(ann, "__args__", None) or ())
+            if isinstance(v, str) and str_field:
                 cap = next((m.max_length for m in field.metadata if getattr(m, "max_length", None)), None)
                 if cap and len(v) > cap:
                     out[name] = v[:cap]
