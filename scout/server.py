@@ -479,6 +479,14 @@ def export_write() -> dict[str, Any]:
     return {"ok": True, "path": str(write_export())}
 
 
+@app.post("/api/handoff")
+def make_handoff(n: int = 10) -> dict[str, Any]:
+    """Write the full-fidelity handoff bundle (Markdown + JSON) for the top-n candidates."""
+    from scout.handoff import write
+    md, js = write(n)
+    return {"ok": True, "markdown": str(md), "json": str(js)}
+
+
 @app.get("/api/events")
 def events() -> list[dict[str, Any]]:
     return db.recent_events()
