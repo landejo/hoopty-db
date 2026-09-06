@@ -89,7 +89,8 @@
   function siteName(k) { return (state.data.sites || {})[k] || k; }
   function siteChip(k) { const c = { facebook: "teal", cargurus: "olive", carscom: "mustard", autotrader: "slate", carsandbids: "orange", bat: "rose" }[k] || ""; return `<span class="chip ${c}">${esc(siteName(k))}</span>`; }
   function scoreOf(l) { return l.assessment?.score?.total ?? null; }
-  function verdictOf(l) { return l.assessment?.verdict || null; }
+  function verdictOf(l) { return l.verdict_override || l.assessment?.verdict || null; }
+  function computedVerdictOf(l) { return l.assessment?.verdict || null; }
   function verdictTone(v) { return { "Pursue": "olive", "Pursue conditionally": "olive", "Maybe / verify": "mustard", "Reject": "rose", "Do not pursue": "rose" }[v] || ""; }
   const MISSIONS = ["enthusiast_bridge", "pragmatic_bridge", "future_keeper", "utility_capability"];
   const missionLabel = (m) => ({ enthusiast_bridge: "enthusiast bridge", pragmatic_bridge: "pragmatic bridge", future_keeper: "future keeper", utility_capability: "utility / capability" }[m] || m || "—");
@@ -318,7 +319,7 @@
           <div class="meta"><span class="mono">${l.mileage ? num(l.mileage) + " mi" : "— mi"}</span><span>${esc(l.location || "—")}</span><span>${listedAge(l)}</span>${l.transmission ? `<span>${esc(l.transmission)}</span>` : ""}</div>
           ${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
           <div class="foot">
-            <div class="row" style="gap:6px">${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${v ? `<span class="chip ${verdictTone(v)}">${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
+            <div class="row" style="gap:6px">${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${v ? `<span class="chip ${verdictTone(v)}" title="${l.verdict_override ? "Your override (computed: " + esc(computedVerdictOf(l) || "none") + ")" : "computed"}">${l.verdict_override ? "★ " : ""}${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
             <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label><span class="pill-status">${esc(l.status || "New")}</span></span>
           </div>
         </div>
@@ -417,6 +418,7 @@
       const cond = A.gates.filter((g) => g.kind === "conditional");
       main.appendChild(h(`<div class="panel ${verdictTone(A.verdict) === "rose" ? "accent-rose" : verdictTone(A.verdict) === "mustard" ? "accent-mustard" : "accent-olive"}">
         <h3>Verdict: ${esc(A.verdict)} <span class="muted small">${ago(A.assessed_at)} · ${esc(A.mission.replace("_", " "))} · ${esc(A.urgency_mode.replace("_", " "))}</span></h3>
+        ${l.verdict_override ? `<p class="small" style="background:var(--chip-teal);border-radius:8px;padding:6px 10px"><b>Your verdict: ${esc(l.verdict_override)}</b> (the system computed ${esc(A.verdict)}).${l.verdict_override_reason ? " " + esc(l.verdict_override_reason) : ""}</p>` : ""}
         ${(A.context_changed || []).length ? `<p class="small" style="background:var(--chip-mustard);border-radius:8px;padding:6px 10px"><b>Context changed since this assessment:</b> ${esc(A.context_changed.join("; "))}. The arithmetic has been re-derived, but the model's ratings were formed under the old settings. Re-assess to refresh them.</p>` : ""}
         <p><b>${esc(A.verdict_reason)}</b></p>
         ${E.mission_note ? `<p><b>Jason fit:</b> ${esc(E.mission_note)}</p>` : ""}
@@ -456,6 +458,8 @@
       const act = h(`<div class="panel"><h3>Actions</h3>
         <div class="row"><button class="btn primary" id="analyze">${A ? "Re-assess" : "Assess"} <span class="muted small" style="color:inherit;opacity:.8">Opus · ~$1</span></button><button class="btn" id="analyze-quick" title="Same prompt and photos on Sonnet: triage tier">Quick assess <span class="muted small">Sonnet · ~30¢</span></button><button class="btn sm ghost" id="renorm" title="Re-run sync-time normalization">Re-normalize</button></div>
         <div class="row" style="margin-top:8px"><button class="btn sm warm" id="investigate" title="Queue a same-car search; the extension runs it in your browser">${P ? "Re-investigate provenance" : "Investigate provenance"}</button><span class="muted small" id="inv-status"></span></div>
+        <label style="display:block;margin-top:10px">Your verdict <select id="voverride"><option value="">— use the computed verdict —</option>${["Pursue", "Pursue conditionally", "Maybe / verify", "Reject", "Do not pursue"].map((x) => `<option ${l.verdict_override === x ? "selected" : ""}>${x}</option>`).join("")}</select>${A ? ` <span class="muted small">computed: ${esc(A.verdict)}</span>` : ""}</label>
+        <textarea class="notes" id="voverride-reason" placeholder="Why you disagree (saved on blur)" style="min-height:60px">${esc(l.verdict_override_reason || "")}</textarea>
         <label style="display:block;margin-top:10px">Mission <select id="mission">${MISSIONS.map((m) => `<option value="${m}" ${l.mission === m ? "selected" : ""}>${missionLabel(m)}</option>`).join("")}</select> <span class="muted small">pragmatic bridge lifts the manual gate</span></label>
         <div class="row" style="margin-top:10px"><label>Status <select id="status">${STATUSES.map((s) => `<option ${l.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
         <label><input type="checkbox" id="pin" ${l.pinned ? "checked" : ""}> pinned</label>
@@ -484,6 +488,8 @@
         if (!confirm(`Delete "${title(l)}" and its snapshots, assessments and provenance? A future sync will re-add it as new if it is still saved on the site.`)) return;
         try { await api(`/api/listings/${l.id}`, "DELETE"); await loadData(); location.hash = "#/"; toast("Deleted"); } catch (err) { toast(err.message, 4000); }
       };
+      $("#voverride", act).onchange = (e) => patch({ verdict_override: e.target.value });
+      $("#voverride-reason", act).onblur = (e) => { if (e.target.value !== (l.verdict_override_reason || "")) patch({ verdict_override_reason: e.target.value }); };
       $("#mission", act).onchange = (e) => patch({ mission: e.target.value });
       $("#status", act).onchange = (e) => patch({ status: e.target.value });
       $("#pin", act).onchange = (e) => patch({ pinned: e.target.checked });

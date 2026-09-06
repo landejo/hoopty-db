@@ -62,7 +62,7 @@ catchup_notes: >
   feasibility, and a specialist PPI covering collision repair and the rear structure.
 critical_evidence:
   - key: rear_structure
-    label: Trunk-floor spot welds and differential mount/ear inspected with photos or a specialist PPI (reinforcement a strong positive on M cars)
+    label: Trunk-floor spot welds and differential mount/ear inspected with photos or a specialist PPI (reinforcement a strong positive on M cars); bushing replacement is NOT evidence of structural soundness
     severity: conditional
   - key: cooling_history
     label: Cooling-system documentation regardless of mileage

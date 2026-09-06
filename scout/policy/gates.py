@@ -67,8 +67,8 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
             continue
         ce = match_reported(req, evidence.critical_evidence)
         st = ce.status if ce else "missing"
-        if st == "satisfied":
-            continue
+        if st in ("satisfied", "not_applicable"):
+            continue   # not_applicable: the reader established the item cannot apply to this car
         label = req.get("label", req["key"])
         detail = f" ({ce.evidence})" if ce and ce.evidence else ""
         if st == "failed" and req.get("severity") == "hard":

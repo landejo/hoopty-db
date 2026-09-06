@@ -19,7 +19,7 @@ PUBLIC_LISTING_FIELDS = [
     "transmission", "drivetrain", "body_style", "exterior_color", "interior_color", "mileage",
     "price", "price_kind", "sold_price", "location", "seller_type", "title_status", "accidents",
     "num_owners", "listing_date", "auction_end", "options", "profile_key", "profile_confidence",
-    "normalized", "prelim_score", "analyzed_at", "status", "notes", "pinned", "raw", "mission", "provenance", "vehicle_id",
+    "normalized", "prelim_score", "analyzed_at", "status", "notes", "pinned", "raw", "mission", "provenance", "vehicle_id", "verdict_override", "verdict_override_reason",
 ]
 PRIVATE_FIELDS = {"seller_contact", "raw_text", "vin"}
 

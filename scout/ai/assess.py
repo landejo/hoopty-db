@@ -35,8 +35,11 @@ BUYER PROFILE FOR THIS MODEL:
 {profile}
 
 MODEL-CRITICAL EVIDENCE to report on (use these exact keys; status is one of
-satisfied / claimed_only / missing / failed; "satisfied" needs a receipt, photo,
-report, or specialist inspection, never a seller sentence):
+satisfied / claimed_only / missing / failed / not_applicable; "satisfied" needs a
+receipt, photo, report, or specialist inspection, never a seller sentence. Use
+"not_applicable" when the item cannot apply to THIS car — e.g. an S54 rod-bearing
+record on a non-M or pre-2001 car, a convertible-top item on a coupe — and say why
+in `evidence`; do not report such an item as "missing"):
 {critical}
 
 EVIDENCE SOURCE vocabulary: receipt, history_report, photo, external_vin,
@@ -83,6 +86,10 @@ FRAMING RULES:
   "Unverified: ... (ask for / inspect ...)" for model-critical evidence the
   listing does not provide. List Observed items first. An Unverified item is a
   question to ask, not a reason to reject, unless the profile marks it hard.
+- DO NOT compute your own all-in, total-cost or ceiling figures in prose. The
+  cost engine does that from your two estimates. Never assert that a car
+  "approaches" or "exceeds" a budget ceiling; give the estimates and let the
+  arithmetic speak. Quote budget figures only from the state block above.
 - PHOTOS: some captured listing photos are attached. Describe only what you
   can actually see, and give photo-derived facts the source "photo". The
   attached set is what the tracker captured, NOT the listing's full gallery:
@@ -124,8 +131,15 @@ FRAMING RULES:
 
 TODAY IS {today}. No prose outside the JSON."""
 
+def _mission_guidance(mission: str, state: dict[str, Any]) -> str:
+    """Budget figures come from the live policy state, never hardcoded."""
+    b = state.get("budget") or {}
+    band = f"ideally ${b.get('ideal_low', 0):,}-${b.get('ideal_high', 0):,}, ceiling ${b.get('max_price', 0):,}, acceptable all-in ${b.get('acceptable_all_in', 0):,}"
+    return MISSION_GUIDANCE.get(mission, "").replace("{band}", band)
+
+
 MISSION_GUIDANCE = {
-    "enthusiast_bridge": "Bridge car that must still have a point of view: manual required, ideally $10-13k and under $15k all-in-aware, reliable, inspectable, easy to resell in 6-24 months.",
+    "enthusiast_bridge": "Bridge car that must still have a point of view: manual required, {band}, reliable, inspectable, easy to resell in 6-24 months.",
     "pragmatic_bridge": "Low-cost, reliable, immediately available bridge that solves the 335i problem. An automatic is not disqualifying here, but it must win decisively on reliability, condition, price, convenience, and resale, and you must say it does not fulfill the enthusiast brief.",
     "future_keeper": "A selective longer-term enthusiast purchase. Higher price can be justified only by genuine superiority and documentation; say plainly if it is attractive only as a keeper and conflicts with the current cash-preservation strategy.",
     "utility_capability": "Capability-oriented SUV branch. Automatic is fine. Must justify itself by capability or character the RX 350 does not already supply.",
@@ -179,10 +193,10 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
                       peers: list[dict[str, Any]], comps: list[dict[str, Any]], model: str | None = None) -> EvidenceInterpretation:
     critical = "\n".join(f"  - {c['key']}: {c.get('label', c['key'])} [{c.get('severity', 'conditional')}]"
                          for c in profile.get("critical_evidence") or []) or "  (none defined for this model)"
-    state_view = {k: state.get(k) for k in ("urgency_mode", "budget", "current_vehicles", "active_exclusions", "deprioritized", "home_location", "travel")}
+    state_view = {k: state.get(k) for k in ("urgency_mode", "budget", "current_vehicles", "active_exclusions", "deprioritized", "home_location", "travel", "capability_intent", "high_mileage_rule")}
     system = SYSTEM.format(
         context=COMPACT_CONTEXT, state=json.dumps(state_view, indent=1), mission=mission,
-        mission_guidance=MISSION_GUIDANCE.get(mission, ""), profile=_profile_text(profile), critical=critical,
+        mission_guidance=_mission_guidance(mission, state), profile=_profile_text(profile), critical=critical,
         flag_keys=", ".join(Flags.model_fields), category_keys=", ".join(CATEGORY_POINTS),
         category_help="\n".join(f"    * {k} ({v} pts): {CATEGORY_LABELS[k]}" for k, v in CATEGORY_POINTS.items()),
         today=date.today().isoformat(),

@@ -21,11 +21,19 @@ DEFAULT_STATE: dict[str, Any] = {
         {"name": "2018 Lexus RX 350", "role": "household utility, working well"},
         {"name": "2011 BMW 335i (E90, N55, auto)", "role": "finite life; recurring coolant leak; front suspension due"},
     ],
-    "active_exclusions": ["Lexus SC430", "Mazda Miata", "Honda CR-Z", "Lexus IS350", "Lexus GS350"],
+    "active_exclusions": ["Lexus SC430", "Mazda Miata", "Honda CR-Z", "Lexus IS350", "Lexus GS350", "BMW Z4", "Saturn"],
     "deprioritized": ["turbo BMW like the 335i", "Land Rover LR4", "second Lexus SUV unless the capability itself is wanted"],
+    "high_mileage_rule": "A high-mileage car that is not a Toyota or Lexus needs a particularly convincing case: "
+                         "documented major renewal, not merely a low price. Mileage is a yellow flag to be answered "
+                         "with invoices, never a reject on its own.",
     "home_location": "Carmel, CA",
     "travel": "Willing to fly out and drive a good car home. Distance is a cost and an inspection-access "
               "question (can a PPI happen before money moves?), never a red flag or a risk by itself.",
+    "capability_intent": "For an SUV the intended camping setup is a removable sleeping platform, mattress, window "
+                         "coverings and organised storage — no vehicle modification. Condition is established first; "
+                         "suspension lifts, roof racks and exterior accessories are not planned spend and an existing "
+                         "build does not add value. Judge a capability vehicle on condition and records, not on its "
+                         "accessories.",
     "fees": {
         # Verify against each platform's current terms before relying on the numbers.
         "bat": {"pct": 0.05, "min": 250, "max": 7500},

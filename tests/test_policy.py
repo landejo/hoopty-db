@@ -379,3 +379,26 @@ def test_schema_accepts_key_aliases_and_flat_ratings():
         "evidence_quality_score": 5, "immediate_service": {"low": 500, "high": 900}, "known_repairs": {"low": 200, "high": 400},
         "questions": ["Receipts?"], "facts": []})
     assert ev.ratings.documentation.rating == 6 and ev.evidence_quality == 5 and ev.known_work_estimate.high == 400 and ev.seller_questions == ["Receipts?"]
+
+
+def test_not_applicable_critical_item_raises_no_gate():
+    ev = _ev(quality=7, critical={"rear_structure": "satisfied", "cooling_history": "satisfied",
+                                  "s54_rod_bearings": "not_applicable"})
+    a = assess(_listing(model="Z3 M roadster", year=2000, engine_liters=3.2), _profile("z3_m"), ev, STATE, mission="future_keeper")
+    assert not any("s54" in g.key for g in a.gates)
+    # And the synonym "n/a" maps to it rather than being read as missing.
+    from scout.policy.schema import CriticalEvidence
+    assert CriticalEvidence(key="x", status="n/a").status == "not_applicable"
+
+
+def test_mission_guidance_quotes_the_live_budget_not_a_hardcoded_ceiling():
+    from scout.ai.assess import MISSION_GUIDANCE, _mission_guidance
+    assert not any("$15k" in v or "10-13k" in v for v in MISSION_GUIDANCE.values())
+    g = _mission_guidance("enthusiast_bridge", {"budget": {"ideal_low": 10000, "ideal_high": 19000, "max_price": 27000, "acceptable_all_in": 29000}})
+    assert "$27,000" in g and "$29,000" in g and "$15" not in g
+
+
+def test_z4_and_saturn_are_excluded():
+    from scout.policy.gates import is_excluded
+    assert is_excluded("BMW", "Z4 3.0i", []) and is_excluded("Saturn", "Sky Redline", [])
+    assert not is_excluded("BMW", "Z3 3.0i", [])
