@@ -45,13 +45,19 @@ def _calibration(listings: list[dict[str, Any]], A: dict[int, dict[str, Any]]) -
     return int(gaps[len(gaps) // 2]) if len(gaps) >= 3 else None
 
 
-def top_candidates(n: int) -> tuple[list[tuple[dict[str, Any], dict[str, Any] | None, float | None]], int | None]:
+def top_candidates(n: int | None = 10, site: str | None = None, require_profile: bool = True
+                   ) -> tuple[list[tuple[dict[str, Any], dict[str, Any] | None, float | None]], int | None]:
+    """Live candidates (active or pending), ranked by assessed score where present,
+    else the calibrated preliminary score. `site` limits to one source; n=None keeps all."""
     A = db.latest_assessments_by_vehicle()
-    rows = [r for r in db.list_listings(role="candidate") if r["availability"] in ("active", "pending") and r.get("profile_key")]
-    off = _calibration(rows, A)
+    rows = [r for r in db.list_listings(role="candidate")
+            if r["availability"] in ("active", "pending")
+            and (r.get("profile_key") or not require_profile)
+            and (site is None or r["site"] == site)]
+    off = _calibration([r for r in db.list_listings(role="candidate")], A)
     ranked = sorted(((r, A.get(r["id"]), _glance(r, A.get(r["id"]), off)) for r in rows),
                     key=lambda t: -(t[2] if t[2] is not None else -1))
-    return ranked[:n], off
+    return (ranked if n is None else ranked[:n]), off
 
 
 def _md_list(items, empty="(none)") -> str:
@@ -75,7 +81,8 @@ def car_section(rank: int, l: dict[str, Any], a: dict[str, Any] | None, glance: 
     age = listing_age_days(l)
     lines = [f"## {rank}. {title}", ""]
     lines.append(f"**Tracker id** #{l['id']} · **Source** {SITES.get(l['site'], l['site'])} · **URL** {l['url']}")
-    lines.append(f"**Glance score** {glance:.0f}/100 ({'assessed' if a else 'preliminary, calibrated'}) · **Status (Jason)** {l.get('status') or 'New'} · **Mission** {l.get('mission')} · **Profile** {profile.get('label')}")
+    gtxt = f"{glance:.0f}/100" if glance is not None else "—"
+    lines.append(f"**Glance score** {gtxt} ({'assessed' if a else 'preliminary, calibrated'}) · **Status (Jason)** {l.get('status') or 'New'} · **Mission** {l.get('mission')} · **Profile** {profile.get('label') or 'none assigned'}")
     lines.append("")
     lines.append("### Identity and listing facts (tracker read)")
     facts = [("Year", l.get("year")), ("Make", l.get("make")), ("Model", l.get("model")), ("Generation", l.get("generation")), ("Trim", l.get("trim")),
@@ -223,22 +230,54 @@ def profile_section(p: dict[str, Any]) -> str:
     return "\n".join(out) + "\n"
 
 
-def build(n: int = 10) -> tuple[str, dict[str, Any]]:
+def build(n: int | None = 10, site: str | None = None, brief: str = "decision") -> tuple[str, dict[str, Any]]:
     state = load_state()
-    ranked, offset = top_candidates(n)
+    ranked, offset = top_candidates(n, site=site, require_profile=False)
     today = date.today().isoformat()
     guide = (ROOT / "scout" / "policy" / GUIDE_FILENAME).read_text()
     changes = (ROOT / "scout" / "policy" / "POLICY_CHANGES.md").read_text()
     profiles_used = {}
     for l, _, _ in ranked:
-        profiles_used[l["profile_key"]] = db.get_profile(l["profile_key"])
+        if l.get("profile_key"):
+            profiles_used[l["profile_key"]] = db.get_profile(l["profile_key"])
     fresh = sum(1 for _, a, _ in ranked if a and not a.get("rescored_from"))
     rederived = sum(1 for _, a, _ in ranked if a and a.get("rescored_from"))
     prelim_only = sum(1 for _, a, _ in ranked if not a)
 
-    md = [f"# Hoopty Scout handoff — top {len(ranked)} active candidates", f"Generated {today} · policy {POLICY_VERSION} · for an independent second analysis", ""]
-    md.append("## 0. What I want from you (the analyst)")
-    md.append("""You are receiving the full contents of a personal used-car tracking system for one buyer, Jason, in Carmel, California.
+    scope = f"all {len(ranked)} live {SITES.get(site, site)} listings" if site else f"top {len(ranked)} active candidates"
+    md = [f"# Hoopty Scout handoff — {scope}", f"Generated {today} · policy {POLICY_VERSION} · " +
+          ("for independent research on each vehicle" if brief == "research" else "for an independent second analysis"), ""]
+    md.append("## 0. What I want from you")
+    if brief == "research":
+        md.append("""You are receiving every vehicle listing one buyer, Jason (Carmel, California), currently has SAVED and still
+available on """ + (SITES.get(site, site or "these sources")) + """ — nothing sold, ended or withdrawn. For each car you have the
+buyer's own decision guide (Appendix A), the tracking system's methodology and settings, the vehicle profile it applies, every
+fact it holds with a provenance label, its scores and cost arithmetic, the price history, market comps, photo URLs and the
+captured listing text.
+
+Your job is RESEARCH, not ranking. For each vehicle:
+1. **Establish identity.** Decode the VIN where present; confirm year, engine variant, transmission and trim against the
+   listing's own claims. Flag any mismatch. Where no VIN is given, say what would be needed to pin the car down.
+2. **Find the car's history beyond this listing.** Search the VIN, the plate if visible, distinctive photos, the seller name,
+   and the year/model/colour/mileage combination across Bring a Trailer, Cars & Bids, eBay (including completed listings),
+   Classic.com, Hagerty, dealer sites, marque forums, Reddit and public Facebook posts. Report prior sales, prior asking
+   prices, relists, mileage changes, disclosures that appeared in one advertisement and vanished from another, and any seller
+   statements made elsewhere (including "sold", "withdrawn" or "decided to keep"). Grade every match: exact VIN = confirmed;
+   identical plate or identical photographs plus coherent mileage/colour/equipment/location/chronology = strongly likely;
+   similar specification only = possible. Never call two listings the same car on year, colour and approximate mileage alone.
+3. **Test the seller's claims.** Separate what the listing establishes from what it merely asserts. "Fully serviced",
+   "runs great" and "rear welds intact" are claims, not evidence.
+4. **Price it against the real market.** Find recent comparable sales, not asking prices, and say what this specific car is
+   worth given its mileage, condition evidence, spec and location. Note where the tracker's comps look thin or wrong.
+5. **Name the model-specific risks** for this exact variant and year, and say which are resolved by the listing and which are open.
+6. **State what is still unknown** and the cheapest way to resolve each item (a question, a photo, a scan, a specific PPI).
+
+Deliver a per-vehicle research note with sources linked and dated, then a short section listing the cars where your research
+found something the tracker did not know. Distinguish facts, inferences and recommendations throughout. Use the guide's verdict
+vocabulary only if you choose to give a verdict (Pursue / Pursue conditionally / Maybe verify / Reject / Do not pursue), and
+never use "pass" as a positive.""")
+    else:
+        md.append("""You are receiving the full contents of a personal used-car tracking system for one buyer, Jason, in Carmel, California.
 Everything below is data: the buyer's own decision guide (Appendix A), the system's methodology, its current budget and
 mission settings, the vehicle profiles it uses, and, for each of the top candidates, every fact, model reading, score, cost
 figure, price-history event and the raw listing text it holds. Treat the system's scores and verdicts as one opinion, not as
@@ -323,9 +362,10 @@ utility_capability (SUV branch, automatic fine). **Urgency mode:** {state.get('u
     md.append("## 5. The candidates\n")
     export_cars = []
     for i, (l, a, g) in enumerate(ranked, 1):
-        prof = profiles_used.get(l["profile_key"]) or {}
-        comps = db.list_listings(role="comp", profile_key=l["profile_key"])
-        peers = [p for p in db.list_listings(role="candidate", profile_key=l["profile_key"]) if p["availability"] in ("active", "pending") and p["id"] != l["id"]]
+        prof = profiles_used.get(l.get("profile_key")) or {}
+        comps = db.list_listings(role="comp", profile_key=l["profile_key"]) if l.get("profile_key") else []
+        peers = [p for p in (db.list_listings(role="candidate", profile_key=l["profile_key"]) if l.get("profile_key") else [])
+                 if p["availability"] in ("active", "pending") and p["id"] != l["id"]]
         md.append(car_section(i, l, a, g, prof, state, comps, peers))
         export_cars.append({"rank": i, "glance": g, "listing": {k: v for k, v in l.items() if k not in ("raw_text",)},
                             "raw_text": (l.get("raw_text") or "")[:RAW_TEXT_CAP], "assessment": a,
@@ -337,27 +377,41 @@ utility_capability (SUV branch, automatic fine). **Urgency mode:** {state.get('u
     md.append(changes)
     md.append("\n## Appendix C — Verdict vocabulary\n" + ", ".join(VERDICTS) + ". Never use \"pass\" as a positive verdict.\n")
     bundle = {"generated": datetime.now(timezone.utc).replace(microsecond=0).isoformat(), "policy_version": POLICY_VERSION,
+              "scope": {"site": site, "brief": brief, "count": len(ranked)},
               "state": {k: state.get(k) for k in ("urgency_mode", "budget", "home_location", "travel", "active_exclusions", "deprioritized", "fees", "transport_by_locality_band", "tax_rate", "registration_fee", "listing_age")},
               "calibration_offset": offset, "profiles": profiles_used, "cars": export_cars}
     return "\n".join(md), bundle
 
 
-def write(n: int = 10) -> tuple[Path, Path]:
+def write(n: int | None = 10, site: str | None = None, brief: str = "decision") -> tuple[Path, Path]:
     HANDOFF_DIR.mkdir(parents=True, exist_ok=True)
     stamp = date.today().strftime("%Y%m%d")
-    existing = sorted(HANDOFF_DIR.glob(f"Hoopty_Scout_Handoff_v*_{stamp}.md"))
+    label = f"{site.capitalize()}_" if site else ""
+    existing = sorted(HANDOFF_DIR.glob(f"Hoopty_Scout_{label}Handoff_v*_{stamp}.md"))
     version = 1 + max((int(re.search(r"_v(\d+)_", p.name).group(1)) for p in existing), default=0)
-    md, bundle = build(n)
-    md_path = HANDOFF_DIR / f"Hoopty_Scout_Handoff_v{version}_{stamp}.md"
-    json_path = HANDOFF_DIR / f"Hoopty_Scout_Handoff_v{version}_{stamp}.json"
+    md, bundle = build(n, site=site, brief=brief)
+    md_path = HANDOFF_DIR / f"Hoopty_Scout_{label}Handoff_v{version}_{stamp}.md"
+    json_path = HANDOFF_DIR / f"Hoopty_Scout_{label}Handoff_v{version}_{stamp}.json"
     md_path.write_text(md)
     json_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=1, default=str))
     return md_path, json_path
 
 
 if __name__ == "__main__":
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    args = sys.argv[1:]
+    site = None
+    brief = "decision"
+    n: int | None = 10
+    for a_ in args:
+        if a_.startswith("--site="):
+            site = a_.split("=", 1)[1]
+        elif a_.startswith("--brief="):
+            brief = a_.split("=", 1)[1]
+        elif a_ in ("--all", "all"):
+            n = None
+        elif a_.isdigit():
+            n = int(a_)
     db.init_db()
-    m, j = write(n)
+    m, j = write(n, site=site, brief=brief)
     print(m)
     print(j)
