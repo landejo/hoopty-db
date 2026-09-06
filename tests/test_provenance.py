@@ -151,3 +151,15 @@ def test_site_reported_drop_becomes_an_event_without_a_fake_date():
     assert len(ev) == 1 and ev[0]["source"] == "site_reported" and "26,353" in ev[0]["evidence"] and "date of the drop not stated" in ev[0]["evidence"]
     link_listing_vehicle(a)
     assert len([e for e in db.vehicle_events(vid) if e["status"] == "Price reduced"]) == 1
+
+
+def test_assessment_is_shared_across_same_vin_listings():
+    a, _ = db.upsert_listing({"site": "cargurus", "url": "https://www.cargurus.com/details/1/", "vin": VIN, "year": 2000, "make": "BMW",
+                              "model": "Z3 M roadster", "price": 17500, "availability": "active", "role": "candidate"})
+    b, _ = db.upsert_listing({"site": "carscom", "url": "https://www.cars.com/vehicledetail/d/", "vin": VIN, "year": 2000, "make": "BMW",
+                              "model": "Z3 M roadster", "price": 17400, "availability": "active", "role": "candidate"})
+    link_listing_vehicle(a); link_listing_vehicle(b)
+    db.add_assessment(a, {"policy_version": "1.2.1", "mission": "future_keeper", "verdict": "Maybe / verify", "score": {"total": 52},
+                          "confidence": 20, "model": "claude-sonnet-5", "assessed_at": "2026-09-05T10:00:00+00:00"})
+    shared = db.latest_assessments_by_vehicle()
+    assert shared[b]["shared_from"] == a and shared[b]["score"]["total"] == 52 and "shared_from" not in shared[a]

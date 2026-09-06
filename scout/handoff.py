@@ -46,7 +46,7 @@ def _calibration(listings: list[dict[str, Any]], A: dict[int, dict[str, Any]]) -
 
 
 def top_candidates(n: int) -> tuple[list[tuple[dict[str, Any], dict[str, Any] | None, float | None]], int | None]:
-    A = db.latest_assessments()
+    A = db.latest_assessments_by_vehicle()
     rows = [r for r in db.list_listings(role="candidate") if r["availability"] in ("active", "pending") and r.get("profile_key")]
     off = _calibration(rows, A)
     ranked = sorted(((r, A.get(r["id"]), _glance(r, A.get(r["id"]), off)) for r in rows),
