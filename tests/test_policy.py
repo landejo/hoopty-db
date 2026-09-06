@@ -371,3 +371,11 @@ def test_generic_catchup_is_shown_but_not_counted():
     assert c.all_in_low == c.all_in_high == 12000 + c.buyer_fee + c.transport + c.tax_and_registration
     assert c.immediate_service_high == 8000 and c.with_catchup_high == c.all_in_high + 8000 + c.overdue_allowance + c.risk_reserve
     assert c.max_price > 14000   # no longer eaten by the generic estimate (default acceptable all-in is $16,500)
+
+
+def test_schema_accepts_key_aliases_and_flat_ratings():
+    ev = EvidenceInterpretation.model_validate({
+        "category_ratings": {"documentation": 6, "condition": 5, "price_value": 7, "mission_fit": 8, "logistics": 9, "emotional_spec_fit": 6},
+        "evidence_quality_score": 5, "immediate_service": {"low": 500, "high": 900}, "known_repairs": {"low": 200, "high": 400},
+        "questions": ["Receipts?"], "facts": []})
+    assert ev.ratings.documentation.rating == 6 and ev.evidence_quality == 5 and ev.known_work_estimate.high == 400 and ev.seller_questions == ["Receipts?"]

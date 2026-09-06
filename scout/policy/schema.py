@@ -189,6 +189,17 @@ class EvidenceInterpretation(Trimmed):
         if not isinstance(data, dict):
             return data
         out = dict(data)
+        # Key aliases the models drift toward.
+        for alias, real in (("category_ratings", "ratings"), ("scores", "ratings"), ("rating", "ratings"),
+                            ("immediate_service", "immediate_service_estimate"), ("known_repairs", "known_work_estimate"),
+                            ("known_work", "known_work_estimate"), ("questions", "seller_questions"), ("ppi", "ppi_focus"),
+                            ("evidence_quality_score", "evidence_quality")):
+            if alias in out and real not in out:
+                out[real] = out.pop(alias)
+        # A flat ratings object {documentation: 6, ...} -> {documentation: {rating: 6, rationale: ""}}
+        r = out.get("ratings")
+        if isinstance(r, dict):
+            out["ratings"] = {k: (v if isinstance(v, dict) else {"rating": v, "rationale": ""}) for k, v in r.items()}
         for name, model in (("facts", Fact), ("contradictions", Contradiction), ("critical_evidence", CriticalEvidence)):
             items = out.get(name)
             if not isinstance(items, list):
