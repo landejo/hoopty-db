@@ -192,7 +192,8 @@ def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 _ADDITIVE_COLUMNS = {
-    "listings": [("mission", "TEXT"), ("vehicle_id", "INTEGER"), ("provenance_json", "TEXT"), ("mission_user_set", "INTEGER DEFAULT 0")],
+    "listings": [("mission", "TEXT"), ("vehicle_id", "INTEGER"), ("provenance_json", "TEXT"), ("mission_user_set", "INTEGER DEFAULT 0"),
+                 ("verdict_override", "TEXT"), ("verdict_override_reason", "TEXT")],
     "profiles": [("critical_evidence_json", "TEXT DEFAULT '[]'"), ("mission_default", "TEXT"),
                  ("risk_reserve", "INTEGER"), ("automatic_ok", "INTEGER DEFAULT 0"),
                  ("catchup_notes", "TEXT")],

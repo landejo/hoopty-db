@@ -123,6 +123,8 @@ class ListingPatch(BaseModel):
     role: str | None = None
     profile_key: str | None = None
     mission: str | None = None
+    verdict_override: str | None = None
+    verdict_override_reason: str | None = None
 
 
 @app.patch("/api/listings/{listing_id}")
@@ -144,6 +146,13 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         if patch.profile_key and not db.get_profile(patch.profile_key):
             raise HTTPException(400, "unknown profile")
         updates["profile_key"] = patch.profile_key or None
+    if patch.verdict_override is not None:
+        from scout.policy.preferences import VERDICTS
+        if patch.verdict_override and patch.verdict_override not in VERDICTS:
+            raise HTTPException(400, f"verdict_override must be one of {VERDICTS}")
+        updates["verdict_override"] = patch.verdict_override or None
+    if patch.verdict_override_reason is not None:
+        updates["verdict_override_reason"] = patch.verdict_override_reason[:2000] or None
     if patch.mission is not None:
         if patch.mission not in MISSIONS:
             raise HTTPException(400, f"mission must be one of {MISSIONS}")

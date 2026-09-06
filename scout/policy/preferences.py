@@ -34,7 +34,7 @@ SCORE_BANDS = [(85, "Pursue"), (75, "Pursue conditionally"), (45, "Maybe / verif
 CONFIDENCE_PROVISIONAL = 50
 
 # §5 explicit exclusions: substrings matched against "make model" (lowercase).
-EXCLUDED_MODELS = ["sc430", "sc 430", "miata", "mx-5", "cr-z", "is350", "is 350", "gs350", "gs 350"]
+EXCLUDED_MODELS = ["sc430", "sc 430", "miata", "mx-5", "cr-z", "is350", "is 350", "gs350", "gs 350", "z4", "saturn"]
 
 # §8 manual-transmission gate applies to these missions; SUVs / utility never.
 MANUAL_REQUIRED_MISSIONS = {"enthusiast_bridge", "future_keeper"}

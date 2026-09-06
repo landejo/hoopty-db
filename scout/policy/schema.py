@@ -40,7 +40,7 @@ from scout.policy.preferences import EVIDENCE_SOURCES, FACT_STATUSES, MISSIONS, 
 Source = Literal["receipt", "history_report", "photo", "external_vin", "listing_text", "seller_comment", "seller_claim", "ai_inference"]
 FactStatus = Literal["verified", "claimed", "inferred", "unknown"]
 Tri = Literal["yes", "no", "unknown"]
-CriticalStatus = Literal["satisfied", "claimed_only", "missing", "failed"]
+CriticalStatus = Literal["satisfied", "claimed_only", "missing", "failed", "not_applicable"]
 
 
 # Vocabulary the models drift toward, mapped back to the schema's words. A
@@ -54,6 +54,8 @@ _SOURCE_SYNONYMS = {"seller": "seller_claim", "claim": "seller_claim", "listing"
                     "image": "photo", "photos": "photo", "images": "photo", "invoice": "receipt", "receipts": "receipt", "records": "receipt",
                     "comment": "seller_comment", "comments": "seller_comment", "inference": "ai_inference", "ai": "ai_inference", "model": "ai_inference"}
 _CRITICAL_SYNONYMS = {"unknown": "missing", "not provided": "missing", "not_provided": "missing", "absent": "missing", "none": "missing",
+                      "n/a": "not_applicable", "na": "not_applicable", "not applicable": "not_applicable",
+                      "does not apply": "not_applicable", "inapplicable": "not_applicable", "irrelevant": "not_applicable",
                       "claimed": "claimed_only", "seller_claim": "claimed_only", "unverified": "claimed_only",
                       "verified": "satisfied", "present": "satisfied", "documented": "satisfied", "yes": "satisfied", "fail": "failed", "no": "failed"}
 
