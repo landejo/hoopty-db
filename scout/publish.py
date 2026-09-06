@@ -57,7 +57,7 @@ def scrub_assessment(a: dict[str, Any]) -> dict[str, Any]:
 def build_export() -> dict[str, Any]:
     listings = [scrub_listing(r) for r in db.list_listings()]
     snaps = db.all_snapshots()
-    assessments = db.latest_assessments()
+    assessments = db.latest_assessments_by_vehicle()
     errors = db.last_errors()
     timelines: dict[int, list] = {}
     for l in listings:

@@ -734,3 +734,25 @@ def last_errors(path: Path | None = None) -> dict[int, dict[str, Any]]:
         if kind.endswith("_error") and lid not in out and (lid, ok_kinds.get(kind, "")) not in seen_ok:
             out[lid] = {"ts": r["ts"], "kind": kind, "detail": (r["detail"] or "")[:400]}
     return out
+
+
+def latest_assessments_by_vehicle(path: Path | None = None) -> dict[int, dict[str, Any]]:
+    """Latest assessment per listing, where listings sharing a VIN-backed vehicle
+    record share the newest assessment among them (marked shared_from)."""
+    own = latest_assessments(path)
+    with connect(path) as c:
+        rows = c.execute("SELECT l.id, l.vehicle_id FROM listings l JOIN vehicles v ON v.id=l.vehicle_id WHERE v.vin IS NOT NULL").fetchall()
+    by_vehicle: dict[int, list[int]] = {}
+    for r in rows:
+        by_vehicle.setdefault(r["vehicle_id"], []).append(r["id"])
+    out = dict(own)
+    for vid, lids in by_vehicle.items():
+        cands = [(own[l]["assessed_at"], l) for l in lids if l in own]
+        if not cands:
+            continue
+        newest_at, newest_lid = max(cands)
+        for l in lids:
+            if l != newest_lid and (l not in own or own[l]["assessed_at"] < newest_at):
+                a = dict(own[newest_lid]); a["shared_from"] = newest_lid
+                out[l] = a
+    return out

@@ -228,8 +228,20 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
 async def assess_all(tier: str = "quick", only_unassessed: bool = True) -> dict[str, Any]:
     """Assess every active candidate (quick tier by default). Serial, so it can take a while."""
     rows = [r for r in db.list_listings(role="candidate") if r["availability"] in ("active", "pending") and r.get("profile_key")]
+    shared = db.latest_assessments_by_vehicle()
     if only_unassessed:
-        rows = [r for r in rows if not db.latest_assessment(r["id"])]
+        rows = [r for r in rows if r["id"] not in shared]
+    # One assessment per car: skip a listing whose VIN twin is already in this batch.
+    seen_vehicles: set[int] = set()
+    deduped = []
+    for r in rows:
+        vid = r.get("vehicle_id")
+        if vid and vid in seen_vehicles and r.get("vin"):
+            continue
+        if vid and r.get("vin"):
+            seen_vehicles.add(vid)
+        deduped.append(r)
+    rows = deduped
     done, errors = 0, []
     tok = _task_start(f"Quick-assessing {len(rows)} listing(s) · {CONFIG.model_mid if tier == 'quick' else CONFIG.model_deep}", len(rows))
     for i, r in enumerate(rows):
