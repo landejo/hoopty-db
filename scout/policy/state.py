@@ -29,11 +29,13 @@ DEFAULT_STATE: dict[str, Any] = {
     "home_location": "Carmel, CA",
     "travel": "Willing to fly out and drive a good car home. Distance is a cost and an inspection-access "
               "question (can a PPI happen before money moves?), never a red flag or a risk by itself.",
-    "capability_intent": "For an SUV the intended camping setup is a removable sleeping platform, mattress, window "
-                         "coverings and organised storage — no vehicle modification. Condition is established first; "
-                         "suspension lifts, roof racks and exterior accessories are not planned spend and an existing "
-                         "build does not add value. Judge a capability vehicle on condition and records, not on its "
-                         "accessories.",
+    "capability_intent": "Camping is either an in-vehicle sleeping platform (removable platform, mattress, window "
+                         "coverings, organised storage) OR a rooftop tent, so roof-rack capability and sound roof/rack "
+                         "mounting points are relevant. Pure off-roading is not planned. An existing build adds MODEST "
+                         "value at most: a quality rack, sensible tires or a tasteful mild suspension refresh are small "
+                         "positives, while heavy off-road hardware (big lift, lockers, armour, winch) is not worth a "
+                         "premium and can be a negative if it signals hard use. Condition and maintenance records come "
+                         "first: accessories never substitute for evidence.",
     "fees": {
         # Verify against each platform's current terms before relying on the numbers.
         "bat": {"pct": 0.05, "min": 250, "max": 7500},
