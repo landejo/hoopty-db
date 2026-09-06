@@ -180,3 +180,22 @@ def test_title_without_a_year_is_rebuilt(monkeypatch):
     url = "https://www.cargurus.com/details/88"
     ing.ingest_items("cargurus", [_item(url, title="Price drop -$5,000")], run_ai=True)
     assert db.get_listing_by_url(url)["title"] == "1998 BMW M roadster S52"
+
+
+def test_live_listing_never_seen_sold_returns_to_candidate():
+    url = "https://www.facebook.com/marketplace/item/live/"
+    ingest_items("facebook", [_item(url)], run_ai=False)
+    lid = db.get_listing_by_url(url)["id"]
+    db.update_listing(lid, {"role": "comp"})          # a misread put it in comps
+    ingest_items("facebook", [dict(_item(url), pending=True)], run_ai=False)
+    assert db.get_listing_by_url(url)["role"] == "candidate"
+    from scout.ingest import repair_roles
+    assert repair_roles() == []                        # already repaired
+
+
+def test_a_car_we_saw_sell_stays_a_comp():
+    url = "https://www.facebook.com/marketplace/item/sold/"
+    ingest_items("facebook", [_item(url, sold=True)], run_ai=False)
+    assert db.get_listing_by_url(url)["role"] == "comp"
+    ingest_items("facebook", [_item(url)], run_ai=False)   # stale card says active again
+    assert db.get_listing_by_url(url)["role"] == "comp"

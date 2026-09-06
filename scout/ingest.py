@@ -101,7 +101,12 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
         raw_text = ("" if blocked else (detail.get("text") or ""))[:120_000] or (item.get("card_text") or "")
         role = "comp" if availability in {"sold", "ended"} else "candidate"
         if existing and existing.get("role") == "comp":
-            role = "comp"  # never promote a comp back to candidate
+            # A comp stays a comp: a stale card claiming "active" must not resurrect a
+            # sold car. The exception is a listing we never actually saw sell — the role
+            # came from a misread — which returns to being a candidate while it is live.
+            role = "comp"
+            if availability in {"active", "pending"} and not _ever_sold(existing["id"]):
+                role = "candidate"
         if existing and existing.get("role") == "ignored":
             role = "ignored"  # not a car (or manually ignored): stays out of the way
         values: dict[str, Any] = {
@@ -242,6 +247,22 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     rescore_listing(lid, state)
     from scout.provenance import link_listing_vehicle  # lazy
     link_listing_vehicle(lid)
+
+
+def _ever_sold(listing_id: int) -> bool:
+    """True when this listing was ever recorded as sold or ended (snapshot history)."""
+    return any(s.get("availability") in ("sold", "ended") for s in db.list_snapshots(listing_id))
+
+
+def repair_roles() -> list[dict[str, Any]]:
+    """Comps that are currently live and were never seen to sell become candidates again."""
+    fixed = []
+    for r in db.list_listings(role="comp"):
+        if r["availability"] in ("active", "pending") and not _ever_sold(r["id"]):
+            db.update_listing(r["id"], {"role": "candidate"})
+            rescore_listing(r["id"])
+            fixed.append({"id": r["id"], "title": r.get("title"), "availability": r["availability"]})
+    return fixed
 
 
 def rescore_listing(lid: int, state: dict[str, Any] | None = None) -> int | None:
