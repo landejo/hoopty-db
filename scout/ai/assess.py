@@ -214,4 +214,15 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
     try:
         return EvidenceInterpretation.model_validate(data)
     except ValidationError as e:
-        raise RuntimeError(f"model output failed schema validation: {e.errors()[:3]}")
+        missing = [".".join(str(x) for x in err["loc"]) for err in e.errors() if err["type"] == "missing"]
+        if not missing:
+            raise RuntimeError(f"model output failed schema validation: {e.errors()[:3]}")
+    # One retry: the answer came back without required keys. Ask again, naming them.
+    reminder = system + ("\n\nYOUR PREVIOUS ANSWER OMITTED REQUIRED KEYS: " + ", ".join(missing) +
+                         ". Return the complete JSON object again with every key listed above, including `ratings` "
+                         "(all six categories, each {rating, rationale}), `evidence_quality` and `immediate_service_estimate`.")
+    text = call_json_text(model or CONFIG.model_deep, reminder, user, max_tokens=32000, log_name="last_assess", effort="high")
+    try:
+        return EvidenceInterpretation.model_validate(coerce.parse_json(text))
+    except ValidationError as e:
+        raise RuntimeError(f"model output failed schema validation after retry: {e.errors()[:3]}")
