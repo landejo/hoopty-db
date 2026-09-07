@@ -184,6 +184,23 @@ def photo_blocks(urls: list[str], limit: int = MAX_PHOTOS) -> list[dict[str, Any
     return out
 
 
+def _capture_warning(listing: dict[str, Any]) -> str:
+    """Tell the reader when OUR capture was incomplete, so a scraping failure is
+    never scored as a seller who disclosed nothing."""
+    cap = (listing.get("normalized") or {}).get("capture") or {}
+    if (listing.get("raw") or {}).get("blocked"):
+        return ("CAPTURE WARNING: the detail page was blocked by a bot wall; only the saved-list card was read. "
+                "Score documentation and condition on what a reader COULD verify from this fragment, and put "
+                "everything else in unknowns. Do not describe the seller as having disclosed nothing.\n")
+    if cap and not cap.get("complete"):
+        return (f"CAPTURE WARNING: our capture of this listing is incomplete ({cap.get('note')}; "
+                f"{cap.get('text_chars')} chars of text, {cap.get('photos')} photos stored). The listing itself may "
+                f"be far richer than what you see. Put missing areas in unknowns as 'not captured', do NOT treat "
+                f"absence here as evidence the seller withheld it, and do not lower the documentation or condition "
+                f"rating for what we failed to fetch.\n")
+    return ""
+
+
 def _profile_text(profile: dict[str, Any]) -> str:
     keys = ("label", "framing", "weak_points", "immediate_repairs", "repairs_12mo", "market_notes", "catchup_notes")
     return "\n".join(f"{k}: {profile.get(k)}" for k in keys if profile.get(k))
@@ -225,7 +242,8 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
     photos = photo_blocks(listing.get("photos") or [])
     user_text = (
         f"STRUCTURED FACTS (the tracker's machine read: hints only, may be wrong; the listing text and VIN decode are authoritative):\n{json.dumps(facts, indent=1)}\n\n"
-        f"PHOTOS ATTACHED: {len(photos)} of {len(listing.get('photos') or [])} captured (the listing may have more; do not count them)\n\n"
+        f"PHOTOS ATTACHED: {len(photos)} of {len(listing.get('photos') or [])} captured (the listing may have more; do not count them)\n"
+        f"{_capture_warning(listing)}\n"
         f"THIS LISTING'S PRICE / AVAILABILITY HISTORY:\n{hist}\n\n"
         f"VIN HISTORY IN THE TRACKER (same VIN, other listings):\n{json.dumps(vin_history, indent=1)[:6000]}\n\n"
         f"ACTIVE PEERS (same profile):\n" + ("\n".join(f"  - {_fmt_row(p)}" for p in peers[:20]) or "  (none)") + "\n\n"

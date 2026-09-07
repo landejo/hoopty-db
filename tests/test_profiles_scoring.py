@@ -128,3 +128,20 @@ def test_early_bid_is_not_a_price_until_the_last_day():
     total, b = preliminary_score(l, prof, DEFAULT_STATE, comps, [])
     assert "early bid" in b["price_value"]["why"] and "ignored" in b["price_value"]["why"]
     assert b["price_value"]["points"] <= 9  # valued at the comp median, not at the $3,600 bid
+
+
+def test_price_reference_prefers_sales_and_labels_the_source():
+    from scout.scoring import preliminary_score
+    from scout.policy.state import DEFAULT_STATE
+    prof = db.get_profile("z3_30i")
+    l = {"id": 1, "site": "cargurus", "year": 2002, "make": "BMW", "model": "Z3 3.0i", "transmission": "Manual",
+         "mileage": 60000, "price": 16000, "location": "San Jose, CA", "mission": "enthusiast_bridge", "normalized": {}}
+    peers = [{"id": 2, "price": 25000, "mileage": 40000}, {"id": 3, "price": 24000, "mileage": 45000}]
+    # Two sold comps are used even though the old rule needed three.
+    comps = [{"sold_price": 14000, "mileage": 70000}, {"sold_price": 15000, "mileage": 65000}]
+    _, b = preliminary_score(l, prof, DEFAULT_STATE, comps, peers)
+    assert b["price_value"]["why"].startswith("price is") and "sold comps: 2" in b["price_value"]["why"]
+    # With no sold data the source is named as asking prices.
+    _, b2 = preliminary_score(l, prof, DEFAULT_STATE, [], peers)
+    assert "asking prices, no sold data" in b2["price_value"]["why"]
+    assert b2["price_value"]["points"] > b["price_value"]["points"]   # cheap against askings, fair against sales

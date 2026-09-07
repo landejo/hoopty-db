@@ -193,7 +193,7 @@ def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 _ADDITIVE_COLUMNS = {
     "listings": [("mission", "TEXT"), ("vehicle_id", "INTEGER"), ("provenance_json", "TEXT"), ("mission_user_set", "INTEGER DEFAULT 0"),
-                 ("verdict_override", "TEXT"), ("verdict_override_reason", "TEXT")],
+                 ("verdict_override", "TEXT"), ("verdict_override_reason", "TEXT"), ("unseen_syncs", "INTEGER DEFAULT 0")],
     "profiles": [("critical_evidence_json", "TEXT DEFAULT '[]'"), ("mission_default", "TEXT"),
                  ("risk_reserve", "INTEGER"), ("automatic_ok", "INTEGER DEFAULT 0"),
                  ("catchup_notes", "TEXT")],
@@ -328,20 +328,33 @@ def all_snapshots(path: Path | None = None) -> dict[int, list[dict[str, Any]]]:
     return out
 
 
+MISSES_BEFORE_REMOVED = 2
+
+
 def mark_unseen_removed(site: str, seen_urls: set[str], path: Path | None = None) -> int:
-    """Active candidates on `site` that were not in this sync are marked removed."""
+    """A live listing missing from this sync is not removed on the first miss: a
+    partial scroll or a lazy list drops cards routinely. It takes
+    MISSES_BEFORE_REMOVED consecutive misses. Seeing it again resets the count."""
+    removed = 0
     with connect(path) as c:
         rows = c.execute(
-            "SELECT id, url FROM listings WHERE site=? AND availability='active'", (site,)
+            "SELECT id, url, unseen_syncs FROM listings WHERE site=? AND availability IN ('active','pending')", (site,)
         ).fetchall()
-        ids = [r["id"] for r in rows if r["url"] not in seen_urls]
-        for lid in ids:
-            c.execute("UPDATE listings SET availability='removed', updated_at=? WHERE id=?", (now(), lid))
-            c.execute(
-                "INSERT INTO snapshots (listing_id, seen_at, availability) VALUES (?, ?, 'removed')",
-                (lid, now()),
-            )
-    return len(ids)
+        for r in rows:
+            if r["url"] in seen_urls:
+                if r["unseen_syncs"]:
+                    c.execute("UPDATE listings SET unseen_syncs=0 WHERE id=?", (r["id"],))
+                continue
+            misses = (r["unseen_syncs"] or 0) + 1
+            if misses < MISSES_BEFORE_REMOVED:
+                c.execute("UPDATE listings SET unseen_syncs=? WHERE id=?", (misses, r["id"]))
+                continue
+            c.execute("UPDATE listings SET availability='removed', unseen_syncs=?, updated_at=? WHERE id=?",
+                      (misses, now(), r["id"]))
+            c.execute("INSERT INTO snapshots (listing_id, seen_at, availability) VALUES (?, ?, 'removed')",
+                      (r["id"], now()))
+            removed += 1
+    return removed
 
 
 # ---------- profiles ----------
