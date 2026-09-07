@@ -60,6 +60,43 @@
     return out;
   };
 
+  // Lazy-loaded galleries: many sites render only the visible slide, so
+  // document.images misses most of the set. Harvest URLs from the page source
+  // (srcset, data-src, embedded JSON) as well as from rendered <img> elements.
+  S.photosFromSource = function (pattern, cap = 40, reject = null) {
+    const html = document.documentElement.innerHTML;
+    const out = [];
+    const seen = new Set();
+    const re = new RegExp('https?://[^"\'\\s\\\\)]+', "g");
+    let m;
+    while ((m = re.exec(html)) !== null && out.length < cap * 4) {
+      let url = m[0].replace(/&amp;/g, "&").replace(/\\u002F/gi, "/");
+      if (!pattern.test(url)) continue;
+      if (!/\.(jpe?g|png|webp)(\?|$)/i.test(url)) continue;
+      if (reject && reject(url)) continue;
+      const key = url.split("?")[0];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(url);
+    }
+    return out.slice(0, cap);
+  };
+
+  // Rendered photos first (they are certainly real), then anything the source
+  // reveals that has not loaded yet.
+  S.allPhotos = function (opts) {
+    const { minSize = 300, cap = 40, filter = null, sourcePattern = null, reject = null } = opts || {};
+    const rendered = S.photos(minSize, cap, filter);
+    const seen = new Set(rendered.map((u) => u.split("?")[0]));
+    const extra = sourcePattern ? S.photosFromSource(sourcePattern, cap, reject) : [];
+    for (const u of extra) {
+      if (rendered.length >= cap) break;
+      const k = u.split("?")[0];
+      if (!seen.has(k)) { seen.add(k); rendered.push(u); }
+    }
+    return rendered;
+  };
+
   // Walk up from an anchor to the nearest block that looks like a card.
   S.cardOf = function (a, maxDepth = 8) {
     let el = a;

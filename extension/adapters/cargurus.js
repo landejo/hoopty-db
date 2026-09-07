@@ -54,7 +54,15 @@
     async scrapeDetail() {
       await S.sleep(800);
       await S.expandAll(["Show full description", "See more", "Show more", "Read more"]);
-      const d = S.genericDetail({ photos: S.photos(300, 40, (src) => /static\.cargurus\.com\/images\/forsale/.test(src)) });
+      const notVehicle = (u) => /logo|badge|sprite|icon|placeholder|avatar|dealer_logo/i.test(u);
+      const d = S.genericDetail({
+        photos: S.allPhotos({
+          minSize: 300, cap: 40,
+          filter: (src) => /cargurus\.com\/images\/forsale/.test(src) && !notVehicle(src),
+          sourcePattern: /static\.cargurus\.com\/images\/forsale\//,
+          reject: notVehicle,
+        }),
+      });
       if (/no longer available|this listing has been sold|\bsold\b/i.test(d.text.slice(0, 1500))) d.status_text = "Sold\n" + d.status_text;
       return d;
     },

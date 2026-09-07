@@ -24,7 +24,15 @@
     async scrapeDetail() {
       await S.sleep(800);
       await S.expandAll(["Show full description", "See more", "Show more", "Read more", "View all features"]);
-      const d = S.genericDetail({ photos: S.photos(300, 40, (src) => /cars\.com|cstatic/.test(src)) });
+      const notVehicle = (u) => /dealer_media|logo|badge|sprite|icon|placeholder|avatar/i.test(u);
+      const d = S.genericDetail({
+        photos: S.allPhotos({
+          minSize: 300, cap: 40,
+          filter: (src) => /cstatic-images/.test(src) && !notVehicle(src),
+          sourcePattern: /platform\.cstatic-images\.com\/(xlarge|xxlarge|large|medium)\//,
+          reject: notVehicle,
+        }),
+      });
       if (/this vehicle (is )?(no longer|sold)|listing (is )?no longer available/i.test(d.text.slice(0, 2500))) d.status_text = "Sold\n" + d.status_text;
       return d;
     },
