@@ -9,6 +9,10 @@ from scout.config import AUCTION_SITES, CONFIG
 from scout.profiles import match_profile, suggest_key
 from scout.scoring import locality_hint
 
+MIN_CARD_TEXT = 600        # below this we only ever saw the saved-list card
+MIN_GOOD_TEXT = 1500       # a real detail page
+MIN_GOOD_PHOTOS = 4        # a real gallery
+
 CHALLENGE_RE = re.compile(r"just a moment|verify you are human|verifying you are human|checking your browser|security verification|press and hold|cf-chl|attention required|enable javascript and cookies to continue", re.I)
 
 
@@ -242,7 +246,18 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
         mission = default_mission(prof)   # auto-assigned: tracks the profile until the user chooses
         if mission != current.get("mission"):
             updates["mission"] = mission
+    row_now = db.get_listing(lid) or {}
+    chars, nphotos = len(row_now.get("raw_text") or ""), len(row_now.get("photos") or [])
+    updates["normalized"]["capture"] = {
+        "text_chars": chars, "photos": nphotos,
+        "complete": chars >= MIN_GOOD_TEXT and nphotos >= MIN_GOOD_PHOTOS,
+        "note": ("detail page not captured — only the saved-list card was read" if chars < MIN_CARD_TEXT
+                 else "detail text captured but the photo gallery was not" if nphotos < MIN_GOOD_PHOTOS
+                 else "thin detail capture" if chars < MIN_GOOD_TEXT else ""),
+    }
     updates["normalized"]["quick_gates"] = quick_gates(merged, prof, mission, state)
+    if not updates["normalized"]["capture"]["complete"]:
+        updates["normalized"]["quick_gates"] = list(updates["normalized"]["quick_gates"]) + ["capture incomplete"]
     db.update_listing(lid, updates)
     rescore_listing(lid, state)
     from scout.provenance import link_listing_vehicle  # lazy

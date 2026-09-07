@@ -49,7 +49,9 @@ def test_resync_records_price_change_and_marks_removed():
     b = db.get_listing_by_url("https://www.cars.com/vehicledetail/b/")
     assert a["price"] == 19000
     assert [s["price"] for s in db.list_snapshots(a["id"])] == [20000, 19000]
-    assert b["availability"] == "removed"
+    assert b["availability"] == "active"   # one miss is not enough: lists drop cards routinely
+    ingest_items("carscom", [_item("https://www.cars.com/vehicledetail/a/", price="$19,000")], run_ai=False, full_sync=True)
+    assert db.get_listing_by_url("https://www.cars.com/vehicledetail/b/")["availability"] == "removed"
     # Snapshot dedupe: an unchanged resync adds no row.
     ingest_items("carscom", [_item("https://www.cars.com/vehicledetail/a/", price="$19,000")], run_ai=False)
     assert len(db.list_snapshots(a["id"])) == 2
@@ -70,8 +72,10 @@ def test_single_add_never_marks_others_removed():
     ingest_items("facebook", [_item("https://www.facebook.com/marketplace/item/3/")], run_ai=False)
     assert all(r["availability"] == "active" for r in db.list_listings())
     # Touch-only full sync (URL list without details) marks the missing one removed and keeps the rest.
-    stats = ingest_items("facebook", [{"url": "https://www.facebook.com/marketplace/item/1/", "_touch": True},
-                                      {"url": "https://www.facebook.com/marketplace/item/3/", "_touch": True}], run_ai=False, full_sync=True)
+    touch = [{"url": "https://www.facebook.com/marketplace/item/1/", "_touch": True},
+             {"url": "https://www.facebook.com/marketplace/item/3/", "_touch": True}]
+    assert ingest_items("facebook", touch, run_ai=False, full_sync=True)["marked_removed"] == 0   # first miss
+    stats = ingest_items("facebook", touch, run_ai=False, full_sync=True)                          # second miss
     assert stats["marked_removed"] == 1
     rows = {r["url"][-2]: r["availability"] for r in db.list_listings()}
     assert rows == {"1": "active", "2": "removed", "3": "active"}
@@ -199,3 +203,29 @@ def test_a_car_we_saw_sell_stays_a_comp():
     assert db.get_listing_by_url(url)["role"] == "comp"
     ingest_items("facebook", [_item(url)], run_ai=False)   # stale card says active again
     assert db.get_listing_by_url(url)["role"] == "comp"
+
+
+def test_seeing_a_listing_again_resets_the_miss_count():
+    a = "https://www.facebook.com/marketplace/item/a/"
+    b = "https://www.facebook.com/marketplace/item/b/"
+    ingest_items("facebook", [_item(a), _item(b)], run_ai=False, full_sync=True)
+    ingest_items("facebook", [_item(a)], run_ai=False, full_sync=True)            # b missed once
+    ingest_items("facebook", [_item(a), _item(b)], run_ai=False, full_sync=True)  # b is back
+    ingest_items("facebook", [_item(a)], run_ai=False, full_sync=True)            # missed once again
+    assert db.get_listing_by_url(b)["availability"] == "active"                   # counter was reset
+
+
+def test_capture_quality_is_recorded(monkeypatch):
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    monkeypatch.setattr("scout.vin.decode_vin", lambda *a, **k: None)
+    import scout.ai.normalize as nz
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": True, "year": 2001, "make": "BMW", "model": "Z3 3.0i", "profile_key": "z3_30i"})
+    thin = "https://www.facebook.com/marketplace/item/thin/"
+    ing.ingest_items("facebook", [{"url": thin, "title": "2001 BMW Z3", "card_text": "2001 BMW Z3 $15,000", "detail": {}}], run_ai=True)
+    cap = db.get_listing_by_url(thin)["normalized"]["capture"]
+    assert cap["complete"] is False and "only the saved-list card" in cap["note"]
+    assert "capture incomplete" in db.get_listing_by_url(thin)["normalized"]["quick_gates"]
+    from scout.ai.assess import _capture_warning
+    assert "CAPTURE WARNING" in _capture_warning(db.get_listing_by_url(thin))

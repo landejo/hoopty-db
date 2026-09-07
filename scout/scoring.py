@@ -173,7 +173,7 @@ def _price_value_points(price: int | None, reference: int | None, mileage: int |
     # Mileage-adjust the reference: ±4% per 10k miles versus the pool median, capped.
     note = f"price is {ratio:.0%} of the reference ${reference:,}"
     if mileage and ref_mileage:
-        adj = max(-0.25, min(0.25, (ref_mileage - mileage) / 10000 * 0.04))
+        adj = max(-0.45, min(0.45, (ref_mileage - mileage) / 10000 * 0.04))
         ratio = price / (reference * (1 + adj))
         note += f", {'+' if adj >= 0 else ''}{adj:.0%} mileage-adjusted"
     # Deliberately no easy 15: the assessment weighs risk the arithmetic cannot see.
@@ -205,10 +205,17 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
 
     price = listing.get("sold_price") or listing.get("price")
     pool = [c.get("sold_price") or c.get("price") for c in comps if (c.get("sold_price") or c.get("price"))]
+    # A real sale beats an asking price, even a thin sample. Only fall back to
+    # peers when there is no sold data at all, and say so.
     src = "sold comps"
-    if len(pool) < 3:
-        pool = [p.get("price") for p in peers if p.get("price") and p.get("id") != listing.get("id")]
-        src = "active peers"
+    if len(pool) < 2:
+        peer_prices = [p.get("price") for p in peers if p.get("price") and p.get("id") != listing.get("id")]
+        if pool and peer_prices:
+            pool = pool + peer_prices
+            src = f"{len(pool) - len(peer_prices)} sold comp + {len(peer_prices)} asking peers"
+        elif peer_prices:
+            pool = peer_prices
+            src = "active peers (asking prices, no sold data)"
     pool = sorted(pool)
     reference = pool[len(pool) // 2] if pool else None
     miles = sorted(m for m in ((c.get("mileage") for c in comps + peers)) if m)
