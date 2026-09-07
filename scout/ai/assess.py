@@ -66,6 +66,16 @@ Return ONE JSON object with exactly these keys:
   Meanings (points in parentheses are applied by code, not you):
 {category_help}
   Rate documentation on what is VERIFIABLE, not on how much the seller wrote.
+  Two different things live in this category and both count: (a) IDENTITY AND
+  TERMS — VIN, stock number, itemised price and fees, price history, title and
+  accident data, equipment/build detail, named seller and contact; and (b)
+  MAINTENANCE AND CONDITION EVIDENCE — receipts, scans, inspection reports,
+  photographs of the specific areas at risk. A dealer listing with a VIN, a
+  full equipment list and an itemised price is NOT "nothing verifiable"; it is
+  strong on (a) and empty on (b). Say which of the two is missing, and never
+  describe a listing as having no verifiable content when it identifies the
+  car precisely. A 25-point category: roughly up to 10 for (a) alone, the rest
+  earned by (b).
 
 FRAMING RULES:
 - Distance, transport, travel and dealer/doc fees are LOGISTICS and COST
