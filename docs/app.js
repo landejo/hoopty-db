@@ -490,6 +490,17 @@
         if (!confirm(`Delete "${title(l)}" and its snapshots, assessments and provenance? A future sync will re-add it as new if it is still saved on the site.`)) return;
         try { await api(`/api/listings/${l.id}`, "DELETE"); await loadData(); location.hash = "#/"; toast("Deleted"); } catch (err) { toast(err.message, 4000); }
       };
+      api(`/api/evidence-gaps?listing_id=${l.id}`).then((g) => {
+        if (!g || (!g.resolvable_by_document.length && !g.inspection_only.length)) return;
+        const el = h(`<div class="panel accent-mustard"><h3>Evidence gaps <span class="muted small">${g.estimated_score_gain ? `documents could add about +${g.estimated_score_gain} (to ~${g.potential_score})` : "nothing a document would settle"}</span></h3>
+          ${g.blocked_on_vin ? `<p class="small" style="background:var(--chip-rose);border-radius:8px;padding:6px 10px"><b>No VIN on record</b> — ask the seller for it before anything else; a history report needs one.</p>` : ""}
+          ${g.resolvable_by_document.length ? `<p class="small" style="margin:4px 0"><b>A document would settle:</b></p><ul class="list small">${g.resolvable_by_document.map((x) => `<li>[${esc(x.status)}] ${esc(x.label)}</li>`).join("")}</ul>` : ""}
+          ${g.inspection_only.length ? `<p class="small" style="margin:4px 0"><b>Only an inspection can settle:</b></p><ul class="list small">${g.inspection_only.map((x) => `<li>[${esc(x.status)}] ${esc(x.label)}</li>`).join("")}</ul>` : ""}
+          <div class="row" style="margin-top:8px"><button class="btn sm" id="copyask">Copy the records request</button><span class="muted small" id="copied"></span></div>
+          <details style="margin-top:6px"><summary class="muted small">draft message</summary><pre class="small" style="white-space:pre-wrap">${esc(g.message)}</pre></details></div>`);
+        side.appendChild(el);
+        $("#copyask", el).onclick = () => { navigator.clipboard.writeText(g.message).then(() => { $("#copied", el).textContent = "copied"; }); };
+      }).catch(() => {});
       const renderDocs = async () => {
         try {
           const ds = await api(`/api/listings/${l.id}/documents`);
