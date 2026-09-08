@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Hoopty Scout",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Sync saved vehicle listings (Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, Bring a Trailer) to the local Hoopty Scout workbench.",
   "permissions": [
     "activeTab",
@@ -23,7 +23,9 @@
     "*://*.google.com/*",
     "*://*.ebay.com/*",
     "*://*.classic.com/*",
-    "*://*.reddit.com/*"
+    "*://*.reddit.com/*",
+    "*://*.carfax.com/*",
+    "*://*.autocheck.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -103,6 +105,17 @@
       "js": [
         "common.js",
         "adapters/search.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.carfax.com/*",
+        "*://*.autocheck.com/*"
+      ],
+      "js": [
+        "common.js",
+        "adapters/document.js"
       ],
       "run_at": "document_idle"
     }

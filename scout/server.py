@@ -105,6 +105,15 @@ def listing_by_url(url: str) -> dict[str, Any]:
     return {"id": row["id"], "title": row.get("title"), "site": row["site"]}
 
 
+@app.get("/api/listings/by-vin/{vin}")
+def listing_by_vin(vin: str) -> dict[str, Any]:
+    vin = (vin or "").strip().upper()
+    for r in db.list_listings():
+        if (r.get("vin") or "").upper() == vin:
+            return {"id": r["id"], "title": r.get("title"), "site": r["site"]}
+    raise HTTPException(404, "no tracked listing with that VIN")
+
+
 @app.get("/api/listings/{listing_id}")
 def get_listing(listing_id: int) -> dict[str, Any]:
     row = db.get_listing(listing_id)
@@ -112,6 +121,8 @@ def get_listing(listing_id: int) -> dict[str, Any]:
         raise HTTPException(404, "not found")
     row["history"] = db.list_snapshots(listing_id)
     row["assessment"] = db.latest_assessment(listing_id)
+    row["documents"] = [{k: v for k, v in d.items() if k != "text"} | {"chars": len(d.get("text") or "")}
+                        for d in db.list_documents(listing_id)]
     row["timeline"] = db.vehicle_events(row["vehicle_id"]) if row.get("vehicle_id") else []
     return row
 
@@ -469,6 +480,45 @@ async def renormalize_all(only_missing_ratings: bool = True) -> dict[str, Any]:
                 _task["errors"] = len(errors)
     _task_end(f"{done} re-normalized" + (f", {len(errors)} failed" if errors else ""), tok)
     return {"ok": True, "renormalized": done, "errors": errors[:10]}
+
+
+class DocumentPayload(BaseModel):
+    kind: str = "other"
+    text: str
+    title: str = ""
+    source: str = ""
+    url: str = ""
+
+
+@app.post("/api/listings/{listing_id}/documents")
+def add_document(listing_id: int, payload: DocumentPayload) -> dict[str, Any]:
+    """Attach a history report, invoice or service record. It becomes gold-tier
+    evidence in the next assessment."""
+    row = db.get_listing(listing_id)
+    if not row:
+        raise HTTPException(404, "not found")
+    if not (payload.text or "").strip():
+        raise HTTPException(400, "text is empty")
+    if payload.kind not in db.DOC_KINDS:
+        raise HTTPException(400, f"kind must be one of {db.DOC_KINDS}")
+    doc_id = db.add_document(listing_id, payload.kind, payload.text, payload.title,
+                             payload.source, payload.url, row.get("vin"))
+    db.log_event("document_added", listing_id, f"{payload.kind} {len(payload.text)} chars")
+    return {"ok": True, "document_id": doc_id, "kind": payload.kind, "chars": len(payload.text),
+            "note": "Re-assess this listing to fold the document into its verdict."}
+
+
+@app.get("/api/listings/{listing_id}/documents")
+def get_documents(listing_id: int) -> list[dict[str, Any]]:
+    return [{k: v for k, v in d.items() if k != "text"} | {"chars": len(d.get("text") or "")}
+            for d in db.list_documents(listing_id)]
+
+
+@app.delete("/api/documents/{doc_id}")
+def remove_document(doc_id: int) -> dict[str, Any]:
+    if not db.delete_document(doc_id):
+        raise HTTPException(404, "not found")
+    return {"ok": True}
 
 
 @app.get("/api/profiles")
