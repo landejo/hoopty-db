@@ -521,6 +521,19 @@ def remove_document(doc_id: int) -> dict[str, Any]:
     return {"ok": True}
 
 
+@app.get("/api/evidence-gaps")
+def evidence_gaps(listing_id: int | None = None) -> Any:
+    """What is missing, whether a document or only an inspection can settle it,
+    and a drafted records request."""
+    from scout.evidence import gaps, report, request_message
+    if listing_id:
+        g = gaps(listing_id)
+        if not g:
+            raise HTTPException(404, "not found")
+        return {**g, "message": request_message(listing_id)}
+    return report()
+
+
 @app.get("/api/profiles")
 def profiles() -> list[dict[str, Any]]:
     return db.list_profiles()

@@ -81,3 +81,29 @@ def test_documents_attach_and_reach_the_assessment_prompt():
         doc_id = c.get(f"/api/listings/{lid}/documents").json()[0]["id"]
         assert c.delete(f"/api/documents/{doc_id}").status_code == 200
         assert _documents_block(lid) == ""
+
+
+def test_evidence_gaps_split_documents_from_inspection():
+    from scout.evidence import classify, gaps, request_message
+    assert classify("timing_belt_water_pump", "Documented timing-belt service") == "document"
+    assert classify("borescope", "Specialist borescope photos") == "inspection"
+    assert classify("rust_evaluation", "Frame rust evaluated") == "inspection"
+    assert classify("cooling_history", "Cooling-system receipts") == "document"
+    from scout.ingest import ingest_items
+    ingest_items("facebook", [{"url": "https://www.facebook.com/marketplace/item/gap/", "title": "2007 Lexus GX470",
+                               "price_text": "$14,000", "detail": {"text": "x" * 900}}], run_ai=False)
+    lid = db.get_listing_by_url("https://www.facebook.com/marketplace/item/gap/")["id"]
+    db.update_listing(lid, {"profile_key": "gx470"})
+    db.add_assessment(lid, {"policy_version": "1.2.1", "mission": "utility_capability", "verdict": "Maybe / verify",
+                            "score": {"total": 45, "documentation": 5}, "confidence": 10, "model": "test",
+                            "assessed_at": "2026-09-08T00:00:00+00:00",
+                            "evidence": {"critical_evidence": [
+                                {"key": "timing_belt_water_pump", "status": "missing", "evidence": ""},
+                                {"key": "rust_evaluation", "status": "claimed_only", "evidence": ""}],
+                                "seller_questions": []}})
+    g = gaps(lid)
+    assert [x["key"] for x in g["resolvable_by_document"]] == ["timing_belt_water_pump"]
+    assert [x["key"] for x in g["inspection_only"]] == ["rust_evaluation"]
+    assert g["blocked_on_vin"] is True and g["estimated_score_gain"] == 5 and g["potential_score"] == 50
+    msg = request_message(lid)
+    assert "VIN" in msg and "Carfax" in msg and "pre-purchase inspection" in msg
