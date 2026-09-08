@@ -64,6 +64,7 @@ async function refreshJobs(health) {
   try {
     const jobs = await (await fetch(apiBase + "/api/provenance/jobs?status=queued")).json();
     $("inv-row").hidden = false;
+    $("doc-row").hidden = !/carfax|autocheck/i.test(tab.url || "");
     $("investigate").textContent = jobs.length ? `Run ${jobs.length} queued investigation${jobs.length > 1 ? "s" : ""}` : "No investigations queued";
     $("investigate").disabled = !jobs.length;
     if (tab && tab.url) {
@@ -76,6 +77,32 @@ async function refreshJobs(health) {
     }
   } catch (e) {}
 }
+$("capture-doc").addEventListener("click", async () => {
+  const btn = $("capture-doc"); btn.disabled = true; setStatus("Reading the page…");
+  try {
+    const resp = await new Promise((res) => chrome.tabs.sendMessage(tab.id, { type: "capture_document" }, (r) => res(chrome.runtime.lastError ? null : r)));
+    if (!resp || !resp.ok) throw new Error(resp ? resp.error : "this page has no capture script (reload it)");
+    let listingId = null;
+    if (resp.vin) {
+      const r = await fetch(apiBase + "/api/listings/by-vin/" + encodeURIComponent(resp.vin));
+      if (r.ok) listingId = (await r.json()).id;
+    }
+    if (!listingId) {
+      const typed = prompt(`No tracked listing matched${resp.vin ? " VIN " + resp.vin : " (no VIN found on the page)"}.\nEnter the listing number from the workbench URL (…/#/l/NN):`);
+      if (!typed) { btn.disabled = false; setStatus("Cancelled.", "warning"); return; }
+      listingId = parseInt(typed, 10);
+    }
+    const post = await fetch(apiBase + `/api/listings/${listingId}/documents`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: resp.kind, text: resp.text, title: resp.title, source: "extension", url: resp.url }),
+    });
+    if (!post.ok) throw new Error((await post.text()).slice(0, 200));
+    const j = await post.json();
+    setStatus(`Attached ${j.chars.toLocaleString()} chars as ${j.kind} to listing #${listingId}. Re-assess to use it.`, "success");
+  } catch (e) { setStatus("Capture failed: " + e.message, "error"); }
+  btn.disabled = false;
+});
+
 $("investigate").addEventListener("click", () => {
   $("investigate").disabled = true; $("cancel").hidden = false; $("progress").hidden = false;
   setStatus("Investigating… searches run in background tabs; you can close this popup.", "info");

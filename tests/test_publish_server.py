@@ -58,3 +58,26 @@ def test_server_roundtrip():
         assert c.delete(f"/api/listings/{lid}").status_code == 200
         assert c.get(f"/api/listings/{lid}").status_code == 404
         assert c.delete(f"/api/listings/{lid}").status_code == 404
+
+
+def test_documents_attach_and_reach_the_assessment_prompt():
+    from scout.server import app
+    from scout.ai.assess import _documents_block
+    with TestClient(app) as c:
+        c.post("/api/ingest", json={"site": "facebook", "items": [
+            {"url": "https://www.facebook.com/marketplace/item/doc/", "title": "2008 Lexus GX470",
+             "price_text": "$15,000", "detail": {"text": "t" * 900}}]})
+        lid = db.get_listing_by_url("https://www.facebook.com/marketplace/item/doc/")["id"]
+        r = c.post(f"/api/listings/{lid}/documents", json={"kind": "carfax", "text": "Timing belt replaced 04/2019 at 135,102 mi", "title": "CARFAX"})
+        assert r.status_code == 200 and r.json()["chars"] == 42
+        assert c.post(f"/api/listings/{lid}/documents", json={"kind": "bogus", "text": "x"}).status_code == 400
+        assert c.post(f"/api/listings/{lid}/documents", json={"kind": "carfax", "text": "  "}).status_code == 400
+        block = _documents_block(lid)
+        assert "GOLD-TIER" in block and "Timing belt replaced 04/2019" in block
+        # re-attaching the same kind replaces rather than duplicates
+        c.post(f"/api/listings/{lid}/documents", json={"kind": "carfax", "text": "updated report"})
+        assert len(c.get(f"/api/listings/{lid}/documents").json()) == 1
+        assert "updated report" in _documents_block(lid)
+        doc_id = c.get(f"/api/listings/{lid}/documents").json()[0]["id"]
+        assert c.delete(f"/api/documents/{doc_id}").status_code == 200
+        assert _documents_block(lid) == ""

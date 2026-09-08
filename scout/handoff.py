@@ -212,6 +212,13 @@ def car_section(rank: int, l: dict[str, Any], a: dict[str, Any] | None, glance: 
         lines.append(f"### Photos captured ({len(l.get('photos') or [])}; first {len(photos)} listed)")
         lines.append("\n".join(f"- {p}" for p in photos))
         lines.append("")
+    docs = db.list_documents(l["id"])
+    if docs:
+        lines.append(f"### Attached documents ({len(docs)}) — obtained outside the advertisement")
+        for d in docs:
+            lines.append(f"\n**{d['kind'].upper()}**{' · ' + d['title'] if d.get('title') else ''} · captured {d['created_at'][:10]}"
+                         f"{' · ' + d['url'] if d.get('url') else ''}\n\n```\n{(d.get('text') or '')[:20000]}\n```")
+        lines.append("")
     raw = (l.get("raw_text") or "").strip()
     lines.append(f"### Listing text as captured{' (truncated to ' + str(RAW_TEXT_CAP) + ' chars)' if len(raw) > RAW_TEXT_CAP else ''}")
     lines.append("```\n" + raw[:RAW_TEXT_CAP] + "\n```")

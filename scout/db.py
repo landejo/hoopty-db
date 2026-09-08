@@ -155,6 +155,21 @@ CREATE TABLE IF NOT EXISTS provenance_jobs (
     FOREIGN KEY(listing_id) REFERENCES listings(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER NOT NULL,
+    vin TEXT,
+    kind TEXT NOT NULL,
+    title TEXT,
+    source TEXT,
+    url TEXT,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(listing_id) REFERENCES listings(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_documents_listing ON documents(listing_id);
+CREATE INDEX IF NOT EXISTS idx_documents_vin ON documents(vin);
+
 CREATE TABLE IF NOT EXISTS vin_decodes (
     vin TEXT PRIMARY KEY,
     decode_json TEXT NOT NULL,
@@ -769,4 +784,43 @@ def latest_assessments_by_vehicle(path: Path | None = None) -> dict[int, dict[st
             if l != newest_lid and (l not in own or own[l]["assessed_at"] < newest_at):
                 a = dict(own[newest_lid]); a["shared_from"] = newest_lid
                 out[l] = a
+    return out
+
+
+# ---------- documents (history reports, invoices, service records) ----------
+
+DOC_KINDS = ["carfax", "autocheck", "service_records", "invoice", "inspection", "window_sticker", "other"]
+
+
+def add_document(listing_id: int, kind: str, text: str, title: str = "", source: str = "",
+                 url: str = "", vin: str | None = None, path: Path | None = None) -> int:
+    """Attach a document to a listing. Replaces an existing document of the same
+    kind for that listing so a re-capture updates rather than duplicates."""
+    kind = kind if kind in DOC_KINDS else "other"
+    with connect(path) as c:
+        c.execute("DELETE FROM documents WHERE listing_id=? AND kind=?", (listing_id, kind))
+        cur = c.execute(
+            "INSERT INTO documents (listing_id, vin, kind, title, source, url, text, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (listing_id, (vin or "").upper() or None, kind, title[:300], source[:120], url[:1000],
+             text[:200_000], now()))
+        return cur.lastrowid
+
+
+def list_documents(listing_id: int, path: Path | None = None) -> list[dict[str, Any]]:
+    with connect(path) as c:
+        rows = c.execute("SELECT * FROM documents WHERE listing_id=? ORDER BY id", (listing_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_document(doc_id: int, path: Path | None = None) -> bool:
+    with connect(path) as c:
+        return c.execute("DELETE FROM documents WHERE id=?", (doc_id,)).rowcount > 0
+
+
+def documents_by_listing(path: Path | None = None) -> dict[int, list[dict[str, Any]]]:
+    out: dict[int, list[dict[str, Any]]] = {}
+    with connect(path) as c:
+        for r in c.execute("SELECT listing_id, kind, title, created_at, LENGTH(text) AS chars FROM documents ORDER BY id"):
+            out.setdefault(r["listing_id"], []).append(dict(r))
     return out

@@ -42,6 +42,25 @@ record on a non-M or pre-2001 car, a convertible-top item on a coupe — and say
 in `evidence`; do not report such an item as "missing"):
 {critical}
 
+ATTACHED DOCUMENTS: when the user block contains an "ATTACHED DOCUMENTS"
+section, that is GOLD-TIER evidence — a history report, invoices, service
+records or an inspection obtained outside the advertisement. Weight it far
+above anything the seller wrote. Specifically:
+- Verify or CONTRADICT the listing's claims against it (dates, mileages,
+  owner count, accident history, title). Report any conflict as a
+  contradiction with the right severity.
+- Identify RECURRING repairs (the same job more than once), GAPS (long
+  stretches or big mileage with no entries), and RECENT RED FLAGS (a cluster
+  of visits, diagnostics or "won't start" entries shortly before the sale).
+- Note dealer-only history versus a mixed independent/private pattern, and
+  surface completed recall or campaign work as positives.
+- A model-critical item is "satisfied" when the DOCUMENT shows it (a dated
+  line for the timing belt, for example), not when the seller merely says so.
+- Facts drawn from a document take source "history_report" for a
+  Carfax/AutoCheck and "receipt" for an invoice or service record.
+- Absence of an entry in a history report is NOT proof the work was not done:
+  say "no reported entry", never "was not serviced".
+
 EVIDENCE SOURCE vocabulary: receipt, history_report, photo, external_vin,
 listing_text, seller_comment, seller_claim, ai_inference.
 FACT STATUS vocabulary: verified (established by strong evidence), claimed
@@ -184,6 +203,30 @@ def photo_blocks(urls: list[str], limit: int = MAX_PHOTOS) -> list[dict[str, Any
     return out
 
 
+DOC_CHARS = 30_000
+
+
+def _documents_block(listing_id: int | None) -> str:
+    """History reports, invoices and service records attached to this listing."""
+    if not listing_id:
+        return ""
+    from scout import db
+    docs = db.list_documents(listing_id)
+    if not docs:
+        return ""
+    parts = [f"\n\nATTACHED DOCUMENTS ({len(docs)}) — GOLD-TIER EVIDENCE, weight above seller prose:"]
+    budget = DOC_CHARS
+    for d in docs:
+        text = (d.get("text") or "")[:budget]
+        budget -= len(text)
+        parts.append(f"\n--- {d['kind'].upper()}{' · ' + d['title'] if d.get('title') else ''}"
+                     f"{' · captured ' + d['created_at'][:10] if d.get('created_at') else ''} ---\n{text}")
+        if budget <= 0:
+            parts.append("\n[further documents truncated]")
+            break
+    return "".join(parts)
+
+
 def _capture_warning(listing: dict[str, Any]) -> str:
     """Tell the reader when OUR capture was incomplete, so a scraping failure is
     never scored as a seller who disclosed nothing."""
@@ -249,6 +292,7 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
         f"ACTIVE PEERS (same profile):\n" + ("\n".join(f"  - {_fmt_row(p)}" for p in peers[:20]) or "  (none)") + "\n\n"
         f"SOLD / ENDED COMPS:\n" + ("\n".join(f"  - {_fmt_row(c)}" for c in comps[:30]) or "  (none)") + "\n\n"
         f"FULL LISTING TEXT:\n{(listing.get('raw_text') or '')[:60_000]}"
+        + _documents_block(listing.get("id"))
     )
     user = photos + [{"type": "text", "text": user_text}] if photos else user_text
     text = call_json_text(model or CONFIG.model_deep, system, user, max_tokens=32000, log_name="last_assess", effort="high")

@@ -59,6 +59,7 @@ def build_export() -> dict[str, Any]:
     snaps = db.all_snapshots()
     assessments = db.latest_assessments_by_vehicle()
     errors = db.last_errors()
+    docs = db.documents_by_listing()
     timelines: dict[int, list] = {}
     for l in listings:
         if l.get("vehicle_id"):
@@ -68,6 +69,7 @@ def build_export() -> dict[str, Any]:
         a = assessments.get(l["id"])
         l["assessment"] = scrub_assessment(a) if a else None
         l["last_error"] = errors.get(l["id"])
+        l["documents"] = docs.get(l["id"], [])   # metadata only; document text stays local
         l["history"] = [
             {"t": s["seen_at"], "price": s.get("price"), "kind": s.get("price_kind"),
              "availability": s.get("availability"), "bids": s.get("bid_count")}
