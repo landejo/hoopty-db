@@ -215,6 +215,50 @@ def test_seeing_a_listing_again_resets_the_miss_count():
     assert db.get_listing_by_url(b)["availability"] == "active"                   # counter was reset
 
 
+def test_text_drift_renormalizes_only_after_cooldown():
+    from datetime import datetime, timedelta, timezone
+    from scout.ingest import _needs_normalize
+    fresh = {"normalized_at": db.now(), "availability": "active", "raw_text": "x" * 1000}
+    stale = dict(fresh, normalized_at=(datetime.now(timezone.utc) - timedelta(hours=13)).isoformat())
+    assert _needs_normalize(None, "anything", "active")                 # never read
+    assert _needs_normalize(fresh, "x" * 1000, "sold")                  # availability change always wins
+    assert not _needs_normalize(fresh, "x" * 1100, "active")            # small drift never re-reads
+    assert not _needs_normalize(fresh, "x" * 5000, "active")            # big drift, but read recently
+    assert _needs_normalize(stale, "x" * 5000, "active")                # big drift after the cooldown
+    assert not _needs_normalize(stale, "x" * 1100, "active")
+
+
+def test_live_card_price_updates_even_when_ai_read_is_skipped():
+    url = "https://carsandbids.com/auctions/bid1/2001-bmw-z3-m"
+    ingest_items("carsandbids", [_item(url, price="$20,000")], run_ai=False)
+    lid = db.get_listing_by_url(url)["id"]
+    db.update_listing(lid, {"normalized_at": db.now()})   # recently read; drift is damped
+    ingest_items("carsandbids", [_item(url, price="$21,500")], run_ai=False)
+    assert db.get_listing_by_url(url)["price"] == 21500
+
+
+def test_deferred_ai_runs_on_the_background_worker(monkeypatch):
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    monkeypatch.setattr("scout.vin.decode_vin", lambda *a, **k: None)
+    import scout.ai.normalize as nz
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {
+        "is_vehicle": True, "year": 2001, "make": "BMW", "model": "Z3 3.0i",
+        "profile_key": "z3_30i", "availability": "sold", "sold_price": 31000, "price": 31000})
+    url = "https://bringatrailer.com/listing/deferred/"
+    stats = ing.ingest_items("bat", [_item(url)], run_ai=True, defer_ai=True)
+    assert stats["queued_ai"] == 1 and stats["normalized"] == 0
+    ing._ai_queue.join()   # wait for the worker before monkeypatches unwind
+    row = db.get_listing_by_url(url)
+    assert row["normalized_at"] and row["profile_key"] == "z3_30i"
+    # The reader saw "sold" while the card said active: role flips and the
+    # snapshot history records it, so a stale card can never resurrect it.
+    assert row["availability"] == "sold" and row["role"] == "comp"
+    assert any(s["availability"] == "sold" for s in db.list_snapshots(row["id"]))
+    assert ing.ai_queue_depth() == 0
+
+
 def test_capture_quality_is_recorded(monkeypatch):
     from scout import ingest as ing
     from scout.config import CONFIG

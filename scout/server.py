@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from scout import db
 from scout.config import CONFIG, DOCS_DIR, SITES, STATUSES
-from scout.ingest import ingest_items
+from scout.ingest import ai_queue_depth, ingest_items
 from scout.profiles import sync_seed_profiles
 from scout.publish import build_export, git_publish, write_export
 from scout.policy import POLICY_VERSION
@@ -73,7 +73,7 @@ def _startup() -> None:
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "ai": CONFIG.ai_enabled, "models": {"deep": CONFIG.model_deep, "mid": CONFIG.model_mid, "fast": CONFIG.model_fast},
-            "skip_sold": CONFIG.skip_sold, "policy_version": POLICY_VERSION}
+            "skip_sold": CONFIG.skip_sold, "policy_version": POLICY_VERSION, "ai_queue": ai_queue_depth()}
 
 
 class IngestPayload(BaseModel):
@@ -81,15 +81,22 @@ class IngestPayload(BaseModel):
     items: list[dict[str, Any]]
     include_sold: bool | None = None
     full_sync: bool = False
+    defer_ai: bool = True   # batch syncs must return fast; single adds send False
 
 
 @app.post("/api/ingest")
 async def ingest(payload: IngestPayload) -> dict[str, Any]:
     if payload.site not in SITES:
         raise HTTPException(400, f"unknown site {payload.site!r}")
-    async with _ai_lock:
-        stats = await asyncio.to_thread(ingest_items, payload.site, payload.items, payload.include_sold, True, payload.full_sync)
-    return {"ok": True, **stats}
+    if payload.defer_ai:
+        # No _ai_lock: this path does no AI, and must never wait behind an assessment.
+        stats = await asyncio.to_thread(ingest_items, payload.site, payload.items, payload.include_sold,
+                                        True, payload.full_sync, True)
+    else:
+        async with _ai_lock:
+            stats = await asyncio.to_thread(ingest_items, payload.site, payload.items, payload.include_sold,
+                                            True, payload.full_sync)
+    return {"ok": True, **stats, "ai_queue": ai_queue_depth()}
 
 
 @app.get("/api/export")
