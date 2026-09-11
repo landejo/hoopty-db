@@ -24,7 +24,7 @@ async function refreshProgress() {
   $("progress-msg").textContent = progress.message || "";
   if (progress.state === "done" && progress.totals) {
     const t = progress.totals;
-    setStatus(`Synced: ${t.candidates} candidate(s), ${t.comps} comp(s), ${t.normalized} normalized` + (t.errors.length ? `, ${t.errors.length} error(s)` : ""), t.errors.length ? "warning" : "success");
+    setStatus(`Synced: ${t.candidates} candidate(s), ${t.comps} comp(s)` + (t.queued_ai ? `, ${t.queued_ai} AI read(s) running on the server` : "") + (t.errors.length ? `, ${t.errors.length} error(s)` : ""), t.errors.length ? "warning" : "success");
   } else if (progress.state === "error") setStatus(progress.message, "error");
 }
 

@@ -1,7 +1,10 @@
 """Ingest pipeline: extension payload -> DB rows -> normalization -> profile."""
 from __future__ import annotations
 
+import queue
 import re
+import threading
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from scout import db
@@ -12,6 +15,7 @@ from scout.scoring import locality_hint
 MIN_CARD_TEXT = 600        # below this we only ever saw the saved-list card
 MIN_GOOD_TEXT = 1500       # a real detail page
 MIN_GOOD_PHOTOS = 4        # a real gallery
+RENORM_COOLDOWN_HOURS = 12  # text drift alone re-normalizes at most this often
 
 CHALLENGE_RE = re.compile(r"just a moment|verify you are human|verifying you are human|checking your browser|security verification|press and hold|cf-chl|attention required|enable javascript and cookies to continue", re.I)
 
@@ -65,21 +69,98 @@ def _needs_normalize(existing: dict[str, Any] | None, raw_text: str, availabilit
     if existing.get("availability") != availability:
         return True
     old = (existing.get("raw_text") or "").strip()
-    return abs(len(old) - len(raw_text.strip())) > 200
+    if abs(len(old) - len(raw_text.strip())) <= 200:
+        return False
+    # Auction pages drift on every visit (new bids, comments, the countdown),
+    # so text change alone re-reads a listing at most once per cooldown window.
+    try:
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(existing["normalized_at"])
+        if age < timedelta(hours=RENORM_COOLDOWN_HOURS):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return True
+
+
+# ---------------- Background normalization ----------------
+# A sync's /api/ingest must return in seconds: the extension's service worker
+# awaits it and Chrome kills an idle worker after ~30s. AI reads therefore run
+# here, on one daemon thread, after the upserts have been acknowledged. Jobs
+# lost to a server restart re-queue on the next sync (normalized_at stays
+# unset until _apply_normalization runs).
+_ai_queue: queue.Queue = queue.Queue()
+_ai_pending: set[int] = set()
+_ai_state_lock = threading.Lock()
+_ai_worker: threading.Thread | None = None
+
+
+def ai_queue_depth() -> int:
+    with _ai_state_lock:
+        return len(_ai_pending)
+
+
+def _enqueue_ai(job: dict[str, Any]) -> bool:
+    global _ai_worker
+    with _ai_state_lock:
+        if job["lid"] in _ai_pending:
+            return False
+        _ai_pending.add(job["lid"])
+        if _ai_worker is None or not _ai_worker.is_alive():
+            _ai_worker = threading.Thread(target=_ai_worker_loop, name="scout-normalize", daemon=True)
+            _ai_worker.start()
+    _ai_queue.put(job)
+    return True
+
+
+def _ai_worker_loop() -> None:
+    while True:
+        job = _ai_queue.get()
+        try:
+            _run_ai_job(job)
+        except Exception as e:
+            db.log_event("normalize_error", job.get("lid"), str(e))
+        finally:
+            with _ai_state_lock:
+                _ai_pending.discard(job["lid"])
+            _ai_queue.task_done()
+
+
+def _run_ai_job(job: dict[str, Any]) -> None:
+    lid = job["lid"]
+    row = db.get_listing(lid)
+    if not row:
+        return  # deleted while queued
+    raw_text = row.get("raw_text") or ""
+    if not raw_text:
+        return
+    from scout.ai.normalize import normalize_listing  # lazy
+    profiles = db.list_profiles()
+    stats = {"profiles_created": 0, "errors": []}
+    norm = normalize_listing(raw_text, job["hints"], job["site"], profiles)
+    _apply_normalization(lid, norm, job["availability"], profiles, stats, raw_text)
+    # Snapshot whatever the reader established (a page whose text says "Sold
+    # for $X" while the card still said active) so _ever_sold sees it.
+    row = db.get_listing(lid)
+    raw = row.get("raw") or {}
+    db.add_snapshot(lid, row.get("price"), row.get("price_kind"), row.get("availability"),
+                    raw.get("bid_count") if isinstance(raw.get("bid_count"), int) else None)
+    for err in stats["errors"]:
+        db.log_event("normalize_error", lid, err)
 
 
 def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | None = None,
-                 run_ai: bool = True, full_sync: bool = False) -> dict[str, Any]:
+                 run_ai: bool = True, full_sync: bool = False, defer_ai: bool = False) -> dict[str, Any]:
     """Upsert every item; normalize new/changed ones; assign profiles.
     full_sync=True means `items` is the complete saved list for `site`, so
     active listings missing from it are marked removed. Single-listing adds
-    and re-normalizations must leave that False."""
+    and re-normalizations must leave that False. defer_ai=True queues the AI
+    read on the background worker instead of running it in this call."""
     if include_sold is None:
         include_sold = not CONFIG.skip_sold
     profiles = db.list_profiles()
     seen_urls: set[str] = set()
     stats = {"received": len(items), "created": 0, "updated": 0, "skipped_sold": 0,
-             "normalized": 0, "comps": 0, "candidates": 0, "profiles_created": 0, "errors": []}
+             "normalized": 0, "queued_ai": 0, "comps": 0, "candidates": 0, "profiles_created": 0, "errors": []}
 
     for item in items:
         url = (item.get("url") or "").strip()
@@ -122,7 +203,10 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
             "photos": (detail.get("photos") or (existing or {}).get("photos") or [])[:40],
         }
         card_price = parse_price(item.get("price_text"))
-        if card_price and not (existing and existing.get("price") and not _needs_normalize(existing, raw_text, availability)):
+        # A live card's price is always current (the bid moved, the asking price
+        # dropped) — take it even when the AI read is skipped or still queued.
+        if card_price and (availability in {"active", "pending"}
+                           or not (existing and existing.get("price") and not _needs_normalize(existing, raw_text, availability))):
             values["price"] = card_price
         if detail.get("auction_end"):
             values["auction_end"] = detail["auction_end"]
@@ -134,19 +218,23 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
             stats["blocked"] += 1
             db.log_event("blocked", lid, url)
         if run_ai and CONFIG.ai_enabled and _needs_normalize(existing, raw_text, availability) and raw_text:
-            try:
-                from scout.ai.normalize import normalize_listing  # lazy
-                hints = {"title": item.get("title"), "price_text": item.get("price_text"),
-                         "card_text": item.get("card_text"), "url": url,
-                         "price_drop_text": item.get("price_drop_text"),
-                         "scraper_availability": availability,
-                         "note": "Detail page was blocked by a bot wall; only the saved-list card is available. Extract what the card states and leave the rest unknown." if blocked else None}
-                norm = normalize_listing(raw_text, hints, site, profiles)
-                _apply_normalization(lid, norm, availability, profiles, stats, raw_text)
-                stats["normalized"] += 1
-            except Exception as e:  # keep syncing even if one call fails
-                stats["errors"].append(f"{url}: {e}")
-                db.log_event("normalize_error", lid, str(e))
+            hints = {"title": item.get("title"), "price_text": item.get("price_text"),
+                     "card_text": item.get("card_text"), "url": url,
+                     "price_drop_text": item.get("price_drop_text"),
+                     "scraper_availability": availability,
+                     "note": "Detail page was blocked by a bot wall; only the saved-list card is available. Extract what the card states and leave the rest unknown." if blocked else None}
+            if defer_ai:
+                if _enqueue_ai({"lid": lid, "site": site, "hints": hints, "availability": availability}):
+                    stats["queued_ai"] += 1
+            else:
+                try:
+                    from scout.ai.normalize import normalize_listing  # lazy
+                    norm = normalize_listing(raw_text, hints, site, profiles)
+                    _apply_normalization(lid, norm, availability, profiles, stats, raw_text)
+                    stats["normalized"] += 1
+                except Exception as e:  # keep syncing even if one call fails
+                    stats["errors"].append(f"{url}: {e}")
+                    db.log_event("normalize_error", lid, str(e))
         row = db.get_listing(lid)
         db.add_snapshot(lid, row.get("price"), row.get("price_kind"), row.get("availability"),
                         (detail.get("bid_count") if isinstance(detail.get("bid_count"), int) else None))

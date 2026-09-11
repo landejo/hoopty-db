@@ -115,7 +115,9 @@ def test_early_bid_is_not_a_price_until_the_last_day():
     from datetime import datetime, timedelta, timezone
     from scout.scoring import auction_hours_left, is_early_bid, preliminary_score
     from scout.policy.state import DEFAULT_STATE
-    now = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+    # Relative to the real clock: preliminary_score takes no `now`, so a pinned
+    # date would read as an already-ended auction once that date passes.
+    now = datetime.now(timezone.utc)
     l = {"id": 1, "site": "bat", "availability": "active", "price": 3600, "price_kind": "current_bid", "year": 2007, "make": "Lexus",
          "model": "GX470", "transmission": "Automatic", "mileage": 160000, "location": "Reno, NV", "mission": "utility_capability",
          "raw": {"time_left": "5 days", "time_left_seen_at": now.isoformat()}, "normalized": {}}

@@ -88,7 +88,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
   if (running) return { ok: false, error: "A sync is already running." };
   running = true; cancel = false; runningInfo = { site: "", kind: "sync" };
   await chrome.storage.session.set({ log: [] });
-  const totals = { created: 0, updated: 0, normalized: 0, comps: 0, candidates: 0, profiles_created: 0, skipped_sold: 0, errors: [] };
+  const totals = { created: 0, updated: 0, normalized: 0, queued_ai: 0, comps: 0, candidates: 0, profiles_created: 0, skipped_sold: 0, errors: [] };
   try {
     await setProgress({ state: "collecting", done: 0, total: 0, message: "Scrolling the saved list…" });
     const ping = await sendToTab(tabId, { type: "ping" });
@@ -129,7 +129,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
       const res = await post("/api/ingest", { site, items: batch, include_sold: includeSold, full_sync: false });
       for (const k of Object.keys(totals)) if (typeof res[k] === "number") totals[k] += res[k];
       if (Array.isArray(res.errors)) totals.errors.push(...res.errors);
-      log(`Server: +${res.created} new, ${res.updated} updated, ${res.normalized} normalized` + (res.profiles_created ? `, ${res.profiles_created} new profile(s)` : ""));
+      log(`Server: +${res.created} new, ${res.updated} updated` + (res.queued_ai ? `, ${res.queued_ai} queued for AI read` : ""));
       batch = [];
     };
 
@@ -158,7 +158,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
       catch (e) { log("Removal pass failed: " + e.message); }
     }
     await setProgress({ state: "done", message: "Sync complete.", totals });
-    log(`Done. ${totals.candidates} candidate(s), ${totals.comps} comp(s).`);
+    log(`Done. ${totals.candidates} candidate(s), ${totals.comps} comp(s).` + (totals.queued_ai ? ` Server is still reading ${totals.queued_ai} with AI in the background.` : ""));
     return { ok: true, totals };
   } catch (e) {
     await setProgress({ state: "error", message: e.message });
@@ -178,7 +178,7 @@ async function addCurrent({ tabId, url }) {
   const item = { site: ping.site, url: url.split("?")[0], title: d.title, price_text: (d.bid_text || ""), card_text: d.status_text, detail: d,
                  sold: /\bsold\b/i.test(d.status_text.slice(0, 200)), ended: /\bbid to\b/i.test(d.status_text.slice(0, 200)) };
   try {
-    const res = await post("/api/ingest", { site: ping.site, items: [item], include_sold: true });
+    const res = await post("/api/ingest", { site: ping.site, items: [item], include_sold: true, defer_ai: false });
     return { ok: true, res };
   } catch (e) { return { ok: false, error: e.message }; }
 }
