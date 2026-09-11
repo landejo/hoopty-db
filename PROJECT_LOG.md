@@ -3,6 +3,19 @@
 Running log of high-effort work sessions. Newest entry first. Each entry ends
 with a System State Summary per the Claude environment rules.
 
+## 2026-09-11 — Autotrader adapter: saved cards found again (0.3.2)
+
+Autotrader's saved-listings page moved saved cards to
+`/cars-for-sale/vehicledetails.xhtml?listingId=<id>` links (with
+`/cars-for-sale/vehicle/<id>` left only on the excluded "Cars You May Like"
+block) and put Private Seller Exchange cars on `/marketplace/buy/<VIN>` —
+sync collected 0 items. The adapter now matches all three formats,
+normalizes dealer cars to the canonical `/vehicle/<id>` URL (still 200),
+and treats the VIN as the site id for marketplace cars. Verified by
+dry-running the new collect logic in the live logged-in DOM: 9/9 saved
+cars found, 0 recommendations leaked. Reload the unpacked extension to
+pick it up.
+
 ## 2026-09-11 — Sync stall fix: background AI queue + re-normalize damping
 
 **Problem.** Syncs on Cars & Bids and Bring a Trailer stalled and never
