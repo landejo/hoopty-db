@@ -37,15 +37,24 @@ STATE = dict(DEFAULT_STATE)
 
 
 # 1. Cayman S with an excellent spec but no borescope -> Reject, regardless of arithmetic.
-def test_cayman_s_without_borescope_is_rejected():
+def test_cayman_s_without_borescope_is_required_first_then_rejected_after_ppi():
     l = _listing(make="Porsche", model="Cayman S", trim="S", engine_liters=3.4, year=2007, price=14500, mileage=60000)
     ev = _ev(doc=9, cond=9, val=9, fit=8, log=9, emo=10, quality=8,
              critical={"borescope": "claimed_only", "dme_overrev": "missing", "cooling_aos_service": "satisfied"})
+    # Policy 1.6.0: before the PPI a missing hard item is required, not yet a finding.
     a = assess(l, _profile("porsche_987_cayman"), ev, STATE, mission="future_keeper")
-    assert a.verdict == "Reject"
-    assert any(g.kind == "hard" and g.key == "critical_missing:borescope" for g in a.gates)
+    assert a.verdict == "Maybe / verify" and a.priority > 0
+    assert any(g.kind == "conditional" and g.key == "critical_missing:borescope" and g.reason.endswith("(required before purchase)") for g in a.gates)
+    assert a.headline.startswith("Maybe / verify — required first:") and a.next_steps[0].startswith("Get this first")
     assert a.score.documentation <= 10 and "documentation capped" in " ".join(a.score.caps_applied)
     assert a.policy_version == POLICY_VERSION
+    # Still missing after the PPI: Reject.
+    a = assess(l, _profile("porsche_987_cayman"), ev, STATE, mission="future_keeper", stage="ppi")
+    assert a.verdict == "Reject" and any(g.kind == "hard" and g.key == "critical_missing:borescope" for g in a.gates)
+    # A failed scope rejects at any stage.
+    ev_failed = _ev(doc=9, cond=9, val=9, fit=8, log=9, emo=10, quality=8,
+                    critical={"borescope": "failed", "dme_overrev": "missing", "cooling_aos_service": "satisfied"})
+    assert assess(l, _profile("porsche_987_cayman"), ev_failed, STATE, mission="future_keeper").verdict == "Reject"
 
 
 # 2. Stock Z3 3.0 with a clean structural inspection but no reinforcement -> not penalized for the missing kit.

@@ -112,6 +112,24 @@ _OPEN_FLAG_LABELS = {
 _OPEN_FLAG_KEYS = set(_OPEN_FLAG_LABELS) | {"stale_listing"}
 
 
+REQUIRED_TAG = " (required before purchase)"
+
+
+def defer_required(gates: list[Gate], stage: str) -> list[Gate]:
+    """Policy 1.6.0: a HARD model-critical item that is merely missing (not failed)
+    is an open question until the PPI stage - required before purchase, so it caps
+    the verdict at Maybe / verify, but it is not yet a finding against the car.
+    Still missing at the PPI stage, it stays hard (Reject)."""
+    if stage == "ppi":
+        return gates
+    return [Gate(kind="conditional", key=g.key, reason=g.reason + REQUIRED_TAG)
+            if g.kind == "hard" and g.key.startswith("critical_missing:") else g for g in gates]
+
+
+def required_open(gates: list[Gate]) -> list[Gate]:
+    return [g for g in gates if g.kind == "conditional" and g.reason.endswith(REQUIRED_TAG)]
+
+
 def classify_conditionals(gates: list[Gate], stage: str) -> dict[str, list]:
     """Split conditional gates into resolvable open questions (document /
     inspection, with stage relevance applied) vs. observed negatives (policy 1.4.0)."""
@@ -180,7 +198,7 @@ def verdict_from(score: Score, confidence: int, gates: list[Gate], stage: str = 
             # upside is real; still capped once evidence should have arrived.
             open_items = classified["document"] + classified["inspection"]
             upside = compute_upside(score, classified)
-            if score.total >= 45 and upside >= 75 and stage in {"listing", "questions"}:
+            if score.total >= 45 and upside >= 75 and stage in {"listing", "questions"} and not required_open(conds):
                 labels = "; ".join(it["label"] for it in open_items[:2])
                 return "Pursue conditionally", (f"Worth pursuing if the open questions check out: could reach "
                                                 f"{upside}/100 ({len(open_items)} open: {labels})")

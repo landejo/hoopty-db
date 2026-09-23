@@ -4,6 +4,20 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.6.0 (2026-09-23)
+
+**A missing hard item is required, not yet a finding, until the PPI.** A
+model-critical item marked `severity: hard` (e.g. the 987 Cayman S borescope)
+that is merely missing or seller-assurance-only no longer rejects the car at the
+Listing, Questions or Docs stage. It becomes a conditional gate tagged
+"(required before purchase)" (`scoring.defer_required`), counted as an open
+question that caps the verdict at `Maybe / verify` and blocks `Pursue
+conditionally`. It is also the first next step and leads the headline. Still
+missing at the PPI stage, it stays a hard gate: `Reject`. A FAILED hard item
+rejects at any stage, as before. The documentation cap for a missing hard item
+(10) is unchanged. Before this, every Cayman S on the board read `Reject` before
+the seller had been asked anything. Jason's instruction, 2026-09-23.
+
 ## 1.5.0 (2026-09-23)
 
 **Reject needs a reason.** The anchored rubrics added in tranche 5 made ratings

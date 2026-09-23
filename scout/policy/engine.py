@@ -9,7 +9,8 @@ from scout.policy import POLICY_VERSION
 from scout.policy.costs import compute_costs
 from scout.policy.gates import evaluate_gates
 from scout.policy.schema import Assessment, CostBreakdown, EvidenceInterpretation, Gate
-from scout.policy.scoring import classify_conditionals, compute_confidence, compute_score, compute_upside, verdict_from
+from scout.policy.scoring import (classify_conditionals, compute_confidence, compute_score, compute_upside, defer_required,
+                                  required_open, verdict_from)
 
 
 def default_mission(profile: dict[str, Any] | None) -> str:
@@ -48,6 +49,11 @@ def compute_headline(verdict: str, reason: str, score: Score, gates: list[Gate],
     if hard:
         return _clip(f"{verdict} — {hard.reason}")
 
+    req = required_open(gates)
+    if req and verdict == "Maybe / verify":
+        n = len(classified.get("document") or []) + len(classified.get("inspection") or [])
+        return _clip(f"{verdict} — required first: {_short_label(req[0].reason.split(': ', 1)[0])}; {n} open.")
+
     doc_items = classified.get("document") or []
     insp_items = classified.get("inspection") or []
     observed = classified.get("observed") or []
@@ -81,7 +87,7 @@ def compute_headline(verdict: str, reason: str, score: Score, gates: list[Gate],
 
 
 def compute_next_steps(listing: dict[str, Any], classified: dict[str, list], stage: str,
-                       evidence: EvidenceInterpretation) -> list[str]:
+                       evidence: EvidenceInterpretation, gates: list[Gate] | None = None) -> list[str]:
     """Up to 3 concrete actions, in priority order."""
     steps: list[str] = []
 
@@ -92,6 +98,8 @@ def compute_next_steps(listing: dict[str, Any], classified: dict[str, list], sta
     def short(label: str) -> str:   # "Documented timing-belt ... (date and mileage)" -> the part before the detail
         return label.split(" (")[0].split("; ")[0].strip()
 
+    for g in required_open(gates or [])[:1]:
+        add(f"Get this first (required before purchase): {short(g.reason.split(': ', 1)[0])}")
     if not listing.get("vin"):
         add("Ask for the VIN")
     if stage == "listing" and classified["document"]:
@@ -146,11 +154,12 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
         first_u = next(iter(evidence.unknowns), None)
         evidence.next_action = (f"Ask the seller: {first_q}" if first_q else f"Resolve first: {first_u}" if first_u
                                 else "Arrange an independent PPI before any money moves.")
+    gates = defer_required(gates, stage)   # after score/confidence: the documentation cap for a hard item still applies
     verdict, reason = verdict_from(score, confidence, gates, stage)
     classified = classify_conditionals(gates, stage)
     upside = compute_upside(score, classified)
     priority = compute_priority(score, upside, gates, classified, costs)
-    next_steps = compute_next_steps(listing, classified, stage, evidence)
+    next_steps = compute_next_steps(listing, classified, stage, evidence, gates)
     headline = compute_headline(verdict, reason, score, gates, classified, upside)
     return Assessment(
         policy_version=POLICY_VERSION, mission=mission, urgency_mode=state.get("urgency_mode", "accelerated_bridge"),
