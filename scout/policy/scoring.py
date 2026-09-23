@@ -5,7 +5,7 @@ from typing import Any
 
 from scout.evidence import COND_GAIN_CAP, COND_GAIN_PER_ITEM, DOC_GAIN_CAP, GAIN_PER_ITEM, classify
 from scout.policy.preferences import (
-    CATEGORY_POINTS, CONFIDENCE_PROVISIONAL, DOC_CAP_CONDITIONAL_MISSING, DOC_CAP_HARD_MISSING,
+    CATEGORY_POINTS, CONFIDENCE_PROVISIONAL, REJECT_FLOOR_NOTHING_OBSERVED, DOC_CAP_CONDITIONAL_MISSING, DOC_CAP_HARD_MISSING,
     LOGISTICS_CAP_BY_BAND, RELIST_MARKUP_FLAG, RELIST_PRICE_VALUE_CAP, SCORE_BANDS, VERDICT_RANK,
 )
 from scout.policy.schema import CostBreakdown, EvidenceInterpretation, Gate, Score
@@ -164,6 +164,10 @@ def verdict_from(score: Score, confidence: int, gates: list[Gate], stage: str = 
     verdict = next(v for floor, v in SCORE_BANDS if score.total >= floor)
     reason = f"Score {score.total}/100"
     conds = [g for g in gates if g.kind == "conditional"]
+    observed = classify_conditionals(conds, stage)["observed"] if conds else []
+    if verdict == "Reject" and not observed and score.total >= REJECT_FLOOR_NOTHING_OBSERVED:
+        # A low score from unproven evidence is not a finding against the car (policy 1.5.0).
+        verdict, reason = "Maybe / verify", f"Score {score.total}/100: low, but nothing observed wrong; low priority"
     if conds:
         classified = classify_conditionals(conds, stage)
         if classified["observed"]:

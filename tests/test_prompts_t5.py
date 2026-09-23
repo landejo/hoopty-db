@@ -87,3 +87,17 @@ def test_headline_paths():
     assert h == "Maybe / verify — observed: Rear main seal leak disclosed; 2 questions open."
     long = compute_headline("Reject", "y" * 400, _score(), [], empty, None)
     assert len(long) <= 160
+
+
+def test_low_score_without_observed_problem_is_low_priority_maybe():
+    from scout.policy.scoring import verdict_from
+    gates = [Gate(kind="conditional", key="critical_missing:cooling_history", reason="Cooling records: missing")]
+    v, r = verdict_from(_score(total=42), 30, gates, "listing")
+    assert v == "Maybe / verify" and "nothing observed wrong" in r
+    assert verdict_from(_score(total=30), 30, gates, "listing")[0] == "Reject"            # under the floor
+    observed = [Gate(kind="conditional", key="permanent_warning_lights", reason="Permanent warning lights")]
+    assert verdict_from(_score(total=42), 30, observed, "listing")[0] == "Reject"         # a real problem
+    assert verdict_from(_score(total=42), 30, gates, "ppi")[0] == "Reject"                # still open after the PPI = observed
+    h = compute_headline("Maybe / verify", r, _score(total=42), gates,
+                         {"document": [{"key": "cooling_history", "label": "Cooling", "status": "missing"}], "inspection": [], "observed": []}, 50)
+    assert h.startswith("Maybe / verify — score 42/100, weakest on") and "low priority, 1 open" in h

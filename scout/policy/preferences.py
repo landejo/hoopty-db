@@ -29,6 +29,8 @@ assert sum(CATEGORY_POINTS.values()) == 100
 
 # §9 interpretation bands (score -> verdict before caps).
 SCORE_BANDS = [(85, "Pursue"), (75, "Pursue conditionally"), (45, "Maybe / verify"), (0, "Reject")]  # 1.2.0: Maybe floor 60 -> 45
+# 1.5.0: below 45 is Reject only with an observed problem or under this floor; otherwise a low-priority Maybe.
+REJECT_FLOOR_NOTHING_OBSERVED = 35
 
 # §9 confidence: below this, verdict should rarely exceed Maybe / verify.
 CONFIDENCE_PROVISIONAL = 50

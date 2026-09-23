@@ -63,13 +63,18 @@ def compute_headline(verdict: str, reason: str, score: Score, gates: list[Gate],
         questions = f"{open_n} question{'s' if open_n != 1 else ''} open."
         if observed:
             return _clip(f"{verdict} — observed: {observed[0]}" + (f"; {questions}" if open_n else "."))
-        if open_n:
+        if open_n and "nothing observed wrong" not in reason:
             return _clip(f"{verdict} — {questions}")
-        return _clip(f"{verdict} — {reason}")
 
     if verdict == "Pursue":
         return _clip(f"{verdict} — score {score.total}/100, no open gates.")
 
+    if reason.startswith("Score "):   # band-only verdict: name what pulled the score down
+        from scout.policy.preferences import CATEGORY_LABELS, CATEGORY_POINTS
+        weak = sorted(CATEGORY_POINTS, key=lambda k: getattr(score, k) / CATEGORY_POINTS[k])[:2]
+        names = " and ".join(CATEGORY_LABELS[k].split(" & ")[0].split(" / ")[0].lower() for k in weak)
+        tail = ("; nothing observed wrong, low priority" + (f", {open_n} open" if open_n else "")) if "nothing observed wrong" in reason else ""
+        return _clip(f"{verdict} — score {score.total}/100, weakest on {names}{tail}.")
     return _clip(f"{verdict} — {reason}")
 
 

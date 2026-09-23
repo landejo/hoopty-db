@@ -267,7 +267,7 @@ def test_assess_sets_stage_upside_priority_open_questions_next_steps():
     ev = _ev(doc=9, cond=9, val=9, fit=9, log=10, emo=9, quality=8,
              critical={"rear_structure": "satisfied", "cooling_history": "claimed_only"})
     a = assess(_listing(), _profile("z3_30i"), ev, STATE, stage="listing")
-    assert POLICY_VERSION == "1.4.0" and a.policy_version == POLICY_VERSION
+    assert a.policy_version == POLICY_VERSION
     assert a.stage == "listing"
     assert a.upside is not None and a.upside >= a.score.total
     assert a.priority is not None and 0 <= a.priority <= 100

@@ -4,6 +4,22 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.5.0 (2026-09-23)
+
+**Reject needs a reason.** The anchored rubrics added in tranche 5 made ratings
+more conservative (price 5 at fair value, logistics lower for distant cars), so a
+fairly priced car with nothing wrong could fall under the 45 band and read as
+`Reject`. Below 45, the verdict is now `Reject` only when something is observed
+against the car (an observed conditional, including open questions that should
+have been settled by the current stage) or the score is under 35
+(`REJECT_FLOOR_NOTHING_OBSERVED`). Otherwise it is `Maybe / verify` with the
+reason "low, but nothing observed wrong; low priority". The priority ranking
+already orders these below stronger cars. Hard, strategy and configuration gates
+are unchanged. Jason's instruction, 2026-09-23.
+
+The deterministic headline for a score-only verdict now names the two weakest
+categories (by share of their points).
+
 ## 1.4.0 (2026-09-22)
 
 Almost every assessed car landed on `Maybe / verify` (33) or `Reject` (22), 0
