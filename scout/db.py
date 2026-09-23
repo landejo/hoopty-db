@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -183,6 +183,21 @@ CREATE TABLE IF NOT EXISTS events (
     listing_id INTEGER,
     detail TEXT
 );
+
+CREATE TABLE IF NOT EXISTS ai_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    stop_reason TEXT,
+    listing_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_ai_calls_created ON ai_calls(created_at);
 """
 
 JSON_COLS = {"raw_json": {}, "photos_json": [], "options_json": [], "normalized_json": {}, "analysis_json": None, "provenance_json": None}
@@ -878,3 +893,70 @@ def merge_listings(src_id: int, dst_id: int, path: Path | None = None) -> dict[s
             c.execute(f"UPDATE listings SET {', '.join(k + '=?' for k in sets)} WHERE id=?", [*sets.values(), dst_id])
         c.execute("DELETE FROM listings WHERE id=?", (src_id,))
     return moved
+
+
+# ---------- AI call cost log ----------
+
+def add_ai_call(kind: str, model: str, input_tokens: int = 0, output_tokens: int = 0,
+                cache_write_tokens: int = 0, cache_read_tokens: int = 0, cost_usd: float = 0.0,
+                stop_reason: str | None = None, listing_id: int | None = None,
+                path: Path | None = None) -> int:
+    with connect(path) as c:
+        cur = c.execute(
+            "INSERT INTO ai_calls (created_at, kind, model, input_tokens, output_tokens, cache_write_tokens, "
+            "cache_read_tokens, cost_usd, stop_reason, listing_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (now(), kind, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
+             cost_usd, stop_reason, listing_id),
+        )
+        return cur.lastrowid
+
+
+def ai_spend(days: int | None = None, path: Path | None = None) -> dict[str, Any]:
+    """Spend totals overall, by kind, by model, and by day (last 30 days),
+    plus the cache hit ratio (cache_read / (cache_read + cache_write + input))."""
+    q = "SELECT * FROM ai_calls WHERE 1=1"
+    args: list[Any] = []
+    if days is not None:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        q += " AND created_at >= ?"
+        args.append(cutoff)
+    with connect(path) as c:
+        rows = [dict(r) for r in c.execute(q, args).fetchall()]
+
+    def _bucket() -> dict[str, Any]:
+        return {"calls": 0, "cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0,
+                "cache_write_tokens": 0, "cache_read_tokens": 0}
+
+    total = _bucket()
+    by_kind: dict[str, dict[str, Any]] = {}
+    by_model: dict[str, dict[str, Any]] = {}
+    by_day: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        for bucket in (total, by_kind.setdefault(r["kind"], _bucket()), by_model.setdefault(r["model"], _bucket())):
+            bucket["calls"] += 1
+            bucket["cost_usd"] += r["cost_usd"] or 0.0
+            bucket["input_tokens"] += r["input_tokens"] or 0
+            bucket["output_tokens"] += r["output_tokens"] or 0
+            bucket["cache_write_tokens"] += r["cache_write_tokens"] or 0
+            bucket["cache_read_tokens"] += r["cache_read_tokens"] or 0
+        day = (r["created_at"] or "")[:10]
+        d = by_day.setdefault(day, _bucket())
+        d["calls"] += 1
+        d["cost_usd"] += r["cost_usd"] or 0.0
+        d["input_tokens"] += r["input_tokens"] or 0
+        d["output_tokens"] += r["output_tokens"] or 0
+        d["cache_write_tokens"] += r["cache_write_tokens"] or 0
+        d["cache_read_tokens"] += r["cache_read_tokens"] or 0
+
+    cache_read = total["cache_read_tokens"]
+    cache_denom = cache_read + total["cache_write_tokens"] + total["input_tokens"]
+    cache_hit_ratio = (cache_read / cache_denom) if cache_denom else 0.0
+
+    last_30_days = sorted(by_day.items())[-30:]
+    return {
+        "total": total,
+        "by_kind": by_kind,
+        "by_model": by_model,
+        "by_day": [{"date": d, **vals} for d, vals in last_30_days],
+        "cache_hit_ratio": cache_hit_ratio,
+    }

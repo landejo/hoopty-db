@@ -58,6 +58,34 @@ SITES = {
 }
 AUCTION_SITES = {"carsandbids", "bat"}
 
+# $ per million tokens (input, output). Unknown models fall back to the
+# Opus 5 price in estimate_cost() and print a warning.
+PRICES: dict[str, tuple[float, float]] = {
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-sonnet-5": (2.0, 10.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+
+
+def estimate_cost(model: str, input_tokens: int = 0, output_tokens: int = 0,
+                  cache_write_tokens: int = 0, cache_read_tokens: int = 0) -> float:
+    """Cost in USD. Cache writes are billed at 1.25x the input price (5-minute
+    TTL), cache reads at 0.1x. An unrecognized model uses the Opus 5 price."""
+    prices = PRICES.get(model)
+    if prices is None:
+        print(f"warning: estimate_cost: unknown model {model!r}, using Opus 5 pricing")
+        prices = PRICES["claude-opus-5"]
+    in_price, out_price = prices
+    cost = (
+        input_tokens * in_price
+        + output_tokens * out_price
+        + cache_write_tokens * in_price * 1.25
+        + cache_read_tokens * in_price * 0.1
+    )
+    return cost / 1_000_000
+
+
 AVAILABILITY = ["active", "pending", "sold", "ended", "removed", "withdrawn", "unknown"]
 ROLES = ["candidate", "comp"]
 

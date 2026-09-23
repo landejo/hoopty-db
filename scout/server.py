@@ -143,6 +143,11 @@ def health() -> dict[str, Any]:
             "skip_sold": CONFIG.skip_sold, "policy_version": POLICY_VERSION, "ai_queue": ai_queue_depth()}
 
 
+@app.get("/api/ai-spend")
+def ai_spend(days: int = 30) -> dict[str, Any]:
+    return db.ai_spend(days=days)
+
+
 class IngestPayload(BaseModel):
     site: str
     items: list[dict[str, Any]]

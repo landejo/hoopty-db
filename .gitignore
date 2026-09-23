@@ -9,3 +9,4 @@ data/*.log
 .pytest_cache/
 data/handoffs/
 docs/data/
+data/photo_cache/
