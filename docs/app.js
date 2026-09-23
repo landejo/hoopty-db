@@ -33,10 +33,25 @@
     state.data = await r.json();
     state.byId = new Map(state.data.listings.map((l) => [l.id, l]));
     state.profiles = new Map(state.data.profiles.map((p) => [p.key, p]));
-    const m = $("#mode");
-    m.textContent = state.local ? "local · " + (state.health.ai ? "AI on" : "AI off") : "published " + ago(state.data.generated_at);
-    m.className = "mode-pill" + (state.local ? " local" : "");
+    updateModePill();
     $("#publish").hidden = !state.local;
+  }
+  function updateModePill() {
+    const m = $("#mode");
+    if (!state.local) { m.textContent = "published " + ago(state.data.generated_at); m.className = "mode-pill"; return; }
+    const q = state.health?.ai_queue || 0;
+    m.textContent = "local · " + (state.health.ai ? "AI on" : "AI off") + (q > 0 ? ` · ${q} queued` : "");
+    m.className = "mode-pill local";
+  }
+  // Lightweight AI-queue-depth poll (local mode only). Separate from the
+  // task banner's poller: runs at a gentler cadence and only while visible.
+  let healthTimer = null;
+  function startHealthPoll() {
+    if (healthTimer || !state.local) return;
+    healthTimer = setInterval(async () => {
+      if (document.hidden) return;
+      try { const r = await fetch("/api/health", { cache: "no-store" }); if (r.ok) { state.health = await r.json(); updateModePill(); } } catch (e) {}
+    }, 10000);
   }
   async function api(path, method = "GET", body) {
     const r = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -98,6 +113,15 @@
   // Preliminary scores run optimistic; sort unassessed cards by the calibrated value.
   function calibrated(l) { const p = prelimOf(l); if (p == null) return null; const off = state.data.calibration?.offset; return off == null ? p : Math.max(0, Math.min(100, p + off)); }
   function glance(l) { return scoreOf(l) ?? calibrated(l); }
+  // An early bid (live-auction current-bid, not yet a real price) shouldn't
+  // outrank a priced listing with the same assessed score. Sort-only penalty.
+  function isEarlyBid(l) {
+    const c = l.assessment?.costs;
+    if (c && (c.price_basis === "unpriced" || c.price_basis === "current_bid") && (c.notes || []).some((n) => /early bid/i.test(n))) return true;
+    if ((l.normalized?.quick_gates || []).some((g) => /early bid/i.test(g))) return true;
+    if ((l.assessment?.gates || []).some((g) => /early bid/i.test(g.reason || ""))) return true;
+    return false;
+  }
   function rankOf(l) {
     if (l.role !== "candidate" || !l.profile_key) return null;
     const pool = state.data.listings.filter((x) => x.role === "candidate" && x.availability === "active" && x.profile_key === l.profile_key && glance(x) != null);
@@ -116,8 +140,12 @@
   }
   function availChip(a) { const c = { active: "olive", pending: "mustard", sold: "rose", ended: "walnut", removed: "slate", withdrawn: "rose" }[a] || ""; return `<span class="chip ${c === "walnut" ? "mustard" : c}">${esc(a)}</span>`; }
   function title(l) { return l.title || [l.year, l.make, l.model, l.trim].filter(Boolean).join(" ") || "Untitled listing"; }
+  function safeUrl(u) { return u && /^https?:\/\//i.test(u) ? u : null; }
   function photo(l) { return (l.photos && l.photos[0]) || l.thumb || null; }
   function profileLabel(k) { return state.profiles.get(k)?.label || k || "unprofiled"; }
+  // offset = average(assessed - prelim). Negative: prelim over-read (runs high).
+  // Positive: prelim under-read (runs low). Zero: matches.
+  function offsetPhrase(off) { return off === 0 ? "matches" : off < 0 ? `runs ${-off} high` : `runs ${off} low`; }
 
   // ---------- routing ----------
   function route() {
@@ -161,7 +189,17 @@
       return true;
     });
     const sorters = {
-      score: (a, b) => (glance(b) ?? -1) - (glance(a) ?? -1),
+      // Assessed listings (deep AI read) always rank above merely-preliminary
+      // ones — the two rubrics only correlate r=0.20, so mixing them by raw
+      // number is misleading. Within assessed, an early/unpriced bid sorts
+      // after a priced listing with the same score (sort-only -10 penalty).
+      score: (a, b) => {
+        const as = scoreOf(a), bs = scoreOf(b);
+        if (as != null && bs != null) return (bs - (isEarlyBid(b) ? 10 : 0)) - (as - (isEarlyBid(a) ? 10 : 0));
+        if (as != null) return -1;
+        if (bs != null) return 1;
+        return (calibrated(b) ?? -1) - (calibrated(a) ?? -1);
+      },
       price: (a, b) => (a.price ?? 9e9) - (b.price ?? 9e9),
       price_desc: (a, b) => (b.price ?? -1) - (a.price ?? -1),
       mileage: (a, b) => (a.mileage ?? 9e9) - (b.mileage ?? 9e9),
@@ -195,7 +233,7 @@
       <div class="hero">
         <div><h1>The board</h1><p>Everything you've saved, normalized and scored. Sold and ended listings feed the <a href="#/market">market view</a>.</p></div>
         <div class="tiles" style="margin:0;min-width:520px">
-          <div class="tile"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} assessed${state.data.calibration?.offset != null ? ` · prelim runs ${-state.data.calibration.offset} high` : ""}</div></div>
+          <div class="tile"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} assessed${state.data.calibration?.offset != null ? ` · prelim ${offsetPhrase(state.data.calibration.offset)}` : ""}</div></div>
           <div class="tile"><div class="k">Pursue</div><div class="v">${pursue}</div><div class="s">by verdict or status</div></div>
           <div class="tile"><div class="k">Market comps</div><div class="v">${comps}</div><div class="s">sold + ended${ignored ? ` · ${ignored} ignored` : ""}</div></div>
           <div class="tile"><div class="k">Profiles</div><div class="v">${state.data.profiles.length}</div><div class="s">${state.data.profiles.filter((p) => !p.verified).length} unverified</div></div>
@@ -254,8 +292,8 @@
     bindStatusChips();
     $("#f-sort", bar).onchange = (e) => { f.sort = e.target.value; rerender(); };
     $("#f-analyzed", bar).onchange = (e) => { f.analyzed = e.target.checked; rerender(); };
-    let limitTimer;
-    const onLimit = (key) => (e) => { clearTimeout(limitTimer); limitTimer = setTimeout(() => { f[key] = e.target.value; rerender(); const cl = $("#f-clear-limits", bar); if (!cl && (f.max_price || f.max_mileage || f.max_age)) route(); }, 250); };
+    const limitTimers = {};
+    const onLimit = (key) => (e) => { clearTimeout(limitTimers[key]); limitTimers[key] = setTimeout(() => { f[key] = e.target.value; rerender(); const cl = $("#f-clear-limits", bar); if (!cl && (f.max_price || f.max_mileage || f.max_age)) route(); }, 250); };
     $("#f-max-price", bar).oninput = onLimit("max_price");
     $("#f-max-mileage", bar).oninput = onLimit("max_mileage");
     $("#f-max-age", bar).oninput = onLimit("max_age");
@@ -310,9 +348,9 @@
     const qg = (l.normalized?.quick_gates || []).concat((l.provenance?.flags || []).map((f) => f.replace(/_/g, " ")));
     const drops = (l.normalized?.price_drops || []).reduce((a, d) => a + (d.amount || 0), 0) + (l.history || []).filter((s) => s.price).reduce((a, s, i, arr) => a + (i && arr[i - 1].price > s.price ? arr[i - 1].price - s.price : 0), 0);
     const el = h(`
-      <article class="card ${l.role}" data-id="${l.id}">
+      <article class="card ${l.role}" data-id="${l.id}" tabindex="0" role="link" aria-label="${esc(title(l))}">
         <div class="photo">${p ? `<img loading="lazy" src="${esc(p)}" alt="">` : `<div class="nophoto">⌁</div>`}
-          <span class="score">${badge(l)}</span><span class="site">${siteChip(l.site)}</span></div>
+          <span class="score">${badge(l)}${scoreOf(l) == null && prelimOf(l) != null ? `<b class="score-tag">prelim</b>` : ""}</span><span class="site">${siteChip(l.site)}</span></div>
         <div class="body">
           <div class="title">${esc(title(l))}${(() => { const r = rankOf(l); return r ? ` <span class="chip" title="rank among active candidates in this profile">#${r.rank} of ${r.of}</span>` : ""; })()}</div>
           <div class="price">${l.role === "comp" && (l.sold_price || l.price) ? money(l.sold_price || l.price) + `<small>${l.availability === "sold" ? "sold" : esc(l.price_kind || "")}</small>` : money(l.price) + (l.price_kind && l.price_kind !== "asking" ? `<small>${esc(l.price_kind.replace("_", " "))}</small>` : "")}</div>
@@ -325,6 +363,7 @@
         </div>
       </article>`);
     el.onclick = (e) => { if (e.target.closest(".cmp")) return; location.hash = "#/l/" + l.id; };
+    el.onkeydown = (e) => { if (e.target.closest(".cmp")) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); location.hash = "#/l/" + l.id; } };
     $(".cmp input", el).onchange = (e) => { toggleCompare(l.id, e.target.checked); };
     return el;
   }
@@ -371,7 +410,7 @@
     app.appendChild(h(`<div>
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <a href="#/" class="btn sm ghost">← Board</a>
-        <div class="row">${siteChip(l.site)}${availChip(l.availability)}${l.role === "comp" ? `<span class="chip dark">market comp</span>` : ""}<span class="chip" title="mission">${esc(missionLabel(l.mission))}</span>${siblings.map((o) => `<a href="#/l/${o.id}" class="chip teal" title="same VIN, other venue">also on ${esc(siteName(o.site))} · ${money(o.sold_price || o.price)}</a>`).join("")}<a class="btn sm" href="${esc(l.url)}" target="_blank" rel="noopener">Open listing ↗</a></div>
+        <div class="row">${siteChip(l.site)}${availChip(l.availability)}${l.role === "comp" ? `<span class="chip dark">market comp</span>` : ""}<span class="chip" title="mission">${esc(missionLabel(l.mission))}</span>${siblings.map((o) => `<a href="#/l/${o.id}" class="chip teal" title="same VIN, other venue">also on ${esc(siteName(o.site))} · ${money(o.sold_price || o.price)}</a>`).join("")}${safeUrl(l.url) ? `<a class="btn sm" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">Open listing ↗</a>` : l.url ? `<span class="btn sm ghost" title="not a valid http(s) URL">${esc(l.url)}</span>` : ""}</div>
       </div>
       <div class="headline">
         <div><h1>${esc(title(l))}</h1><div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>
@@ -709,8 +748,16 @@
   }
 
   // ---------- global wiring ----------
-  $("#search").oninput = (e) => { state.q = e.target.value; if ((location.hash || "#/") === "#/" || location.hash.startsWith("#/?")) { const list = $("#list"); if (list) { route(); } } else location.hash = "#/"; };
+  let searchTimer = null;
+  $("#search").oninput = (e) => {
+    const v = e.target.value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.q = v;
+      if ((location.hash || "#/") === "#/" || location.hash.startsWith("#/?")) { const list = $("#list"); if (list) { route(); } } else location.hash = "#/";
+    }, 200);
+  };
   $("#publish").onclick = async (e) => { e.target.disabled = true; e.target.textContent = "Publishing…"; try { const r = await api("/api/publish", "POST"); toast(r.changed ? "Published" : "Nothing new to publish"); } catch (err) { toast("Publish failed: " + err.message, 5000); } e.target.disabled = false; e.target.textContent = "Publish"; };
 
-  loadData().then(() => { route(); if (state.local) watchTask(); }).catch((e) => { $("#app").innerHTML = `<div class="empty"><h2>Could not load data</h2><p>${esc(e.message)}</p></div>`; });
+  loadData().then(() => { route(); if (state.local) { watchTask(); startHealthPoll(); } }).catch((e) => { $("#app").innerHTML = `<div class="empty"><h2>Could not load data</h2><p>${esc(e.message)}</p></div>`; });
 })();

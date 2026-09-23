@@ -21,6 +21,7 @@
       <a href="#/settings" data-route="settings">Policy</a>
     </nav>
     <span class="spacer"></span>
+    <label for="search" class="visually-hidden">Search listings</label>
     <input class="search" id="search" type="search" placeholder="Search title, location, VIN-less facts…">
     <span class="mode-pill" id="mode">loading…</span>
     <button class="btn sm" id="publish" hidden title="Export + git push docs/data">Publish</button>
@@ -28,7 +29,17 @@
   </div>
 </header>
 <div id="taskbar" class="taskbar" hidden></div>
-<main class="wrap" id="app"></main>
+<main class="wrap" id="app">
+  <div class="skeleton" aria-hidden="true">
+    <div class="skeleton-hero"></div>
+    <div class="skeleton-grid">
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+    </div>
+    <p class="muted" style="text-align:center;margin-top:20px">Loading the board…</p>
+  </div>
+</main>
 <script src="app.js"></script>
 </body>
 </html>
