@@ -413,6 +413,12 @@ class Assessment(BaseModel):
     context: dict = Field(default_factory=dict)   # budget + urgency the judgement was formed under
     assessed_at: str
     model: str
+    # Stage + pursue-next priority (policy 1.4.0, see POLICY_CHANGES.md).
+    stage: Literal["listing", "questions", "docs", "ppi"] = "listing"
+    upside: int | None = None      # score reachable if open questions resolve favourably
+    priority: int | None = None    # 0-100 "pursue next" rank
+    open_questions: dict = Field(default_factory=dict)   # {"document": [...], "inspection": [...], "observed": [...]}
+    next_steps: list[str] = Field(default_factory=list, max_length=3)
 
 
 assert set(MISSIONS) == set(Assessment.model_fields["mission"].annotation.__args__)

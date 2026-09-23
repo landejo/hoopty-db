@@ -8,17 +8,55 @@ from typing import Any
 from scout.policy import POLICY_VERSION
 from scout.policy.costs import compute_costs
 from scout.policy.gates import evaluate_gates
-from scout.policy.schema import Assessment, EvidenceInterpretation
-from scout.policy.scoring import compute_confidence, compute_score, verdict_from
+from scout.policy.schema import Assessment, CostBreakdown, EvidenceInterpretation, Gate
+from scout.policy.scoring import classify_conditionals, compute_confidence, compute_score, compute_upside, verdict_from
 
 
 def default_mission(profile: dict[str, Any] | None) -> str:
     return (profile or {}).get("mission_default") or "enthusiast_bridge"
 
 
+def compute_priority(score, upside: int, gates: list[Gate], classified: dict[str, list], costs: CostBreakdown) -> int:
+    """0-100 "pursue next" rank: worth investing the next step in this car
+    right now, relative to the others (policy 1.4.0)."""
+    if any(g.kind in {"hard", "strategy", "configuration"} for g in gates):
+        return 0
+    p = 0.4 * score.total + 0.6 * upside
+    p -= 10 * len(classified["observed"])
+    if costs.price_basis in {"unpriced", "expected_hammer"}:
+        p -= 8
+    if any(g.key == "stale_listing" for g in gates):
+        p -= 5
+    return max(0, min(100, round(p)))
+
+
+def compute_next_steps(listing: dict[str, Any], classified: dict[str, list], stage: str,
+                       evidence: EvidenceInterpretation) -> list[str]:
+    """Up to 3 concrete actions, in priority order."""
+    steps: list[str] = []
+
+    def add(s: str) -> None:
+        if s and len(steps) < 3:
+            steps.append(s[:159])
+
+    if not listing.get("vin"):
+        add("Ask for the VIN")
+    if stage == "listing" and classified["document"]:
+        add(f"Request records: {', '.join(it['label'] for it in classified['document'][:3])}")
+    for q in evidence.seller_questions:
+        q = q.strip()
+        if q and not any(q.lower() == s.lower() for s in steps):
+            add(q)
+            break
+    if stage == "docs" and classified["inspection"]:
+        add(f"Book a PPI focused on: {', '.join(it['label'] for it in classified['inspection'][:3])}")
+    return steps
+
+
 def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceInterpretation,
            state: dict[str, Any], vin_history: dict[str, Any] | None = None,
-           fair: dict[str, Any] | None = None, mission: str | None = None, model: str = "") -> Assessment:
+           fair: dict[str, Any] | None = None, mission: str | None = None, model: str = "",
+           stage: str = "listing") -> Assessment:
     vin_history = vin_history or {}
     mission = mission or listing.get("mission") or default_mission(profile)
     # First pass without the cost gate, then costs, then the cost gate.
@@ -55,18 +93,24 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
         first_u = next(iter(evidence.unknowns), None)
         evidence.next_action = (f"Ask the seller: {first_q}" if first_q else f"Resolve first: {first_u}" if first_u
                                 else "Arrange an independent PPI before any money moves.")
-    verdict, reason = verdict_from(score, confidence, gates)
+    verdict, reason = verdict_from(score, confidence, gates, stage)
+    classified = classify_conditionals(gates, stage)
+    upside = compute_upside(score, classified)
+    priority = compute_priority(score, upside, gates, classified, costs)
+    next_steps = compute_next_steps(listing, classified, stage, evidence)
     return Assessment(
         policy_version=POLICY_VERSION, mission=mission, urgency_mode=state.get("urgency_mode", "accelerated_bridge"),
         gates=gates, score=score, confidence=confidence, verdict=verdict, verdict_reason=reason,
         costs=costs, evidence=evidence, vin_history=vin_history,
         context={"budget": dict(state.get("budget") or {}), "urgency_mode": state.get("urgency_mode")},
         assessed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(), model=model,
+        stage=stage, upside=upside, priority=priority, open_questions=classified, next_steps=next_steps,
     )
 
 
 def rescore_assessment(listing: dict[str, Any], profile: dict[str, Any], stored: dict[str, Any],
-                       state: dict[str, Any], fair: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                       state: dict[str, Any], fair: dict[str, Any] | None = None,
+                       stage: str = "listing") -> dict[str, Any] | None:
     """Recompute score/verdict/costs from a stored assessment's evidence under the
     current policy. Keeps the original model and evidence; bumps policy_version."""
     try:
@@ -75,7 +119,7 @@ def rescore_assessment(listing: dict[str, Any], profile: dict[str, Any], stored:
         return None
     vh = stored.get("vin_history") or {}
     a = assess(listing, profile, evidence, state, vin_history=vh, fair=fair,
-               mission=stored.get("mission"), model=stored.get("model", ""))
+               mission=stored.get("mission"), model=stored.get("model", ""), stage=stage)
     d = a.model_dump()
     d["assessed_at"] = stored.get("assessed_at", d["assessed_at"])
     d["rescored_from"] = stored.get("policy_version")

@@ -4,6 +4,55 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.4.0 (2026-09-22)
+
+Almost every assessed car landed on `Maybe / verify` (33) or `Reject` (22), 0
+`Pursue`, because almost every car has model-critical evidence not yet in the
+listing (cooling records, a rear-structure inspection...) and any conditional
+gate capped the verdict at `Maybe`. That answers "is it proven?", not "is it
+worth proving next?" This adds a stage model (`scout/stage.py`): Listing ->
+Questions sent -> Docs in -> PPI done, derived from the listing's status and
+attached documents.
+
+1. **Open question vs. observed.** A conditional gate is now either an *open
+   question* — evidence not gathered yet (`critical_missing:*`, major service
+   claimed but undocumented, accident without repair docs, a stale listing) —
+   or an *observed* negative (everything else conditional: strong reservations
+   on a critical item, salvage title, warning lights, undocumented mods, a
+   remote auction with no PPI). Observed conditionals still cap the verdict at
+   `Maybe / verify` exactly as before. Open questions no longer do, by
+   themselves. `scout.evidence.classify()` (already used for the evidence-gaps
+   report) decides whether an open critical item is document- or
+   inspection-resolvable; `COND_GAIN_PER_ITEM = 4` sits next to the existing
+   `GAIN_PER_ITEM = 5` in `scout/evidence.py` as the single source for both.
+2. **Stage relevance.** An open question that should have been settled by now
+   stops being "open" and becomes observed: a document-resolvable item still
+   open at the Docs stage, or any item still open at the PPI stage, counts
+   against the car instead of for it.
+3. **Upside** (`Assessment.upside`) is the score the car could reach if its
+   still-open questions resolve favourably: `score.total + doc_gain +
+   cond_gain`, capped at 100, where `doc_gain`/`cond_gain` are the documentation
+   / condition headroom, capped by 5 (4) points per still-open document
+   (inspection) item, plus a one-time +5 if major service or an accident is
+   claimed without documentation.
+4. **New verdict path.** With open questions only (no observed conditional),
+   `score.total >= 45` and `upside >= 75`, at the Listing or Questions stage:
+   `Pursue conditionally`, "worth pursuing if the open questions check out."
+   The confidence-below-50 cap does not apply on this path — low confidence is
+   expected before the seller has answered anything. Otherwise (low score, low
+   upside, or Docs/PPI stage) it still caps at `Maybe / verify` as before.
+5. **Priority** (`Assessment.priority`, 0-100) ranks which car is worth
+   pursuing next: `round(0.4 * score.total + 0.6 * upside)`, minus 10 per
+   observed conditional, minus 8 for an unpriced or early-bid auction, minus 5
+   for a stale listing; zero for any hard/strategy/configuration gate.
+6. **Next steps** (`Assessment.next_steps`, up to 3): ask for the VIN if
+   missing; request records for open document items at the Listing stage; the
+   seller's own first question; book a PPI for open inspection items once
+   documents are in.
+7. `stage`, `upside` and `priority` are also in the published index
+   (`publish.INDEX_ASSESSMENT_FIELDS`); `open_questions`/`next_steps` stay
+   detail-only.
+
 ## 1.3.0 (2026-09-22)
 
 From the 2026-09-22 audit (data/audits/Hoopty_Scout_Audit_v1_20260922.md, #6-#9, #13, #17).

@@ -25,6 +25,7 @@ _INSPECTION = re.compile(
 
 DOC_MAX = 25          # documentation is 25 of the 100 points
 GAIN_PER_ITEM = 5     # observed on the GX470: documents moved documentation 10 -> 20
+COND_GAIN_PER_ITEM = 4  # condition points a resolved inspection-only item is worth (policy 1.4.0 upside)
 
 
 def classify(item_key: str, label: str = "") -> str:

@@ -21,6 +21,7 @@ from scout.publish import build_export, git_publish, write_export
 from scout.policy import POLICY_VERSION
 from scout.policy.preferences import MISSIONS
 from scout.policy.state import load_state, reset_state, save_state
+from scout.stage import stage_for
 
 app = FastAPI(title="Hoopty Scout")
 
@@ -100,6 +101,28 @@ def _task_end(result: str = "", token: str | None = None) -> None:
 @app.get("/api/task")
 def task_status() -> dict[str, Any]:
     return _task
+
+
+def _rederive_assessment(listing_id: int) -> None:
+    """Re-run the deterministic policy engine (free, no AI) on a listing's latest
+    stored assessment so stage/verdict/priority stay current after something
+    that changes stage_for()'s inputs (a status change, a document attached or
+    removed). No-op if the listing has never been assessed."""
+    a = db.latest_assessment(listing_id)
+    row = db.get_listing(listing_id)
+    if not a or not row:
+        return
+    prof = db.get_profile(row["profile_key"]) if row.get("profile_key") else None
+    if not prof:
+        return
+    from scout import market
+    from scout.policy.engine import rescore_assessment
+    state = load_state()
+    fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
+    stage = stage_for(row, db.list_documents(listing_id))
+    d = rescore_assessment(row, prof, a, state, fair=fair, stage=stage)
+    if d:
+        db.add_assessment(listing_id, d)
 
 
 @app.on_event("startup")
@@ -222,6 +245,8 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         updates["mission_user_set"] = 1
     db.update_listing(listing_id, updates)
     db.log_event("edit", listing_id, str(updates))
+    if "status" in updates:
+        _rederive_assessment(listing_id)
     return {"ok": True, **updates}
 
 
@@ -256,6 +281,7 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     comps = db.list_listings(role="comp", profile_key=prof["key"])
     from scout import market
     fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
+    stage = stage_for(row, db.list_documents(listing_id))
     snaps = db.list_snapshots(listing_id)
     history = db.vin_history(row.get("vin"), exclude_listing_id=listing_id)
     history["provenance"] = row.get("provenance")
@@ -285,7 +311,7 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     for c in history["vin_decode_contradictions"]:
         evidence.contradictions.append(Contradiction(**c))
     result = assess(row, prof, evidence, state, vin_history=history, fair=fair,
-                    mission=mission, model=model)
+                    mission=mission, model=model, stage=stage)
     data = result.model_dump()
     db.add_assessment(listing_id, data)
     db.update_listing(listing_id, {"analyzed_at": db.now(), "analysis_model": model, "mission": mission})
@@ -501,7 +527,8 @@ def rescore(assessments: bool = True) -> dict[str, Any]:
             if not (row and prof):
                 continue
             fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
-            d = rescore_assessment(row, prof, a, state, fair=fair)
+            stage = stage_for(row, db.list_documents(lid))
+            d = rescore_assessment(row, prof, a, state, fair=fair, stage=stage)
             if d:
                 db.add_assessment(lid, d)
                 redone += 1
@@ -557,6 +584,7 @@ def add_document(listing_id: int, payload: DocumentPayload) -> dict[str, Any]:
     doc_id = db.add_document(listing_id, payload.kind, payload.text, payload.title,
                              payload.source, payload.url, row.get("vin"))
     db.log_event("document_added", listing_id, f"{payload.kind} {len(payload.text)} chars")
+    _rederive_assessment(listing_id)
     return {"ok": True, "document_id": doc_id, "kind": payload.kind, "chars": len(payload.text),
             "note": "Re-assess this listing to fold the document into its verdict."}
 
@@ -569,8 +597,10 @@ def get_documents(listing_id: int) -> list[dict[str, Any]]:
 
 @app.delete("/api/documents/{doc_id}")
 def remove_document(doc_id: int) -> dict[str, Any]:
-    if not db.delete_document(doc_id):
+    doc = db.get_document(doc_id)
+    if not doc or not db.delete_document(doc_id):
         raise HTTPException(404, "not found")
+    _rederive_assessment(doc["listing_id"])
     return {"ok": True}
 
 

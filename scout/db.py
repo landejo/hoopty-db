@@ -827,6 +827,12 @@ def list_documents(listing_id: int, path: Path | None = None) -> list[dict[str, 
     return [dict(r) for r in rows]
 
 
+def get_document(doc_id: int, path: Path | None = None) -> dict[str, Any] | None:
+    with connect(path) as c:
+        row = c.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def delete_document(doc_id: int, path: Path | None = None) -> bool:
     with connect(path) as c:
         return c.execute("DELETE FROM documents WHERE id=?", (doc_id,)).rowcount > 0

@@ -58,27 +58,37 @@ def test_stock_z3_clean_structure_no_reinforcement_can_pursue():
     assert not [g for g in a.gates if g.kind in {"hard", "conditional"}]
 
 
-# 3. Z3 with missing rear-structure evidence -> capped at Maybe / verify even with a great score.
+# 3. Z3 with missing rear-structure evidence and nothing observed -> an open
+# question, not a negative finding (policy 1.4.0): worth pursuing conditionally
+# at the listing stage given the high upside, still documentation-capped.
 def test_z3_missing_rear_structure_is_capped():
     ev = _ev(doc=9, cond=9, val=9, fit=9, log=10, emo=9, quality=8,
              critical={"rear_structure": "claimed_only", "cooling_history": "satisfied"})
     a = assess(_listing(), _profile("z3_30i"), ev, STATE)
-    assert a.verdict == "Maybe / verify"
+    assert a.verdict == "Pursue conditionally" and "open questions check out" in a.verdict_reason
     assert a.score.documentation <= 20
     assert any(g.kind == "conditional" and g.key == "critical_missing:rear_structure" for g in a.gates)
     assert a.costs.risk_reserve == 1500 + 1000  # one unresolved conditional adds reserve
+    # Same evidence, but past the point it should have been settled -> observed.
+    a2 = assess(_listing(), _profile("z3_30i"), ev, STATE, stage="docs")
+    assert a2.verdict == "Maybe / verify"
 
 
 # 4. GX470 with no timing-belt documentation -> conditional gate; automatic is fine in the utility mission.
+# A single open document question with real upside at the listing stage -> Pursue conditionally.
 def test_gx470_no_timing_belt_docs():
     l = _listing(make="Lexus", model="GX470", transmission="Automatic", year=2007, mileage=160000, price=14000, engine_liters=4.7)
     ev = _ev(doc=8, cond=8, val=8, fit=7, log=9, emo=6, quality=7,
              critical={"timing_belt_water_pump": "missing", "suspension_condition": "satisfied", "rust_evaluation": "satisfied",
                        "warning_lights": "satisfied", "matching_tires": "satisfied", "leaks_cooling_history": "satisfied"})
     a = assess(l, _profile("gx470"), ev, STATE, mission="utility_capability")
-    assert a.verdict == "Maybe / verify"
+    assert a.verdict == "Pursue conditionally"
     assert not any(g.kind == "configuration" for g in a.gates)
     assert any(g.key == "critical_missing:timing_belt_water_pump" for g in a.gates)
+    assert any("timing" in s.lower() for s in a.next_steps)
+    # Once past the Docs stage the same still-open document item is observed, not a question.
+    a2 = assess(l, _profile("gx470"), ev, STATE, mission="utility_capability", stage="docs")
+    assert a2.verdict == "Maybe / verify"
 
 
 # 5. Salvage-title M Roadster with only seller assurances -> Maybe / verify at best, never Pursue.
@@ -233,7 +243,13 @@ def test_year_old_listing_is_capped_until_availability_confirmed():
     l = _listing(listing_date=(date.today() - timedelta(days=400)).isoformat())
     ev = _ev(doc=9, cond=9, val=9, fit=9, log=10, emo=8, quality=9, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"})
     a = assess(l, _profile("z3_30i"), ev, STATE)
-    assert a.verdict == "Maybe / verify" and any(g.key == "stale_listing" for g in a.gates)
+    # A stale listing is an open question (confirm it's still available), not a
+    # negative finding, so a strong car is worth pursuing conditionally on that.
+    assert a.verdict == "Pursue conditionally" and any(g.key == "stale_listing" for g in a.gates)
+    assert a.priority < 100  # the stale-listing penalty still knocks it down
+    # At the PPI stage a still-open question is treated as observed instead.
+    a2 = assess(l, _profile("z3_30i"), ev, STATE, stage="ppi")
+    assert a2.verdict == "Maybe / verify"
 
 
 def test_schema_trims_long_strings_instead_of_rejecting():

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from scout.evidence import COND_GAIN_PER_ITEM, GAIN_PER_ITEM, classify
 from scout.policy.preferences import (
     CATEGORY_POINTS, CONFIDENCE_PROVISIONAL, DOC_CAP_CONDITIONAL_MISSING, DOC_CAP_HARD_MISSING,
     LOGISTICS_CAP_BY_BAND, RELIST_MARKUP_FLAG, RELIST_PRICE_VALUE_CAP, SCORE_BANDS, VERDICT_RANK,
@@ -100,7 +101,56 @@ def compute_confidence(evidence: EvidenceInterpretation, gates: list[Gate], list
     return max(5, min(100, int(c)))
 
 
-def verdict_from(score: Score, confidence: int, gates: list[Gate]) -> tuple[str, str]:
+# Conditional keys that are an open question (evidence not gathered *yet*) rather
+# than an observed negative. Everything else conditional (critical_reservation:*,
+# salvage_or_rebuilt_title, permanent_warning_lights, modified_powertrain_undocumented,
+# remote_auction_no_ppi, ...) is an observed finding: it caps the verdict regardless of stage.
+_OPEN_FLAG_LABELS = {
+    "major_service_claimed_undocumented": "Major service claimed but not documented",
+    "accident_without_repair_docs": "Accident history without repair records and measurements",
+}
+_OPEN_FLAG_KEYS = set(_OPEN_FLAG_LABELS) | {"stale_listing"}
+
+
+def classify_conditionals(gates: list[Gate], stage: str) -> dict[str, list]:
+    """Split conditional gates into resolvable open questions (document /
+    inspection, with stage relevance applied) vs. observed negatives (policy 1.4.0)."""
+    doc_items: list[dict] = []
+    insp_items: list[dict] = []
+    observed: list[str] = []
+    for g in gates:
+        if g.kind != "conditional":
+            continue
+        is_critical_missing = g.key.startswith("critical_missing:")
+        if not (is_critical_missing or g.key in _OPEN_FLAG_KEYS):
+            observed.append(g.reason)
+            continue
+        if is_critical_missing:
+            item_key = g.key.split(":", 1)[1]
+            label = g.reason.split(": ", 1)[0] if ": " in g.reason else g.reason
+            status = "claimed_only" if "seller assurance only" in g.reason else "missing"
+            doc_type = classify(item_key, label) in ("document", "both")
+        else:
+            item_key, label, status, doc_type = g.key, _OPEN_FLAG_LABELS.get(g.key, g.reason), "open", True
+        # Stage relevance: a document-resolvable item still open after docs, or
+        # any item still open at the PPI stage, is treated as an observed negative.
+        if stage == "ppi" or (stage == "docs" and doc_type):
+            observed.append(g.reason)
+        else:
+            (doc_items if doc_type else insp_items).append({"key": item_key, "label": label, "status": status})
+    return {"document": doc_items, "inspection": insp_items, "observed": observed}
+
+
+def compute_upside(score: Score, classified: dict[str, list]) -> int:
+    """Score the car could reach if its still-open questions resolve favourably."""
+    n_doc, n_insp = len(classified["document"]), len(classified["inspection"])
+    bonus = 5 if any(it["key"] in _OPEN_FLAG_LABELS for it in classified["document"]) else 0
+    doc_gain = min(max(0, 25 - score.documentation), GAIN_PER_ITEM * n_doc + bonus) if (n_doc or bonus) else 0
+    cond_gain = min(max(0, 25 - score.condition), COND_GAIN_PER_ITEM * n_insp) if n_insp else 0
+    return min(100, score.total + doc_gain + cond_gain)
+
+
+def verdict_from(score: Score, confidence: int, gates: list[Gate], stage: str = "listing") -> tuple[str, str]:
     kinds = {g.kind for g in gates}
     if "strategy" in kinds:
         g = next(g for g in gates if g.kind == "strategy")
@@ -114,9 +164,25 @@ def verdict_from(score: Score, confidence: int, gates: list[Gate]) -> tuple[str,
     verdict = next(v for floor, v in SCORE_BANDS if score.total >= floor)
     reason = f"Score {score.total}/100"
     conds = [g for g in gates if g.kind == "conditional"]
-    if conds and VERDICT_RANK[verdict] < VERDICT_RANK["Maybe / verify"]:
-        verdict = "Maybe / verify"
-        reason += "; capped until resolved: " + "; ".join(g.reason for g in conds)
+    if conds:
+        classified = classify_conditionals(conds, stage)
+        if classified["observed"]:
+            if VERDICT_RANK[verdict] < VERDICT_RANK["Maybe / verify"]:
+                verdict = "Maybe / verify"
+                reason += "; capped until resolved: " + "; ".join(classified["observed"])
+        else:
+            # Nothing observed: every conditional here is an unanswered question,
+            # not a negative finding. Worth pursuing conditionally, early, if the
+            # upside is real; still capped once evidence should have arrived.
+            open_items = classified["document"] + classified["inspection"]
+            upside = compute_upside(score, classified)
+            if score.total >= 45 and upside >= 75 and stage in {"listing", "questions"}:
+                labels = "; ".join(it["label"] for it in open_items[:2])
+                return "Pursue conditionally", (f"Worth pursuing if the open questions check out: could reach "
+                                                f"{upside}/100 ({len(open_items)} open: {labels})")
+            if VERDICT_RANK[verdict] < VERDICT_RANK["Maybe / verify"]:
+                verdict = "Maybe / verify"
+                reason += "; capped until resolved: " + "; ".join(g.reason for g in conds)
     if confidence < CONFIDENCE_PROVISIONAL and VERDICT_RANK[verdict] < VERDICT_RANK["Maybe / verify"]:
         verdict = "Maybe / verify"
         reason += f"; capped: assessment confidence {confidence} below {CONFIDENCE_PROVISIONAL}"
