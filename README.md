@@ -36,7 +36,7 @@ Load the extension: `chrome://extensions` → Developer mode → **Load unpacked
 3. Click the Hoopty Scout toolbar icon → **Sync saved listings**. Leave *Include sold / ended* on
    so those rows become comps. The popup can be closed; progress continues.
 4. Open the workbench (http://127.0.0.1:8765). Cards show a preliminary Haiku score. Open a
-   card → **Analyze with Opus** for the deep read (roughly $0.50–1.50 per listing).
+   card → **Analyze with Opus** for the deep read (about $0.35 per listing, measured 2026-09-23).
 5. **Publish** (header button) exports the data and force-pushes it to `gh-pages` (see
    "GitHub Pages" below) — `main` is untouched.
 
@@ -118,12 +118,12 @@ Asking prices are never described as sale prices.
 
 | Step | Model | When | Cost (approx.) |
 |---|---|---|---|
-| Normalize: facts, profile pick, quick read, red flags, prelim scores | `SCOUT_MODEL_FAST` (Haiku) | every new/changed listing, comps included | ~$0.01 |
+| Normalize: facts, profile pick, quick read, red flags, prelim ratings | `SCOUT_MODEL_FAST` (Sonnet 5 by default; Haiku 4.5 is the cheaper option) | every new/changed listing, comps included | ~$0.02 |
 | Profile generation for an unknown make/model/generation | `SCOUT_MODEL_DEEP` (Opus) | once per new model, marked *unverified* | ~$0.30 |
-| Full assessment: evidence interpretation for the policy engine (facts, provenance, critical evidence, flags, ratings, questions, PPI focus), with up to 12 photos | `SCOUT_MODEL_DEEP` (Opus) | only when you click | ~$1 |
-| Quick assessment: identical prompt and photos on the mid tier, for triage across the board | `SCOUT_MODEL_MID` (Sonnet) | only when you click, or "quick-assess all" | ~$0.30 |
+| Full assessment: evidence interpretation for the policy engine (facts, provenance, critical evidence, flags, ratings, questions, PPI focus), with up to 12 photos (downscaled to 1568 px, cached in data/photo_cache) | `SCOUT_MODEL_DEEP` (Opus) | only when you click | ~$0.35 |
+| Quick assessment: identical prompt and photos on the mid tier, for triage across the board | `SCOUT_MODEL_MID` (Sonnet) | only when you click, or "quick-assess all" | ~$0.15 |
 
-Every model response passes through `scout/coerce.py` before it is stored. Raw responses are
+Every call is logged with tokens and estimated cost in the `ai_calls` table (`GET /api/ai-spend`); the static part of each system prompt is cached. Every model response passes through `scout/coerce.py` before it is stored. Raw responses are
 written to `data/last_*.log` for debugging.
 
 ## GitHub Pages
