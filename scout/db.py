@@ -824,3 +824,37 @@ def documents_by_listing(path: Path | None = None) -> dict[int, list[dict[str, A
         for r in c.execute("SELECT listing_id, kind, title, created_at, LENGTH(text) AS chars FROM documents ORDER BY id"):
             out.setdefault(r["listing_id"], []).append(dict(r))
     return out
+
+
+def merge_listings(src_id: int, dst_id: int, path: Path | None = None) -> dict[str, Any]:
+    """Fold a duplicate listing into the one to keep. Sites reissue URLs (a
+    /cars-for-sale/ path becoming a /marketplace/buy/<vin> one, say), which
+    creates a second row for the same car. Documents, assessments, snapshots
+    and the user's own fields move to dst; src is deleted."""
+    src, dst = get_listing(src_id, path), get_listing(dst_id, path)
+    if not src or not dst:
+        raise ValueError("both listings must exist")
+    moved = {"documents": 0, "assessments": 0, "snapshots": 0, "fields": []}
+    with connect(path) as c:
+        for table, key in (("documents", "documents"), ("assessments", "assessments"), ("snapshots", "snapshots")):
+            moved[key] = c.execute(f"UPDATE {table} SET listing_id=? WHERE listing_id=?", (dst_id, src_id)).rowcount
+        c.execute("UPDATE vehicle_events SET listing_id=? WHERE listing_id=?", (dst_id, src_id))
+        # The user's own decisions win over an empty destination.
+        sets = {}
+        for f, empty in (("status", "New"), ("notes", ""), ("verdict_override", None),
+                         ("verdict_override_reason", None), ("mission", None), ("vin", None), ("pinned", 0)):
+            sv, dv = src.get(f), dst.get(f)
+            if sv not in (None, "", empty) and dv in (None, "", empty):
+                sets[f] = sv
+                moved["fields"].append(f)
+        if src.get("mission_user_set") and not dst.get("mission_user_set"):
+            sets["mission_user_set"] = 1
+        # Keep the earliest sighting: it is when the car actually appeared.
+        if src.get("first_seen") and src["first_seen"] < (dst.get("first_seen") or "9999"):
+            sets["first_seen"] = src["first_seen"]
+            moved["fields"].append("first_seen")
+        if sets:
+            sets["updated_at"] = now()
+            c.execute(f"UPDATE listings SET {', '.join(k + '=?' for k in sets)} WHERE id=?", [*sets.values(), dst_id])
+        c.execute("DELETE FROM listings WHERE id=?", (src_id,))
+    return moved

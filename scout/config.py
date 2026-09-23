@@ -54,6 +54,7 @@ SITES = {
     "autotrader": "Autotrader",
     "carsandbids": "Cars & Bids",
     "bat": "Bring a Trailer",
+    "builtforbackroads": "Built for Backroads",
 }
 AUCTION_SITES = {"carsandbids", "bat"}
 
