@@ -29,40 +29,14 @@ CONDITIONAL_FLAGS = {
 
 
 def is_excluded(make: str | None, model: str | None, active_exclusions: list[str]) -> str | None:
-    """Check if a make/model is in the active exclusions list.
-
-    Matching logic:
-    - Normalize both the full name and exclusions by lowercasing, stripping spaces and hyphens
-    - Match if the normalized exclusion is a substring of the normalized name
-    - OR if the model part of the exclusion (everything after the first word) is a substring of the normalized model
-      (e.g., "miata" in "mx5miata" matches "Mazda Miata")
-    """
-    if not active_exclusions:
-        return None
-
-    full_name = f"{make or ''} {model or ''}".lower().replace("-", "").replace(" ", "")
-    model_normalized = (model or "").lower().replace("-", "").replace(" ", "")
-
-    for ex in active_exclusions:
-        ex_normalized = ex.lower().replace("-", "").replace(" ", "")
-        # Full name match
-        if ex_normalized in full_name:
+    """Match an exclusion ("Mazda MX-5") against "make model", ignoring case, spaces and
+    hyphens; the model part alone (3+ chars) also matches, so "Miata" catches "MX-5 Miata"."""
+    norm = lambda s: (s or "").lower().replace("-", "").replace(" ", "")
+    full, mdl = norm(f"{make or ''} {model or ''}"), norm(model)
+    for ex in active_exclusions or []:
+        model_part = norm(ex.split(" ", 1)[1]) if " " in ex.strip() else ""
+        if norm(ex) in full or (len(model_part) >= 3 and model_part in mdl):
             return ex
-        # Model-part match: split on first word and check if the rest is in the model
-        parts = ex_normalized.split(" ", 1) if " " in ex else ex_normalized.split(" ")
-        if len(parts) > 1:
-            model_part = parts[1]
-            if model_part in model_normalized:
-                return ex
-        # Also try splitting the normalized (no-space) version at the first word boundary
-        # E.g., "mazdamx5" -> look for "mx5" in model_normalized
-        ex_parts = ex.lower().split()
-        if len(ex_parts) > 1:
-            # Get everything after the first word, normalized
-            model_part_from_ex = "".join(ex_parts[1:]).replace("-", "")
-            if model_part_from_ex and model_part_from_ex in model_normalized:
-                return ex
-
     return None
 
 
