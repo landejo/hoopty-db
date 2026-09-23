@@ -7,30 +7,29 @@ from typing import Any
 
 from scout import coerce
 from scout.ai import call_text
-from scout.config import AXES, CONFIG, SITES
+from scout.config import CONFIG, SITES
 
-SYSTEM = """You normalize used-vehicle listings for a private buyer in Carmel, CA.
+# STATIC: identical on every sync-time call, regardless of listing or profile
+# registry - eligible for prompt caching. The profile registry and today's
+# date are listing/time-dependent and live in the DYNAMIC template instead.
+STATIC_SYSTEM = """You normalize used-vehicle listings for a private buyer in Carmel, CA.
 You receive the raw text of one listing (plus any structured hints the scraper
 found). Return ONE JSON object and nothing else.
-
-KNOWN VEHICLE PROFILES (pick the best profile_key; use "new" if none fits the
-make/model/generation, and "skip" if the listing is not a vehicle):
-{registry}
 
 Fields (omit anything you cannot determine; never guess a VIN):
 - is_vehicle: true/false. false for kayaks, parts, trailers, wheels, anything
   that is not a road vehicle for sale. When false, set profile_key "skip".
 - ratings: object with three 0-10 integers and a short rationale each:
-    documentation: {{score, why}} how VERIFIABLE the listing is: VIN shown, records
+    documentation: {score, why} how VERIFIABLE the listing is: VIN shown, records
       or receipts described, photos of specific areas, history report, seller
       cooperation. 0-2 = bare claims, 5 = some specifics, 8+ = receipts/reports.
-    condition: {{score, why}} evidence-based condition: leaks, warning lights,
+    condition: {score, why} evidence-based condition: leaks, warning lights,
       tires, rust, structure, deferred work, accident history. Anchors: 2 = a
       stated problem or visible neglect; 5 = nothing wrong stated, nothing
       proven; 8+ ONLY with photographic or receipt evidence of specific good
       condition (fresh tires by date, dry underside, recent major service with
       invoices). "Runs great" is not evidence.
-    spec: {{score, why}} desirability of THIS exact specification for an
+    spec: {score, why} desirability of THIS exact specification for an
       enthusiast buyer. Anchors: 5 = a typical example of the model; 3 or below
       = base trim, automatic where a manual exists, unpopular colour, cheap or
       incoherent modifications; 7 = one genuinely desirable trait named
@@ -52,15 +51,15 @@ Fields (omit anything you cannot determine; never guess a VIN):
 - location "City, ST", vin (17 chars only), seller_type (Private / Dealer /
   Auction / Unknown), seller_name, title_status, accidents (yes/no/unknown),
   num_owners (int)
-- listing_date: ISO date the listing was posted. TODAY IS {today}. Convert
-  "Listed 3 weeks ago" to today minus 21 days. For auctions, the date the
-  auction opened if shown, else omit.
+- listing_date: ISO date the listing was posted. Convert a relative phrase
+  ("Listed 3 weeks ago") using today's date, given below. For auctions, the
+  date the auction opened if shown, else omit.
 - auction_end: for auctions only, the closing time as ISO "YYYY-MM-DDTHH:MM"
   in Pacific time when the page states it (e.g. "Ending September 9th at 1:06
   PM PDT"); if the page only says "5 days" or "2:39:23" left, put that text in
   auction_time_left instead.
 - auction_time_left: the site's remaining-time text, verbatim, if present
-- price_drops: array of {{prior_price (int), amount (int), note}} for price
+- price_drops: array of {prior_price (int), amount (int), note} for price
   reductions the SITE or SELLER states (e.g. "Price drop -$5,000",
   "$300 price drop", "was $19,995 now $18,995", "reduced from"). Derive
   prior_price = current price + amount when only the amount is given. Ignore
@@ -77,11 +76,17 @@ Fields (omit anything you cannot determine; never guess a VIN):
   the page, generic wear you would expect on any car this old. If nothing in
   the listing is actually wrong, return an empty array.
 - summary: 2-3 plain sentences, buyer-oriented
-- scores: quick 1-5 integers on any of these axes you can reason about:
-{axes}
-- profile_key (from the list above, or "new"/"skip"), profile_confidence 1-5
+- profile_key (from the registry given below, or "new"/"skip"), profile_confidence 1-5
 
 Be literal. Do not invent facts the text does not support."""
+
+# DYNAMIC: the profile registry changes as new models are added, and today's
+# date is needed for relative-date math - neither is cacheable across calls.
+DYNAMIC_TEMPLATE = """KNOWN VEHICLE PROFILES (pick the best profile_key; use "new" if none fits the
+make/model/generation, and "skip" if the listing is not a vehicle):
+{registry}
+
+TODAY IS {today}."""
 
 
 def _registry_text(profiles: list[dict[str, Any]]) -> str:
@@ -91,8 +96,8 @@ def _registry_text(profiles: list[dict[str, Any]]) -> str:
 
 def normalize_listing(raw_text: str, hints: dict[str, Any], site: str,
                       profiles: list[dict[str, Any]]) -> dict[str, Any]:
-    axes = "\n".join(f"  * {k}: {v}" for k, v in AXES.items())
-    system = SYSTEM.format(registry=_registry_text(profiles), today=date.today().isoformat(), axes=axes)
+    dynamic = DYNAMIC_TEMPLATE.format(registry=_registry_text(profiles), today=date.today().isoformat())
+    system = [STATIC_SYSTEM, dynamic]
     hint_lines = [f"SITE: {SITES.get(site, site)}"]
     for k, v in hints.items():
         if v not in (None, "", [], {}):

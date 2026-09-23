@@ -43,7 +43,7 @@ INDEX_LISTING_DROP = {"photos", "provenance", "timeline", "last_error"}
 # chip, score badge, confidence, model tag, staleness note) — not the full
 # evidence/gates/costs payload.
 INDEX_ASSESSMENT_FIELDS = ["verdict", "model", "assessed_at", "policy_version", "shared_from", "context_changed", "confidence",
-                           "stage", "upside", "priority"]
+                           "stage", "upside", "priority", "headline"]
 # Normalized fields the board reads (search text, red-flag/quick-gate chips,
 # price-drop total) — not the full ratings/breakdown/vin-decode blobs.
 INDEX_NORMALIZED_FIELDS = ["prelim_summary", "red_flags", "quick_gates", "price_drops"]

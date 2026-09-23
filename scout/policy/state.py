@@ -7,9 +7,14 @@ import json
 from typing import Any
 
 from scout import db
+from scout.policy.preferences import COMPACT_CONTEXT
 
 DEFAULT_STATE: dict[str, Any] = {
     "urgency_mode": "accelerated_bridge",
+    # Sent verbatim to every assessment (assess.py falls back to COMPACT_CONTEXT
+    # if this is ever missing). Editable on the viewer's Policy page so it can be
+    # corrected/extended without a code change.
+    "buyer_context": COMPACT_CONTEXT,
     "budget": {
         "ideal_low": 10000,
         "ideal_high": 13000,

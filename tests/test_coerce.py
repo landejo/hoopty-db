@@ -47,14 +47,18 @@ def test_analysis_checks_filtered_to_profile_keys():
     assert out["scores"] == {"condition": 5}
 
 
-def test_profile_coerce_requires_weights_over_known_axes():
-    assert coerce.profile({"key": "x", "label": "X", "weights": {"foo": 1}}) is None
-    p = coerce.profile({"key": "Porsche 911-997", "label": "911", "weights": {"reliability": 2, "value": 1, "engagement": 1},
-                        "checks": [{"key": "IMS Bearing", "label": "IMS"}, {"key": "IMS Bearing", "label": "dup"}],
-                        "years": [2005, 2012]})
+def test_profile_coerce_requires_at_least_three_checks():
+    # Fewer than 3 valid checks: not a real profile.
+    assert coerce.profile({"key": "x", "label": "X", "checks": [{"key": "a", "label": "A"}]}) is None
+    p = coerce.profile({"key": "Porsche 911-997", "label": "911",
+                        "checks": [{"key": "IMS Bearing", "label": "IMS"}, {"key": "IMS Bearing", "label": "dup"},
+                                   {"key": "RMS", "label": "RMS leak"}, {"key": "Bore scoring", "label": "Bore scoring"}],
+                        "years": [2005, 2012], "weights": {"reliability": 2}, "dealbreaker_rules": ["Salvage title"]})
     assert p["key"] == "porsche_911_997"
-    assert abs(sum(p["weights"].values()) - 1) < 1e-6
-    assert p["checks"] == [{"key": "ims_bearing", "label": "IMS"}]
+    # weights/dealbreaker_rules are no longer requested from the model and are
+    # never populated from stray input; weights_json is stored empty ({}).
+    assert p["weights"] == {} and p["dealbreaker_rules"] == []
+    assert p["checks"] == [{"key": "ims_bearing", "label": "IMS"}, {"key": "rms", "label": "RMS leak"}, {"key": "bore_scoring", "label": "Bore scoring"}]
     assert p["years"] == [2005, 2012]
 
 

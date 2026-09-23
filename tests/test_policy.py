@@ -346,7 +346,8 @@ def test_contradiction_with_tracker_metadata_or_missing_vin_is_not_a_gate():
 
 def test_generated_profile_reserve_is_clamped_and_never_hard():
     from scout import coerce
-    p = coerce.profile({"key": "x", "label": "X", "weights": {"reliability": 1, "value": 1, "condition": 1}, "risk_reserve": 7500,
+    p = coerce.profile({"key": "x", "label": "X", "risk_reserve": 7500,
+                        "checks": [{"key": "belt", "label": "Belt"}, {"key": "clutch", "label": "Clutch"}, {"key": "rust", "label": "Rust"}],
                         "critical_evidence": [{"key": "belt", "label": "Belt receipt", "severity": "hard"}]})
     assert p["risk_reserve"] == 4000 and p["critical_evidence"][0]["severity"] == "conditional"
 

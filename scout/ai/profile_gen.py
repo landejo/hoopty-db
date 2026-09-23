@@ -6,8 +6,10 @@ from typing import Any
 
 from scout import coerce
 from scout.ai import call_json_text
-from scout.config import AXES, CONFIG
+from scout.config import CONFIG
 
+# Fully static: nothing here varies between calls (the make/model/generation
+# go in the user message), so the whole prompt is one cacheable block.
 SYSTEM = """You are a veteran independent mechanic and used-car buyer's advocate.
 Build a BUYER PROFILE for a specific make/model/generation so that later
 analyses of individual listings can be model-aware. The buyer lives in
@@ -27,13 +29,9 @@ Return ONE JSON object:
 - repairs_12mo: likely additional 12-month items
 - market_notes: what moves price for this model (trims, colors, records,
   transmission, mileage bands), 2-4 sentences
-- weights: object over these axes (only the ones that matter for this car;
-  numbers sum roughly to 1):
-{axes}
-- checks: 8-16 objects {{key: snake_case, label: short inspection item}}
+- checks: 8-16 objects {key: snake_case, label: short inspection item}
   covering the weak points (these become a PPI checklist)
-- dealbreaker_rules: 2-6 short rules (e.g. "Salvage title", "Automatic")
-- critical_evidence: 1-5 objects {{key: snake_case, label, severity: "conditional"}}
+- critical_evidence: 1-5 objects {key: snake_case, label, severity: "conditional"}
   for the model-specific EVIDENCE a buyer should obtain before purchase:
   receipts, photos of a specific area, scan or test results. Evidence only:
   not wish lists (books, tool kits, original wheels) and not "unmodified".
@@ -51,13 +49,11 @@ Be specific to the generation. No prose outside the JSON."""
 
 def generate_profile(make: str, model: str, generation: str | None, year: int | None,
                      sample_text: str = "") -> dict[str, Any] | None:
-    axes = "\n".join(f"  * {k}: {v}" for k, v in AXES.items())
-    system = SYSTEM.format(axes=axes)
     user = (
         f"MAKE: {make}\nMODEL: {model}\nGENERATION: {generation or 'unknown'}\n"
         f"EXAMPLE YEAR: {year or 'unknown'}\n\n"
         f"EXAMPLE LISTING (for context only):\n{sample_text[:6000]}"
     )
-    text = call_json_text(CONFIG.model_deep, system, user, max_tokens=24000,
+    text = call_json_text(CONFIG.model_deep, SYSTEM, user, max_tokens=24000,
                           log_name="last_profile_gen", effort="high")
     return coerce.profile(coerce.parse_json(text))

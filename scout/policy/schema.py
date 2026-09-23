@@ -407,6 +407,7 @@ class Assessment(BaseModel):
     confidence: int = Field(ge=0, le=100)
     verdict: Literal["Pursue", "Pursue conditionally", "Maybe / verify", "Reject", "Do not pursue"]
     verdict_reason: str
+    headline: str = ""    # deterministic one-sentence summary (verdict + stage + main driver), computed after the verdict
     costs: CostBreakdown
     evidence: EvidenceInterpretation
     vin_history: dict = Field(default_factory=dict)

@@ -13,34 +13,31 @@ from pydantic import ValidationError
 
 from scout import coerce
 from scout.ai import call_json_text
+from scout.ai.photos import photo_blocks
 from scout.config import CONFIG, SITES
 from scout.policy.preferences import CATEGORY_LABELS, CATEGORY_POINTS, COMPACT_CONTEXT
 from scout.policy.schema import EvidenceInterpretation, Flags
 
-SYSTEM = """You are a veteran independent mechanic and buyer's advocate helping Jason
+# STATIC / DYNAMIC split for prompt caching: the STATIC block (role, framing
+# rules, vocabularies, output schema, rubric anchors) is identical for every
+# listing and goes first so its cache prefix is reused; the DYNAMIC block
+# (buyer context/state, mission guidance, profile text, the critical-evidence
+# list for THIS model, today's date) changes per call and goes second. Only
+# the first (static) system block gets cache_control (see scout/ai/__init__.py).
+# flag_keys/category_keys/category_help never vary across calls either, so
+# they're baked into STATIC_SYSTEM once at import time, not re-rendered per call.
+_STATIC_TEMPLATE = """You are a veteran independent mechanic and buyer's advocate helping Jason
 evaluate ONE saved used-car listing. You interpret evidence; deterministic code
 applies the gates, arithmetic, score, costs, and verdict afterwards. Be literal,
 asymmetric about risk, and never turn missing evidence into a positive.
 
-BUYER CONTEXT:
-{context}
-
-CURRENT STATE (editable; authoritative over anything older):
-{state}
-
-MISSION FOR THIS LISTING: {mission}
-{mission_guidance}
-
-BUYER PROFILE FOR THIS MODEL:
-{profile}
-
-MODEL-CRITICAL EVIDENCE to report on (use these exact keys; status is one of
-satisfied / claimed_only / missing / failed / not_applicable; "satisfied" needs a
-receipt, photo, report, or specialist inspection, never a seller sentence. Use
-"not_applicable" when the item cannot apply to THIS car — e.g. an S54 rod-bearing
-record on a non-M or pre-2001 car, a convertible-top item on a coupe — and say why
-in `evidence`; do not report such an item as "missing"):
-{critical}
+MODEL-CRITICAL EVIDENCE: the dynamic block below lists the exact keys to
+report on for this model. status is one of satisfied / claimed_only / missing
+/ failed / not_applicable; "satisfied" needs a receipt, photo, report, or
+specialist inspection, never a seller sentence. Use "not_applicable" when the
+item cannot apply to THIS car — e.g. an S54 rod-bearing record on a non-M or
+pre-2001 car, a convertible-top item on a coupe — and say why in `evidence`;
+do not report such an item as "missing".
 
 ATTACHED DOCUMENTS: when the user block contains an "ATTACHED DOCUMENTS"
 section, that is GOLD-TIER evidence — a history report, invoices, service
@@ -67,34 +64,55 @@ FACT STATUS vocabulary: verified (established by strong evidence), claimed
 (seller assertion), inferred (your reasoning, label it so), unknown.
 
 Return ONE JSON object with exactly these keys:
-- facts: array of {{key, value, status, source, note}} for the important facts:
+- facts: array of {key, value, status, source, note} for the important facts:
   vin, year, make, model, trim, engine, transmission, mileage, exterior_color,
   interior_color, title_status, owners, ownership_duration, accident_history,
   modifications, records_available, warning_lights, leaks_cooling, tires,
   suspension, structure, smog_status, seller_cooperation, ppi_access,
   auction_reserve, auction_close_pacific. Include an entry with status
   "unknown" for anything the listing does not establish.
-- contradictions: array of {{topic, detail, severity: minor|material|identity}}
+- contradictions: array of {topic, detail, severity: minor|material|identity}
   (year/engine/trim mismatch, mileage inconsistencies, title, ownership, dates).
-- critical_evidence: array of {{key, status, evidence, source}} for EVERY key
-  listed above.
+- critical_evidence: array of {key, status, evidence, source} for EVERY key
+  listed under MODEL-CRITICAL EVIDENCE in the dynamic block below.
 - flags: object with these keys, each "yes" / "no" / "unknown":
-  {flag_keys}
+  __FLAG_KEYS__
   Use "yes" only on evidence; "unknown" when the listing is silent.
-- ratings: object with {category_keys}; each {{rating: 0-10, rationale}}.
-  Meanings (points in parentheses are applied by code, not you):
-{category_help}
-  Rate documentation on what is VERIFIABLE, not on how much the seller wrote.
-  Two different things live in this category and both count: (a) IDENTITY AND
-  TERMS — VIN, stock number, itemised price and fees, price history, title and
-  accident data, equipment/build detail, named seller and contact; and (b)
-  MAINTENANCE AND CONDITION EVIDENCE — receipts, scans, inspection reports,
-  photographs of the specific areas at risk. A dealer listing with a VIN, a
-  full equipment list and an itemised price is NOT "nothing verifiable"; it is
-  strong on (a) and empty on (b). Say which of the two is missing, and never
-  describe a listing as having no verifiable content when it identifies the
-  car precisely. A 25-point category: roughly up to 10 for (a) alone, the rest
-  earned by (b).
+- ratings: object with __CATEGORY_KEYS__; each {rating: 0-10, rationale}.
+  Points in parentheses are applied by code, not you. Unknown evidence pulls a
+  rating toward the middle-low, never up; an 8+ requires SPECIFIC VERIFIABLE
+  evidence, not seller prose:
+__CATEGORY_HELP__
+  * documentation: 0-2 bare claims, no VIN, no records; 4-5 partial — either
+    identity/terms (VIN, itemised price, title/accident data) OR maintenance
+    evidence (receipts, photos of at-risk areas), not both; 6-7 both present
+    but incomplete; 8-10 VIN + full itemised terms + receipts/reports/photos
+    of the specific at-risk areas. A dealer listing with a VIN and a full
+    equipment list is NOT "nothing verifiable" — say which half is missing.
+  * condition: 0-2 a stated fault or visible defect/neglect with no repair
+    evidence; 5 nothing wrong stated, nothing proven either way (the default
+    when condition is simply unknown); 6-7 partial evidence of good
+    condition; 8-10 ONLY with photographic or receipt evidence of specific
+    good condition (fresh tires by date, dry underside, recent major service
+    with invoices, clean PPI). "Runs great" is not evidence.
+  * price_value: relative to the FAIR VALUE ESTIMATE when given, else the
+    comps/peers: at fair value with no known issues = 5; 10%+ below fair
+    value with no known issues = 7-8; priced above fair value = 3 or below.
+    Known-work items pull this down further even at a good price.
+  * mission_fit: 0-2 conflicts with the mission or urgency mode (wrong
+    transmission where required, does not solve the bridge problem); 5 a
+    plausible, unremarkable fit; 8-10 decisively fits (available now,
+    reliable, right transmission, within the budget band).
+  * logistics: relative to distance from Carmel, CA and whether a PPI can be
+    arranged before money moves — NOT a risk judgement. 0-2 far away with no
+    stated inspection access; 5 moderate distance, access unclear; 8-10
+    close, or PPI/inspection readily arranged, straightforward transport, CA
+    registration/smog feasible.
+  * emotional_spec_fit: 5 = a typical example of the model; 7 = one genuinely
+    desirable trait named (rare colour, notable manual, hardtop, sport
+    package, documented originality); 9-10 = several such traits together;
+    3 or below = base/unpopular trim, automatic where a manual exists, or
+    cheap/incoherent modifications.
 
 FRAMING RULES:
 - Distance, transport, travel and dealer/doc fees are LOGISTICS and COST
@@ -118,24 +136,20 @@ FRAMING RULES:
 - DO NOT compute your own all-in, total-cost or ceiling figures in prose. The
   cost engine does that from your two estimates. Never assert that a car
   "approaches" or "exceeds" a budget ceiling; give the estimates and let the
-  arithmetic speak. Quote budget figures only from the state block above.
+  arithmetic speak. Quote budget figures only from the state block in the
+  dynamic message.
 - PHOTOS: some captured listing photos are attached. Describe only what you
   can actually see, and give photo-derived facts the source "photo". The
   attached set is what the tracker captured, NOT the listing's full gallery:
   never state how many photos the listing has, and never call something
   "unverifiable" merely because it is not in the attached photos; say
   "not examined here" and put it in unknowns.
-  Rate condition on evidence; unknown areas pull the rating down.
-  Rate price_value against the comps/peers given and the buyer's budget.
-  Rate mission_fit for the stated mission and urgency mode.
-  Rate logistics for distance from Carmel, CA, PPI access, transport, smog.
-  Rate emotional_spec_fit for color, spec, body style, character.
 - evidence_quality: 0-10, how much of the KEY evidence is verifiable from
   receipts, photos, reports, or inspection (not seller prose).
-- immediate_service_estimate: {{low, high}} USD: LIKELY first-30-day catch-up for a
+- immediate_service_estimate: {low, high} USD: LIKELY first-30-day catch-up for a
   typical example of this model at this age/mileage (fluids, tires by date,
   cooling plastics, bushings). Planning figure; not counted in the all-in.
-- known_work_estimate: {{low, high}} USD: KNOWN REPAIRS, i.e. work this listing
+- known_work_estimate: {low, high} USD: KNOWN REPAIRS, i.e. work this listing
   itself establishes as needed on this car: a stated fault, a visible defect
   in the photos, a disclosed warning light, tires with date codes older than
   about six years or described as old (they must be replaced), a documented
@@ -143,7 +157,7 @@ FRAMING RULES:
   This IS counted in the all-in and in the maximum price.
 - known_work_items: short strings naming each item behind known_work_estimate
   (e.g. "four tires, 2018 date codes", "rear main seal leak disclosed").
-- expected_hammer: {{low, high}} USD for an AUCTION only, or null.
+- expected_hammer: {low, high} USD for an AUCTION only, or null.
 - positives: 3-6 strings, most important first.
 - concerns: 3-6 strings, most important first (model weak points the listing
   is silent on count as concerns).
@@ -155,10 +169,46 @@ FRAMING RULES:
 - what_would_change_verdict: 2-5 strings, how it could move up (or down).
 - mission_note: 1-2 sentences on why it fits or conflicts with the mission and
   urgency mode. If it ranks well only as a pragmatic bridge, say so.
-- rationale: 4-8 sentences leading with the result. Cite evidence.
-- next_action: ONE concrete next action.
+- rationale: 4-8 sentences leading with the EVIDENCE FINDING — what this
+  listing establishes, what is observed wrong, what remains open — never
+  state or imply a verdict, recommendation, or buy/pass judgment ("a strong
+  buy", "worth pursuing", "should be rejected", etc). The verdict is computed
+  from your ratings after you answer, by code you cannot see; a rationale
+  that prejudges it can end up sitting next to a contradicting computed
+  verdict. Cite evidence.
+- next_action: ONE concrete next action, phrased as a step (not a verdict).
 
-TODAY IS {today}. No prose outside the JSON."""
+No prose outside the JSON."""
+
+_DYNAMIC_TEMPLATE = """BUYER CONTEXT:
+{context}
+
+CURRENT STATE (editable; authoritative over anything older):
+{state}
+
+MISSION FOR THIS LISTING: {mission}
+{mission_guidance}
+
+BUYER PROFILE FOR THIS MODEL:
+{profile}
+
+MODEL-CRITICAL EVIDENCE to report on (use these exact keys; see the static
+instructions above for the status vocabulary):
+{critical}
+
+TODAY IS {today}."""
+
+STATIC_SYSTEM = _STATIC_TEMPLATE.replace(
+    "__FLAG_KEYS__", ", ".join(Flags.model_fields)
+).replace(
+    "__CATEGORY_KEYS__", ", ".join(CATEGORY_POINTS)
+).replace(
+    "__CATEGORY_HELP__", "\n".join(f"    * {k} ({v} pts): {CATEGORY_LABELS[k]}" for k, v in CATEGORY_POINTS.items())
+)
+
+# Backward-compatible alias: some callers/tests refer to the full static
+# system prompt as SYSTEM (it's the block that carries FRAMING RULES etc).
+SYSTEM = STATIC_SYSTEM
 
 def _mission_guidance(mission: str, state: dict[str, Any]) -> str:
     """Budget figures come from the live policy state, never hardcoded."""
@@ -173,34 +223,6 @@ MISSION_GUIDANCE = {
     "future_keeper": "A selective longer-term enthusiast purchase. Higher price can be justified only by genuine superiority and documentation; say plainly if it is attractive only as a keeper and conflicts with the current cash-preservation strategy.",
     "utility_capability": "Capability-oriented SUV branch. Automatic is fine. Must justify itself by capability or character the RX 350 does not already supply.",
 }
-
-
-MAX_PHOTOS = 12
-MAX_PHOTO_BYTES = 4_000_000
-
-
-def photo_blocks(urls: list[str], limit: int = MAX_PHOTOS) -> list[dict[str, Any]]:
-    """Download captured photos and attach them as base64 image blocks. Any
-    failure (expired CDN link, hotlink block, huge file) just skips that photo."""
-    import base64
-    import urllib.request
-    out: list[dict[str, Any]] = []
-    for url in urls:
-        if len(out) >= limit:
-            break
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh) hoopty-scout/0.2", "Accept": "image/*"})
-            with urllib.request.urlopen(req, timeout=8) as r:  # noqa: S310
-                ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-                if ctype not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
-                    continue
-                data = r.read(MAX_PHOTO_BYTES + 1)
-            if len(data) > MAX_PHOTO_BYTES or len(data) < 2000:
-                continue
-            out.append({"type": "image", "source": {"type": "base64", "media_type": ctype, "data": base64.b64encode(data).decode("ascii")}})
-        except Exception:
-            continue
-    return out
 
 
 DOC_CHARS = 30_000
@@ -266,13 +288,14 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
     critical = "\n".join(f"  - {c['key']}: {c.get('label', c['key'])} [{c.get('severity', 'conditional')}]"
                          for c in profile.get("critical_evidence") or []) or "  (none defined for this model)"
     state_view = {k: state.get(k) for k in ("urgency_mode", "budget", "current_vehicles", "active_exclusions", "deprioritized", "home_location", "travel", "capability_intent", "high_mileage_rule")}
-    system = SYSTEM.format(
-        context=COMPACT_CONTEXT, state=json.dumps(state_view, indent=1), mission=mission,
+    context = state.get("buyer_context") or COMPACT_CONTEXT
+    dynamic = _DYNAMIC_TEMPLATE.format(
+        context=context, state=json.dumps(state_view, indent=1), mission=mission,
         mission_guidance=_mission_guidance(mission, state), profile=_profile_text(profile), critical=critical,
-        flag_keys=", ".join(Flags.model_fields), category_keys=", ".join(CATEGORY_POINTS),
-        category_help="\n".join(f"    * {k} ({v} pts): {CATEGORY_LABELS[k]}" for k, v in CATEGORY_POINTS.items()),
         today=date.today().isoformat(),
     )
+    system = [STATIC_SYSTEM, dynamic]
+    listing_id = listing.get("id")
     facts = {k: listing.get(k) for k in (
         "site", "url", "title", "year", "make", "model", "generation", "trim", "engine", "engine_liters",
         "transmission", "mileage", "price", "price_kind", "sold_price", "location", "vin", "seller_type",
@@ -298,7 +321,8 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
         + _documents_block(listing.get("id"))
     )
     user = photos + [{"type": "text", "text": user_text}] if photos else user_text
-    text = call_json_text(model or CONFIG.model_deep, system, user, max_tokens=32000, log_name="last_assess", effort="high")
+    text = call_json_text(model or CONFIG.model_deep, system, user, max_tokens=32000, log_name="last_assess",
+                          effort="high", listing_id=listing_id)
     data = coerce.parse_json(text)
     try:
         return EvidenceInterpretation.model_validate(data)
@@ -306,11 +330,14 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
         missing = [".".join(str(x) for x in err["loc"]) for err in e.errors() if err["type"] == "missing"]
         if not missing:
             raise RuntimeError(f"model output failed schema validation: {e.errors()[:3]}")
-    # One retry: the answer came back without required keys. Ask again, naming them.
-    reminder = system + ("\n\nYOUR PREVIOUS ANSWER OMITTED REQUIRED KEYS: " + ", ".join(missing) +
-                         ". Return the complete JSON object again with every key listed above, including `ratings` "
-                         "(all six categories, each {rating, rationale}), `evidence_quality` and `immediate_service_estimate`.")
-    text = call_json_text(model or CONFIG.model_deep, reminder, user, max_tokens=32000, log_name="last_assess", effort="high")
+    # One retry: the answer came back without required keys. Ask again, naming
+    # them. The reminder is appended to the DYNAMIC block only, so the static
+    # (cached) block's prefix is unchanged and the cache still hits.
+    reminder_dynamic = dynamic + ("\n\nYOUR PREVIOUS ANSWER OMITTED REQUIRED KEYS: " + ", ".join(missing) +
+                                  ". Return the complete JSON object again with every key listed above, including `ratings` "
+                                  "(all six categories, each {rating, rationale}), `evidence_quality` and `immediate_service_estimate`.")
+    text = call_json_text(model or CONFIG.model_deep, [STATIC_SYSTEM, reminder_dynamic], user, max_tokens=32000,
+                          log_name="last_assess", effort="high", listing_id=listing_id)
     try:
         return EvidenceInterpretation.model_validate(coerce.parse_json(text))
     except ValidationError as e:

@@ -92,26 +92,6 @@ def scores(v: Any) -> dict[str, int]:
     return out
 
 
-def weights(v: Any) -> dict[str, float]:
-    """Weights over the fixed axis vocabulary, renormalized to sum to 1."""
-    if not isinstance(v, dict):
-        return {}
-    raw = {}
-    for k, val in v.items():
-        if k not in AXES:
-            continue
-        try:
-            f = float(val)
-        except (TypeError, ValueError):
-            continue
-        if f > 0:
-            raw[k] = f
-    total = sum(raw.values())
-    if not total:
-        return {}
-    return {k: round(f / total, 4) for k, f in raw.items()}
-
-
 def checks(v: Any, valid_keys: set[str] | None) -> list[dict[str, str]]:
     if not isinstance(v, list):
         return []
@@ -221,13 +201,14 @@ def analysis(data: dict[str, Any], valid_check_keys: set[str] | None) -> dict[st
 
 
 def profile(data: dict[str, Any]) -> dict[str, Any] | None:
-    """Coerce an AI-generated profile."""
+    """Coerce an AI-generated profile. Weights and dealbreaker_rules are no
+    longer requested from the model (the policy engine reads critical_evidence
+    only, never weighted axis scores); weights_json is stored empty ({}) to
+    satisfy the DB's NOT NULL column. The `checks` (PPI checklist) are the
+    validity signal instead of weights."""
     key = re.sub(r"[^a-z0-9_]", "", str(data.get("key") or "").strip().lower().replace("-", "_").replace(" ", "_"))
     label = str(data.get("label") or "").strip()[:120]
     if not key or not label:
-        return None
-    w = weights(data.get("weights"))
-    if len(w) < 3:
         return None
     raw_checks = data.get("checks") if isinstance(data.get("checks"), list) else []
     chk = []
@@ -240,6 +221,8 @@ def profile(data: dict[str, Any]) -> dict[str, Any] | None:
         if ck and lbl and ck not in seen:
             seen.add(ck)
             chk.append({"key": ck, "label": lbl})
+    if len(chk) < 3:
+        return None
     years = data.get("years") if isinstance(data.get("years"), list) else []
     yrs = [y for y in (to_int(x, *YEAR_RANGE) for x in years[:2]) if y is not None]
     crit = []
@@ -270,7 +253,7 @@ def profile(data: dict[str, Any]) -> dict[str, Any] | None:
         "immediate_repairs": str(data.get("immediate_repairs") or "").strip()[:800],
         "repairs_12mo": str(data.get("repairs_12mo") or "").strip()[:800],
         "market_notes": str(data.get("market_notes") or "").strip()[:2000],
-        "weights": w,
+        "weights": {},   # not requested from the model; unused by the policy engine
         "checks": chk[:25],
-        "dealbreaker_rules": str_list(data.get("dealbreaker_rules"), cap=8, maxlen=300),
+        "dealbreaker_rules": [],   # not requested from the model; unused by the policy engine
     }

@@ -30,6 +30,49 @@ def compute_priority(score, upside: int, gates: list[Gate], classified: dict[str
     return max(0, min(100, round(p)))
 
 
+def _clip(s: str, n: int = 160) -> str:
+    s = s.strip()
+    return s if len(s) <= n else s[:n - 1].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+
+
+def _short_label(label: str) -> str:
+    return label.split(" (")[0].split("; ")[0].strip()
+
+
+def compute_headline(verdict: str, reason: str, score: Score, gates: list[Gate],
+                     classified: dict[str, list], upside: int | None) -> str:
+    """One deterministic sentence, <=160 chars: verdict + stage + the main
+    driver. Built from data already computed for gates/score/classified/upside,
+    never from the model's prose - so it can never contradict the verdict."""
+    hard = next((g for g in gates if g.kind in {"hard", "strategy", "configuration"}), None)
+    if hard:
+        return _clip(f"{verdict} — {hard.reason}")
+
+    doc_items = classified.get("document") or []
+    insp_items = classified.get("inspection") or []
+    observed = classified.get("observed") or []
+    open_n = len(doc_items) + len(insp_items)
+
+    if verdict == "Pursue conditionally" and upside is not None and upside > score.total:
+        labels = " and ".join(_short_label(it["label"]) for it in (doc_items + insp_items)[:2])
+        if labels:
+            return _clip(f"{verdict} — could reach {upside} if {labels} come back clean.")
+        return _clip(f"{verdict} — could reach {upside}/100 if the open items check out.")
+
+    if verdict == "Maybe / verify":
+        questions = f"{open_n} question{'s' if open_n != 1 else ''} open."
+        if observed:
+            return _clip(f"{verdict} — observed: {observed[0]}" + (f"; {questions}" if open_n else "."))
+        if open_n:
+            return _clip(f"{verdict} — {questions}")
+        return _clip(f"{verdict} — {reason}")
+
+    if verdict == "Pursue":
+        return _clip(f"{verdict} — score {score.total}/100, no open gates.")
+
+    return _clip(f"{verdict} — {reason}")
+
+
 def compute_next_steps(listing: dict[str, Any], classified: dict[str, list], stage: str,
                        evidence: EvidenceInterpretation) -> list[str]:
     """Up to 3 concrete actions, in priority order."""
@@ -101,9 +144,10 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
     upside = compute_upside(score, classified)
     priority = compute_priority(score, upside, gates, classified, costs)
     next_steps = compute_next_steps(listing, classified, stage, evidence)
+    headline = compute_headline(verdict, reason, score, gates, classified, upside)
     return Assessment(
         policy_version=POLICY_VERSION, mission=mission, urgency_mode=state.get("urgency_mode", "accelerated_bridge"),
-        gates=gates, score=score, confidence=confidence, verdict=verdict, verdict_reason=reason,
+        gates=gates, score=score, confidence=confidence, verdict=verdict, verdict_reason=reason, headline=headline,
         costs=costs, evidence=evidence, vin_history=vin_history,
         context={"budget": dict(state.get("budget") or {}), "urgency_mode": state.get("urgency_mode")},
         assessed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(), model=model,
