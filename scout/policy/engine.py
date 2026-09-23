@@ -37,7 +37,7 @@ def _clip(s: str, n: int = 160) -> str:
 
 
 def _short_label(label: str) -> str:
-    return label.split(" (")[0].split("; ")[0].strip()
+    return label.split(" (")[0].split("; ")[0].split(", ")[0].strip()
 
 
 def compute_headline(verdict: str, reason: str, score: Score, gates: list[Gate],
@@ -96,7 +96,7 @@ def compute_next_steps(listing: dict[str, Any], classified: dict[str, list], sta
             steps.append(s if len(s) < 160 else s[:158].rsplit(" ", 1)[0].rstrip(",;:") + "…")
 
     def short(label: str) -> str:   # "Documented timing-belt ... (date and mileage)" -> the part before the detail
-        return label.split(" (")[0].split("; ")[0].strip()
+        return label.split(" (")[0].split("; ")[0].split(", ")[0].strip()
 
     for g in required_open(gates or [])[:1]:
         add(f"Get this first (required before purchase): {short(g.reason.split(': ', 1)[0])}")
