@@ -34,10 +34,12 @@ def locality_hint(location: str | None) -> int | None:
              " washington", ", ut", " utah"]),
         (2, [", tx", " texas", ", co", " colorado", " illinois", ", il", " michigan", ", mi",
              " ohio", ", oh", " minnesota", ", mn", ", id", ", nm", ", ok", ", mt", ", wy",
-             ", ks", ", ne", ", mo", ", ar", ", la", ", ga", ", fl", ", nc", ", sc", ", tn"]),
+             ", ks", ", ne", ", mo", ", ar", ", la", ", ga", ", fl", ", nc", ", sc", ", tn",
+             ", ky", ", al", ", ms", ", ia", ", sd", ", nd"]),
         (1, ["new york", ", ny", "new jersey", ", nj", "massachusetts", ", ma", "connecticut", ", ct",
              "vermont", ", vt", "maine", ", me", "pennsylvania", ", pa", "wisconsin", ", wi",
              "indiana", ", in", "new hampshire", ", nh", "rhode island", ", ri", ", md", ", de",
+             "virginia", ", va", "west virginia", ", wv", ", dc",
              "ontario", "quebec"]),
     ]
     for score, needles in bands:

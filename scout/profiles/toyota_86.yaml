@@ -1,0 +1,77 @@
+key: toyota_86
+label: Toyota 86 manual, first generation (2017-2020)
+make: Toyota
+models:
+- '86'
+- 86 GT
+- 86 TRD Special Edition
+- 86 Hakone Edition
+- 86 860 Special Edition
+- GT86
+years:
+- 2017
+- 2020
+source: seed
+verified: true
+mission_default: enthusiast_bridge
+risk_reserve: 1500
+automatic_ok: false
+framing: 'Secondary bridge candidate named in guide s13 (FR-S/BRZ/86 manual): light, balanced, simple,
+  and engaging. Mechanical twin of the first-generation BRZ: naturally aspirated FA20, no turbo, no timing
+  belt, cheap parts and broad service support, so it avoids the turbo/cooling/oil-leak exposure s12.4
+  holds against the 335i. A coupe, not a hatchback; not a camping or rooftop-tent vehicle. Many examples
+  have been tracked, tuned, or modified; do not assume an inexpensive one has lived an easy life.'
+immediate_repairs: fluids, tires if aged out or mismatched
+repairs_12mo: clutch if slipping or chattering, brake pads and fluid, alignment
+weights:
+  reliability: 0.2
+  condition: 0.24
+  engagement: 0.17
+  value: 0.15
+  ownership_cost: 0.08
+  locality: 0.08
+  desirability: 0.08
+dealbreaker_rules:
+- Automatic for the enthusiast brief
+- Undocumented tune
+- Salvage or rebuilt title
+- Drift or hard competition use
+weak_points: Undisclosed track, autocross, or drift use; oiling concerns under sustained high-g track
+  use; clutch and throwout bearing; aftermarket tunes, headers, and intake/exhaust (California smog exposure
+  without a CARB EO); coilovers and lowering; accident history; 2018-2019 low-pressure fuel-pump recall
+  (NHTSA 21V587000); tire quality and age; underbody corrosion on salt-state cars.
+market_notes: Stock, documented manual cars trade at a clear premium over modified ones. No 86 comps in
+  this database yet. The 2022+ GR86 is a different car (FA24) and is not covered.
+critical_evidence:
+- key: track_use_history
+  severity: conditional
+  label: Track/autocross history disclosed, with oil-consumption answer and compression/leakdown at PPI
+    if tracked
+- key: tune_status
+  severity: conditional
+  label: Evidence of a current or removed ECU tune or headers (and California emissions compliance)
+- key: fuel_pump_recall
+  severity: conditional
+  label: 2018-2019 low-pressure fuel-pump recall (NHTSA 21V587000) completed
+  applies_when:
+    min_year: 2018
+    max_year: 2019
+checks:
+- key: track_use
+  label: Track, autocross, or drift history and how the car was prepared
+- key: oil_consumption
+  label: Oil consumption, compression/leakdown if tracked
+- key: clutch_gearbox
+  label: Clutch take-up / slip, throwout bearing, gearbox
+- key: tune_evidence
+  label: ECU tune, headers, intake/exhaust, CARB EO status
+- key: suspension_alignment
+  label: Suspension modifications, alignment, bushings
+- key: accident_repairs
+  label: Accident repairs
+- key: rust_evaluation
+  label: Underbody corrosion on salt-state cars
+- key: recall_status
+  label: Open recalls (2018-2019 fuel pump)
+- key: tire_age_condition
+  label: Tire age, match, and condition

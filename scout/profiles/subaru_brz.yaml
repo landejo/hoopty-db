@@ -1,0 +1,67 @@
+key: subaru_brz
+label: Subaru BRZ manual, first generation (2013-2020)
+make: Subaru
+models: [BRZ, BRZ Limited, BRZ Premium, BRZ tS, BRZ Series.HyperBlue, BRZ Series.Blue, BRZ Series.Gray, BRZ Series.Yellow]
+years: [2013, 2020]
+source: seed
+verified: true
+mission_default: enthusiast_bridge
+risk_reserve: 1500
+automatic_ok: false
+framing: >
+  Secondary bridge candidate named in guide s13 (FR-S/BRZ/86 manual): light,
+  balanced, simple, and engaging. Naturally aspirated FA20 with no turbo and no
+  timing belt, Toyota co-developed, cheap parts and broad service support, so it
+  avoids the turbo/cooling/oil-leak exposure s12.4 holds against the 335i. It is
+  a coupe, not a hatchback; the rear seats fold for cargo but it is not a camping
+  or rooftop-tent vehicle. Many examples have been tracked, tuned, or modified;
+  do not assume an inexpensive one has lived an easy life.
+weak_points: >
+  Undisclosed track, autocross, or drift use; oiling concerns under sustained
+  high-g track use; clutch and throwout bearing; aftermarket tunes, headers, and
+  intake/exhaust (California smog exposure without a CARB EO); coilovers and
+  lowering; accident history; 2013 valve-spring recall (NHTSA 18V772000);
+  2018-2019 low-pressure fuel-pump recall (NHTSA 21V587000); tire
+  quality and age; underbody corrosion on salt-state cars.
+immediate_repairs: fluids, tires if aged out or mismatched
+repairs_12mo: clutch if slipping or chattering, brake pads and fluid, alignment
+market_notes: >
+  Stock, documented manual cars trade at a clear premium over modified ones.
+  Cars & Bids results read 2026-09-22: 2017 BRZ Limited 46.9k mi sold $16,400;
+  2016 BRZ Series.HyperBlue 42k mi bid to $17,039 (reserve not met); 2016 Scion
+  FR-S 89.3k mi sold $10,250; 2016 FR-S Release Series 2.0 93.6k mi sold $11,200.
+  Scion FR-S and Toyota 86 twins are not covered by this profile's make match.
+weights:
+  reliability: 0.20
+  condition: 0.24
+  engagement: 0.17
+  value: 0.15
+  ownership_cost: 0.08
+  locality: 0.08
+  desirability: 0.08
+dealbreaker_rules: [Automatic for the enthusiast brief, Undocumented tune, Salvage or rebuilt title, Drift or hard competition use]
+critical_evidence:
+  - key: track_use_history
+    label: Track/autocross history disclosed, with oil-consumption answer and compression/leakdown at PPI if tracked
+    severity: conditional
+  - key: tune_status
+    label: Evidence of a current or removed ECU tune or headers (and California emissions compliance)
+    severity: conditional
+  - key: valve_spring_recall
+    label: 2013 valve-spring recall (NHTSA 18V772000) completed
+    severity: conditional
+    applies_when: {max_year: 2013}
+  - key: fuel_pump_recall
+    label: 2018-2019 low-pressure fuel-pump recall (NHTSA 21V587000) completed
+    severity: conditional
+    applies_when: {min_year: 2018, max_year: 2019}
+checks:
+  - {key: track_use, label: "Track, autocross, or drift history and how the car was prepared"}
+  - {key: oil_consumption, label: "Oil consumption, compression/leakdown if tracked"}
+  - {key: clutch_gearbox, label: "Clutch take-up / slip, throwout bearing, gearbox"}
+  - {key: tune_evidence, label: "ECU tune, headers, intake/exhaust, CARB EO status"}
+  - {key: suspension_alignment, label: "Suspension modifications, alignment, bushings"}
+  - {key: accident_repairs, label: "Accident repairs"}
+  - {key: rust_evaluation, label: "Underbody corrosion on salt-state cars"}
+  - {key: recall_status, label: "Open recalls (2013 valve springs; 2018-2019 fuel pump)"}
+  - {key: tire_age_condition, label: "Tire age, match, and condition"}

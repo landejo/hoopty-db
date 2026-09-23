@@ -1,0 +1,78 @@
+key: volvo_c30_t5
+label: Volvo C30 T5 manual (2008-2013)
+make: Volvo
+models:
+- C30
+- C30 T5
+- C30 T5 R-Design
+- C30 Polestar
+years:
+- 2008
+- 2013
+source: seed
+verified: true
+mission_default: enthusiast_bridge
+risk_reserve: 1500
+automatic_ok: false
+framing: 'Secondary bridge candidate named in guide s13. Genuinely distinctive hatchback: compact, usable,
+  and rare with the M66 6-speed manual. Satisfies the compact-hatchback preference in s2 and the quirky-but-coherent
+  test in s4. It is a turbocharged FWD European car, so it carries cooling, oil-leak, and PCV exposure;
+  do not represent it as Toyota-like. Local service access is the standing weak point: Mark Aiello works
+  on Volkswagens, not Volvos. Favor stock examples.'
+weak_points: Underbody and rocker/quarter-panel corrosion on rust-belt cars; PCV / oil-trap clogging on
+  the B5254T7, which pushes out the rear main seal; timing belt interval; cooling system; engine mounts;
+  suspension bushings and shocks; sunroof drains; clutch and slave cylinder; turbo control valve; parts
+  and independent-service access outside metro areas.
+immediate_repairs: tires if date-coded out, PCV/oil trap if undocumented, fluids
+repairs_12mo: clutch if worn, cooling components, engine mounts, suspension bushings, sunroof drains
+market_notes: Manual T5 cars are the ones worth having and are a small share of production. Clean, documented,
+  rust-free Western or Southern examples are the target. Midwest cars trade down hard on underbody condition.
+  No comps in this database yet - the pool needs building before price reads are reliable.
+catchup_notes: If the timing belt interval and the PCV/oil trap are both undocumented on a 100k+ car,
+  budget both as catch-up rather than treating recent minor service as absolution (guide s14, lesson 5).
+weights:
+  condition: 0.24
+  reliability: 0.2
+  engagement: 0.14
+  value: 0.15
+  ownership_cost: 0.12
+  locality: 0.08
+  desirability: 0.07
+dealbreaker_rules:
+- Automatic for the enthusiast brief
+- Heavy structural rust
+- Salvage or rebuilt title
+- Undocumented tune
+critical_evidence:
+- key: rust_evaluation
+  label: Underbody and structural corrosion evidence (lift photos or an in-person inspection)
+  severity: conditional
+- key: timing_belt_history
+  label: Documented timing belt and water pump service
+  severity: conditional
+- key: pcv_oil_trap
+  label: PCV / oil-trap service history or current crankcase-pressure check
+  severity: conditional
+checks:
+- key: rust_evaluation
+  label: Underbody, rocker/pinch-weld, quarter-panel and subframe corrosion
+- key: timing_belt_history
+  label: Timing belt and water pump history with dates and mileage
+- key: pcv_oil_trap
+  label: PCV / oil-trap service (rear main seal risk on the B5254T7)
+- key: cooling_leaks
+  label: Cooling system condition and history
+- key: engine_mounts
+  label: Engine mounts / vibration
+- key: suspension_alignment
+  label: Suspension, shocks, bushings, alignment
+- key: sunroof_drains
+  label: Sunroof drains and water intrusion
+- key: clutch_gearbox
+  label: Clutch take-up, slave cylinder, M66 gearbox
+- key: service_access
+  label: Independent Volvo parts and service access near Carmel
+- key: tire_age_condition
+  label: Tire age, match, and condition
+- key: tune_evidence
+  label: Polestar or aftermarket tune, and California emissions compliance

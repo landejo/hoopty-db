@@ -1,0 +1,75 @@
+key: scion_frs
+label: Scion FR-S manual (2013-2016)
+make: Scion
+models:
+- FR-S
+- FRS
+- FR-S Release Series
+years:
+- 2013
+- 2016
+source: seed
+verified: true
+mission_default: enthusiast_bridge
+risk_reserve: 1500
+automatic_ok: false
+framing: 'Secondary bridge candidate named in guide s13 (FR-S/BRZ/86 manual): light, balanced, simple,
+  and engaging. Mechanical twin of the first-generation BRZ: naturally aspirated FA20, no turbo, no timing
+  belt, cheap parts and broad service support, so it avoids the turbo/cooling/oil-leak exposure s12.4
+  holds against the 335i. A coupe, not a hatchback; not a camping or rooftop-tent vehicle. Many examples
+  have been tracked, tuned, or modified; do not assume an inexpensive one has lived an easy life.'
+immediate_repairs: fluids, tires if aged out or mismatched
+repairs_12mo: clutch if slipping or chattering, brake pads and fluid, alignment
+weights:
+  reliability: 0.2
+  condition: 0.24
+  engagement: 0.17
+  value: 0.15
+  ownership_cost: 0.08
+  locality: 0.08
+  desirability: 0.08
+dealbreaker_rules:
+- Automatic for the enthusiast brief
+- Undocumented tune
+- Salvage or rebuilt title
+- Drift or hard competition use
+weak_points: Undisclosed track, autocross, or drift use; oiling concerns under sustained high-g track
+  use; clutch and throwout bearing; aftermarket tunes, headers, and intake/exhaust (California smog exposure
+  without a CARB EO); coilovers and lowering; accident history; 2013 valve-spring recall (NHTSA 18V772000);
+  tire quality and age; underbody corrosion on salt-state cars. Base-trim equipment is thinner than a
+  BRZ Limited.
+market_notes: 'Stock, documented manual cars trade at a clear premium over modified ones. Cars & Bids
+  results read 2026-09-22: 2016 FR-S 89.3k mi sold $10,250; 2016 FR-S Release Series 2.0 93.6k mi sold
+  $11,200. Toyota continued the car as the 86 from 2017.'
+critical_evidence:
+- key: track_use_history
+  severity: conditional
+  label: Track/autocross history disclosed, with oil-consumption answer and compression/leakdown at PPI
+    if tracked
+- key: tune_status
+  severity: conditional
+  label: Evidence of a current or removed ECU tune or headers (and California emissions compliance)
+- key: valve_spring_recall
+  severity: conditional
+  label: 2013 valve-spring recall (NHTSA 18V772000) completed
+  applies_when:
+    max_year: 2013
+checks:
+- key: track_use
+  label: Track, autocross, or drift history and how the car was prepared
+- key: oil_consumption
+  label: Oil consumption, compression/leakdown if tracked
+- key: clutch_gearbox
+  label: Clutch take-up / slip, throwout bearing, gearbox
+- key: tune_evidence
+  label: ECU tune, headers, intake/exhaust, CARB EO status
+- key: suspension_alignment
+  label: Suspension modifications, alignment, bushings
+- key: accident_repairs
+  label: Accident repairs
+- key: rust_evaluation
+  label: Underbody corrosion on salt-state cars
+- key: recall_status
+  label: Open recalls (2013 valve springs)
+- key: tire_age_condition
+  label: Tire age, match, and condition
