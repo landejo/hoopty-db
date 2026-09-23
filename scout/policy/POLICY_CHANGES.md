@@ -4,6 +4,30 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.3.0 (2026-09-22)
+
+From the 2026-09-22 audit (data/audits/Hoopty_Scout_Audit_v1_20260922.md, #6-#9, #13, #17).
+
+1. **Market fair value** (`scout/market.py`). Comps are real sales only; ended
+   auctions that did not sell are a floor, never a price. Segmented by body class
+   (open/closed), transmission and ±3 model years (relaxed in steps when thin,
+   and said so), mileage-adjusted about −4% per 10k, recent 3 years preferred.
+   Asking prices ×0.93 only when there are fewer than two sales. It feeds the
+   preliminary price/value points, the expected hammer for auctions, the model's
+   prompt, and the offer range.
+2. **Offers anchor on fair value**, less the midpoint of known work, never above the
+   ask or the maximum price; the opening offer is at least 5% below the top.
+3. **An early auction with no hammer estimate is "unpriced"**. The budget does not
+   credit the current bid; mission fit is capped at 9 until it closes.
+4. **The mission-fit budget cap uses the expected price**, and compares the all-in
+   midpoint (not the price) with the defeats-purpose all-in line.
+5. **Confidence recalibrated.** Base 30 + 6 × evidence quality. Unknown facts count
+   only for title, accidents, records, mileage, VIN and owners (−3 each, cap 12);
+   critical items missing −4 each (cap 12). The guide-era formula had a median of
+   15 and never reached the 50 line.
+6. **Exclusions come only from the editable state.** The hardcoded list is gone. A
+   one-time migration added BMW Z4, Saturn and Mazda MX-5 to stored overrides.
+
 ## 1.2.1 (2026-09-05)
 
 **All-in cost counts only what is known.** All-in = price (or expected hammer)

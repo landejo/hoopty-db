@@ -112,16 +112,14 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
         max_price = max(0, int(h))
     kw_mid = (kw_lo + kw_hi) // 2
     fair_mid = fair.get("mid") if fair else None
-    if fair_mid is not None:
-        candidates = [v for v in (price, max_price or None, fair_mid - kw_mid) if v is not None]
-        offer_hi = max(0, int(min(candidates)))
+    if fair_mid is not None and price:
+        # Never above the ask or the max price; the opening offer sits at least 5% under the top.
+        offer_hi = max(0, int(min(v for v in (price, max_price or None, fair_mid - kw_mid) if v is not None)))
         fair_low_net = (fair.get("low") if fair.get("low") is not None else fair_mid) - kw_mid
-        offer_lo = max(0, int(min(offer_hi, max(int(0.85 * offer_hi), fair_low_net))))
-        if fair_mid - kw_mid > price:
-            offer_hi = price
-            offer_lo = min(offer_lo, offer_hi)
+        offer_lo = max(0, int(min(max(0.85 * offer_hi, fair_low_net), 0.95 * offer_hi)))
         basis_word = "sales" if fair.get("basis") == "sold" else "asking prices"
-        notes.append(f"Offer anchored on fair value ${fair_mid:,} ({fair.get('n')} {basis_word}) less known work ${kw_mid:,}.")
+        thin = " Thin or widened comp set: treat as a rough guide." if (fair.get("n") or 0) < 4 or fair.get("relaxed") else ""
+        notes.append(f"Offer anchored on fair value ${fair_mid:,} ({fair.get('n')} {basis_word}) less known work ${kw_mid:,}.{thin}")
     else:
         anchor = min(price, max_price) if price and max_price else (price or max_price)
         offer_hi = int(anchor)
