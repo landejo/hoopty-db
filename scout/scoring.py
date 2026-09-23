@@ -159,31 +159,27 @@ def age_penalty(age: int | None, state: dict) -> tuple[int, str]:
 
 
 # ---------- preliminary score: the guide's 100-point rubric, cheap inputs ----------
-# documentation 30 · condition 25 · price/value 15 · mission fit 15 · logistics 10 · spec 5
+# documentation 25 · condition 25 · price/value 15 · mission fit 15 · logistics 10 · spec 10
 # Haiku rates documentation / condition / spec (0-10); everything else is arithmetic
 # so that similar cars separate on price, budget, configuration and location.
 
 LOGISTICS_BY_BAND = {5: 10, 4: 8, 3: 6, 2: 4, 1: 2, None: 5}
 
 
-def _price_value_points(price: int | None, reference: int | None, mileage: int | None, ref_mileage: int | None) -> tuple[int, str]:
+def _price_value_points(price: int | None, fair_mid: int | None) -> tuple[int, str]:
     if not price:
         return 7, "no price"
-    if not reference:
-        return 8, "no comps or peers to compare against"
-    ratio = price / reference
-    # Mileage-adjust the reference: ±4% per 10k miles versus the pool median, capped.
-    note = f"price is {ratio:.0%} of the reference ${reference:,}"
-    if mileage and ref_mileage:
-        adj = max(-0.45, min(0.45, (ref_mileage - mileage) / 10000 * 0.04))
-        ratio = price / (reference * (1 + adj))
-        note += f", {'+' if adj >= 0 else ''}{adj:.0%} mileage-adjusted"
+    if not fair_mid:
+        return 8, "no comps to compare against"
+    ratio = price / fair_mid
+    # fair_mid is already mileage-adjusted to this car; no second adjustment here.
+    note = f"price is {ratio:.0%} of fair value ${fair_mid:,}"
     # Deliberately no easy 15: the assessment weighs risk the arithmetic cannot see.
     pts = 13 if ratio <= 0.75 else 11 if ratio <= 0.85 else 9 if ratio <= 0.95 else 7 if ratio <= 1.05 else 5 if ratio <= 1.15 else 3 if ratio <= 1.30 else 1
     return pts, note
 
 
-def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: list[dict], peers: list[dict]) -> tuple[int, dict]:
+def preliminary_score(listing: dict, profile: dict | None, state: dict, fair: dict | None) -> tuple[int, dict]:
     n = listing.get("normalized") or {}
     r = n.get("ratings") or {}
     breakdown: dict = {}
@@ -206,34 +202,22 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, comps: l
     breakdown["condition"] = {"points": cond, "max": 25, "why": (r.get("condition") or {}).get("why", "not read yet") + (f" · {flags} red flag(s) noted" if flags else "")}
 
     price = listing.get("sold_price") or listing.get("price")
-    pool = [c.get("sold_price") or c.get("price") for c in comps if (c.get("sold_price") or c.get("price"))]
-    # A real sale beats an asking price, even a thin sample. Only fall back to
-    # peers when there is no sold data at all, and say so.
-    src = "sold comps"
-    if len(pool) < 2:
-        peer_prices = [p.get("price") for p in peers if p.get("price") and p.get("id") != listing.get("id")]
-        if pool and peer_prices:
-            pool = pool + peer_prices
-            src = f"{len(pool) - len(peer_prices)} sold comp + {len(peer_prices)} asking peers"
-        elif peer_prices:
-            pool = peer_prices
-            src = "active peers (asking prices, no sold data)"
-    pool = sorted(pool)
-    reference = pool[len(pool) // 2] if pool else None
-    miles = sorted(m for m in ((c.get("mileage") for c in comps + peers)) if m)
-    ref_miles = miles[len(miles) // 2] if miles else None
+    fair_mid = fair.get("mid") if fair else None
+    basis_word = ("sold comps" if fair.get("basis") == "sold" else "asking prices") if fair else "no comps"
+    relaxed_note = f", relaxed: {', '.join(fair['relaxed'])}" if fair and fair.get("relaxed") else ""
+    src_note = f"{basis_word}: {fair.get('n')}{relaxed_note}" if fair else "no comps"
     early, hrs = is_early_bid(listing, state)
     if early:
-        # The bid is not a price yet. Value against the comps median if we have
-        # one, else stay neutral; either way say so.
-        est = reference if src == "sold comps" else None
-        pv = 7 if est is None else _price_value_points(est, reference, listing.get("mileage"), ref_miles)[0]
-        why = f"early bid ${price:,} ignored" + (f" ({round(hrs / 24, 1)} days left)" if hrs is not None else "") + (f"; valued at the sold-comp median ${est:,}" if est else "; no sold comps, neutral")
+        # The bid is not a price yet. Value against fair value if we have a
+        # sold-basis estimate, else stay neutral; either way say so.
+        est = fair_mid if fair and fair.get("basis") == "sold" else None
+        pv = 7 if est is None else _price_value_points(est, fair_mid)[0]
+        why = f"early bid ${price:,} ignored" + (f" ({round(hrs / 24, 1)} days left)" if hrs is not None else "") + (f"; valued at fair value ${est:,}" if est else "; no sold comps, neutral")
     else:
-        pv, why = _price_value_points(price, reference, listing.get("mileage"), ref_miles)
+        pv, why = _price_value_points(price, fair_mid)
     budget = state.get("budget") or {}
     mission = listing.get("mission") or (profile or {}).get("mission_default") or "enthusiast_bridge"
-    breakdown["price_value"] = {"points": pv, "max": 15, "why": f"{why} ({src}: {len(pool)})"}
+    breakdown["price_value"] = {"points": pv, "max": 15, "why": f"{why} ({src_note})"}
 
     trans = (listing.get("transmission") or "").lower()
     auto_ok = bool((profile or {}).get("automatic_ok"))

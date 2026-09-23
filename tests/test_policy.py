@@ -400,5 +400,7 @@ def test_mission_guidance_quotes_the_live_budget_not_a_hardcoded_ceiling():
 
 def test_z4_and_saturn_are_excluded():
     from scout.policy.gates import is_excluded
-    assert is_excluded("BMW", "Z4 3.0i", []) and is_excluded("Saturn", "Sky Redline", [])
-    assert not is_excluded("BMW", "Z3 3.0i", [])
+    from scout.policy.state import DEFAULT_STATE
+    exclusions = DEFAULT_STATE.get("active_exclusions", [])
+    assert is_excluded("BMW", "Z4 3.0i", exclusions) and is_excluded("Saturn", "Sky Redline", exclusions)
+    assert not is_excluded("BMW", "Z3 3.0i", exclusions)

@@ -18,16 +18,16 @@ def default_mission(profile: dict[str, Any] | None) -> str:
 
 def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceInterpretation,
            state: dict[str, Any], vin_history: dict[str, Any] | None = None,
-           comps_median: int | None = None, mission: str | None = None, model: str = "") -> Assessment:
+           fair: dict[str, Any] | None = None, mission: str | None = None, model: str = "") -> Assessment:
     vin_history = vin_history or {}
     mission = mission or listing.get("mission") or default_mission(profile)
     # First pass without the cost gate, then costs, then the cost gate.
     prov = vin_history.get("provenance") or {}
     gates = evaluate_gates(listing, profile, evidence, mission, state, provenance=prov)
-    costs = compute_costs(listing, profile, evidence, gates, state, comps_median)
+    costs = compute_costs(listing, profile, evidence, gates, state, fair)
     gates = evaluate_gates(listing, profile, evidence, mission, state, all_in_high=costs.all_in_high, provenance=prov,
                            all_in_mid=(costs.all_in_low + costs.all_in_high) // 2)
-    costs = compute_costs(listing, profile, evidence, gates, state, comps_median)
+    costs = compute_costs(listing, profile, evidence, gates, state, fair)
     cap = (state.get("budget") or {}).get("defeats_purpose_all_in")
     if cap and mission in {"enthusiast_bridge", "pragmatic_bridge"} and costs.all_in_high > cap >= (costs.all_in_low + costs.all_in_high) // 2:
         costs.notes.append(f"High end of the all-in range (${costs.all_in_high:,}, with known work) is above the bridge ceiling ${cap:,}; the midpoint is under it.")
@@ -47,7 +47,7 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
         costs.notes.append(f"Ceiling anchored to the last documented price ${ref_price:,} plus {int(allowance * 100)}% "
                            f"({'documented post-sale work' if allowance > 0.1 else 'no documented post-sale work'}) = ${ceiling:,}; "
                            f"the new ${listing.get('price') or 0:,} ask is not the anchor" + (" (cap applied)." if capped else "."))
-    score = compute_score(evidence, gates, listing, mission, state, vin_history)
+    score = compute_score(evidence, gates, listing, mission, state, vin_history, costs=costs)
     confidence = compute_confidence(evidence, gates, listing)
     if not (evidence.next_action or "").strip():
         # The model must always leave one concrete step; derive it from its own lists.
@@ -66,7 +66,7 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
 
 
 def rescore_assessment(listing: dict[str, Any], profile: dict[str, Any], stored: dict[str, Any],
-                       state: dict[str, Any]) -> dict[str, Any] | None:
+                       state: dict[str, Any], fair: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Recompute score/verdict/costs from a stored assessment's evidence under the
     current policy. Keeps the original model and evidence; bumps policy_version."""
     try:
@@ -74,7 +74,7 @@ def rescore_assessment(listing: dict[str, Any], profile: dict[str, Any], stored:
     except Exception:
         return None
     vh = stored.get("vin_history") or {}
-    a = assess(listing, profile, evidence, state, vin_history=vh, comps_median=None,
+    a = assess(listing, profile, evidence, state, vin_history=vh, fair=fair,
                mission=stored.get("mission"), model=stored.get("model", ""))
     d = a.model_dump()
     d["assessed_at"] = stored.get("assessed_at", d["assessed_at"])

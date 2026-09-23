@@ -381,6 +381,10 @@ class CostBreakdown(BaseModel):
     offer_low: int
     offer_high: int
     notes: list[str] = Field(default_factory=list)
+    fair_mid: int | None = None          # deterministic mileage-adjusted market value (scout.market.fair_value)
+    fair_low: int | None = None
+    fair_high: int | None = None
+    fair_note: str = ""
 
 
 class Score(BaseModel):

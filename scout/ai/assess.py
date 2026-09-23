@@ -250,17 +250,19 @@ def _profile_text(profile: dict[str, Any]) -> str:
 
 
 def _fmt_row(r: dict[str, Any]) -> str:
+    kind_flag = " (high bid, NOT a sale)" if (r.get("availability") == "ended" and r.get("price_kind") in {"reserve_not_met", "current_bid"}) else ""
     bits = [f"{r.get('year') or '?'} {r.get('make') or ''} {r.get('model') or ''}".strip(), r.get("trim") or "",
             f"{r.get('mileage'):,} mi" if r.get("mileage") else "? mi",
             f"${(r.get('sold_price') or r.get('price')):,}" if (r.get("sold_price") or r.get("price")) else "$?",
-            r.get("price_kind") or "", r.get("availability") or "", r.get("location") or "",
+            (r.get("price_kind") or "") + kind_flag, r.get("availability") or "", r.get("location") or "",
             SITES.get(r.get("site", ""), r.get("site", "")), (r.get("listing_date") or "")[:10]]
     return " · ".join(b for b in bits if b)
 
 
 def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission: str, state: dict[str, Any],
                       vin_history: dict[str, Any], snapshots: list[dict[str, Any]],
-                      peers: list[dict[str, Any]], comps: list[dict[str, Any]], model: str | None = None) -> EvidenceInterpretation:
+                      peers: list[dict[str, Any]], comps: list[dict[str, Any]], model: str | None = None,
+                      fair: dict[str, Any] | None = None) -> EvidenceInterpretation:
     critical = "\n".join(f"  - {c['key']}: {c.get('label', c['key'])} [{c.get('severity', 'conditional')}]"
                          for c in profile.get("critical_evidence") or []) or "  (none defined for this model)"
     state_view = {k: state.get(k) for k in ("urgency_mode", "budget", "current_vehicles", "active_exclusions", "deprioritized", "home_location", "travel", "capability_intent", "high_mileage_rule")}
@@ -291,7 +293,8 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
         f"VIN HISTORY IN THE TRACKER (same VIN, other listings):\n{json.dumps(vin_history, indent=1)[:6000]}\n\n"
         f"ACTIVE PEERS (same profile):\n" + ("\n".join(f"  - {_fmt_row(p)}" for p in peers[:20]) or "  (none)") + "\n\n"
         f"SOLD / ENDED COMPS:\n" + ("\n".join(f"  - {_fmt_row(c)}" for c in comps[:30]) or "  (none)") + "\n\n"
-        f"FULL LISTING TEXT:\n{(listing.get('raw_text') or '')[:60_000]}"
+        + (f"FAIR VALUE ESTIMATE (deterministic, mileage-adjusted sold comps): ${fair['low']:,}–${fair['high']:,}, mid ${fair['mid']:,} ({fair.get('note', '')})\n\n" if fair else "")
+        + f"FULL LISTING TEXT:\n{(listing.get('raw_text') or '')[:60_000]}"
         + _documents_block(listing.get("id"))
     )
     user = photos + [{"type": "text", "text": user_text}] if photos else user_text

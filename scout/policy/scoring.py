@@ -7,12 +7,14 @@ from scout.policy.preferences import (
     CATEGORY_POINTS, CONFIDENCE_PROVISIONAL, DOC_CAP_CONDITIONAL_MISSING, DOC_CAP_HARD_MISSING,
     LOGISTICS_CAP_BY_BAND, RELIST_MARKUP_FLAG, RELIST_PRICE_VALUE_CAP, SCORE_BANDS, VERDICT_RANK,
 )
-from scout.policy.schema import EvidenceInterpretation, Gate, Score
+from scout.policy.schema import CostBreakdown, EvidenceInterpretation, Gate, Score
 from scout.scoring import locality_hint
+
+DECISION_FACTS = {"title_status", "accident_history", "records_available", "mileage", "vin", "owners"}
 
 
 def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: dict[str, Any],
-                  mission: str, state: dict[str, Any], vin_history: dict[str, Any]) -> Score:
+                  mission: str, state: dict[str, Any], vin_history: dict[str, Any], costs: CostBreakdown | None = None) -> Score:
     r = evidence.ratings
     pts = {k: round(CATEGORY_POINTS[k] * getattr(r, k).rating / 10) for k in CATEGORY_POINTS}
     caps: list[str] = []
@@ -37,12 +39,26 @@ def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: 
 
     # Mission fit: price over the bridge budget cannot score as a good fit.
     budget = state.get("budget") or {}
-    price = listing.get("price") or 0
-    if mission in {"enthusiast_bridge", "pragmatic_bridge"} and budget.get("max_price") and price > budget["max_price"]:
-        cap = 6 if price > budget.get("defeats_purpose_all_in", 10**9) else 9
-        if pts["mission_fit"] > cap:
-            pts["mission_fit"] = cap
-            caps.append(f"mission fit capped at {cap}: price above the bridge budget")
+    if costs is not None and costs.price_basis == "unpriced":
+        # Auction price unknown until closing; cap mission fit at 9
+        if pts["mission_fit"] > 9:
+            pts["mission_fit"] = 9
+            caps.append("mission fit capped at 9: auction price unknown until closing")
+    elif mission in {"enthusiast_bridge", "pragmatic_bridge"}:
+        # Use costs.price if available, otherwise fall back to listing price
+        price = costs.price if costs is not None else (listing.get("price") or 0)
+        max_price = budget.get("max_price")
+        if max_price and price > max_price:
+            # Compare all-in midpoint to defeats_purpose_all_in for the harsher cap
+            if costs is not None:
+                all_in_mid = (costs.all_in_low + costs.all_in_high) // 2
+                defeats_purpose = budget.get("defeats_purpose_all_in", 10**9)
+                cap = 6 if all_in_mid > defeats_purpose else 9
+            else:
+                cap = 6 if price > budget.get("defeats_purpose_all_in", 10**9) else 9
+            if pts["mission_fit"] > cap:
+                pts["mission_fit"] = cap
+                caps.append(f"mission fit capped at {cap}: price above the bridge budget")
     if mission == "pragmatic_bridge" and pts["mission_fit"] > 11:
         pts["mission_fit"] = 11
         caps.append("mission fit capped at 11: pragmatic bridge solves the immediate problem, not the enthusiast brief")
@@ -60,15 +76,27 @@ def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: 
 
 def compute_confidence(evidence: EvidenceInterpretation, gates: list[Gate], listing: dict[str, Any]) -> int:
     """Confidence in the assessment, not the car (§9)."""
-    c = 25 + evidence.evidence_quality * 6          # 25..85 from verifiable evidence
-    unknown_facts = sum(1 for f in evidence.facts if f.status == "unknown")
-    c -= min(12, 2 * unknown_facts)
-    c -= min(20, 5 * sum(1 for g in gates if g.key.startswith("critical_missing")))   # capped: profiles differ in item count
+    c = 30 + evidence.evidence_quality * 6          # 30..90 from verifiable evidence
+
+    # Unknown-fact penalty only for decision-relevant keys
+    decision_unknowns = sum(1 for f in evidence.facts if f.status == "unknown" and f.key in DECISION_FACTS)
+    c -= min(12, 3 * decision_unknowns)
+
+    # Critical missing gates: penalty for each
+    critical_missing = sum(1 for g in gates if g.key.startswith("critical_missing"))
+    c -= min(12, 4 * critical_missing)
+
+    # Contradictions: penalty per contradiction
     c -= min(9, 3 * len(evidence.contradictions))
+
+    # No photos penalty
     if not (listing.get("photos") or []):
         c -= 5
+
+    # Short raw text penalty
     if len(listing.get("raw_text") or "") < 400:
         c -= 10
+
     return max(5, min(100, int(c)))
 
 

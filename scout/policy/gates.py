@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from scout.policy.preferences import EXCLUDED_MODELS, MANUAL_REQUIRED_MISSIONS
+from scout.policy.preferences import MANUAL_REQUIRED_MISSIONS
 from scout.policy.schema import EvidenceInterpretation, Gate
 from scout.scoring import is_early_bid, listing_age_days
 
@@ -29,9 +29,13 @@ CONDITIONAL_FLAGS = {
 
 
 def is_excluded(make: str | None, model: str | None, active_exclusions: list[str]) -> str | None:
-    name = f"{make or ''} {model or ''}".lower().replace("-", "").replace(" ", "")
-    for ex in EXCLUDED_MODELS + [e for e in active_exclusions]:
-        if ex.lower().replace("-", "").replace(" ", "") in name:
+    """Match an exclusion ("Mazda MX-5") against "make model", ignoring case, spaces and
+    hyphens; the model part alone (3+ chars) also matches, so "Miata" catches "MX-5 Miata"."""
+    norm = lambda s: (s or "").lower().replace("-", "").replace(" ", "")
+    full, mdl = norm(f"{make or ''} {model or ''}"), norm(model)
+    for ex in active_exclusions or []:
+        model_part = norm(ex.split(" ", 1)[1]) if " " in ex.strip() else ""
+        if norm(ex) in full or (len(model_part) >= 3 and model_part in mdl):
             return ex
     return None
 

@@ -254,8 +254,8 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     peers = [p for p in db.list_listings(role="candidate", profile_key=prof["key"])
              if p["id"] != listing_id and p["availability"] == "active"]
     comps = db.list_listings(role="comp", profile_key=prof["key"])
-    pool = sorted(c.get("sold_price") or c.get("price") for c in comps if (c.get("sold_price") or c.get("price")))
-    comps_median = pool[len(pool) // 2] if pool else None
+    from scout import market
+    fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
     snaps = db.list_snapshots(listing_id)
     history = db.vin_history(row.get("vin"), exclude_listing_id=listing_id)
     history["provenance"] = row.get("provenance")
@@ -273,7 +273,7 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     token = None if nested else _task_start(f"{'Quick' if tier == 'quick' else 'Full'} assessment · {row.get('title') or listing_id} · {model}", 1)
     async with _ai_lock:
         try:
-            evidence = await asyncio.to_thread(interpret_listing, row, prof, mission, state, history, snaps, peers, comps, model)
+            evidence = await asyncio.to_thread(interpret_listing, row, prof, mission, state, history, snaps, peers, comps, model, fair=fair)
         except Exception as e:
             db.log_event("assess_error", listing_id, str(e))
             if token:
@@ -284,7 +284,7 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     evidence.facts.extend(Fact(**f) for f in decoded_facts(decoded))
     for c in history["vin_decode_contradictions"]:
         evidence.contradictions.append(Contradiction(**c))
-    result = assess(row, prof, evidence, state, vin_history=history, comps_median=comps_median,
+    result = assess(row, prof, evidence, state, vin_history=history, fair=fair,
                     mission=mission, model=model)
     data = result.model_dump()
     db.add_assessment(listing_id, data)
@@ -486,6 +486,7 @@ def get_provenance(listing_id: int) -> dict[str, Any]:
 def rescore(assessments: bool = True) -> dict[str, Any]:
     """Recompute every preliminary score from stored data, and re-derive stored
     assessments under the current policy from their stored evidence. Free."""
+    from scout import market
     from scout.ingest import rescore_all
     from scout.policy.engine import rescore_assessment
     n = rescore_all()
@@ -499,7 +500,8 @@ def rescore(assessments: bool = True) -> dict[str, Any]:
             prof = db.get_profile(row["profile_key"]) if row and row.get("profile_key") else None
             if not (row and prof):
                 continue
-            d = rescore_assessment(row, prof, a, state)
+            fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
+            d = rescore_assessment(row, prof, a, state, fair=fair)
             if d:
                 db.add_assessment(lid, d)
                 redone += 1
