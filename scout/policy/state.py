@@ -21,7 +21,7 @@ DEFAULT_STATE: dict[str, Any] = {
         {"name": "2018 Lexus RX 350", "role": "household utility, working well"},
         {"name": "2011 BMW 335i (E90, N55, auto)", "role": "finite life; recurring coolant leak; front suspension due"},
     ],
-    "active_exclusions": ["Lexus SC430", "Mazda Miata", "Honda CR-Z", "Lexus IS350", "Lexus GS350", "BMW Z4", "Saturn"],
+    "active_exclusions": ["Lexus SC430", "Mazda MX-5", "Honda CR-Z", "Lexus IS350", "Lexus GS350", "BMW Z4", "Saturn"],
     "deprioritized": ["turbo BMW like the 335i", "Land Rover LR4", "second Lexus SUV unless the capability itself is wanted"],
     "high_mileage_rule": "A high-mileage car that is not a Toyota or Lexus needs a particularly convincing case: "
                          "documented major renewal, not merely a low price. Mileage is a yellow flag to be answered "
@@ -74,8 +74,27 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 def load_state(path=None) -> dict[str, Any]:
-    stored = db.get_setting(SETTINGS_KEY, path)
-    return _deep_merge(DEFAULT_STATE, stored or {})
+    stored = db.get_setting(SETTINGS_KEY, path) or {}
+
+    # Migration: if stored state has active_exclusions but not the _migrations marker,
+    # apply the exclusions_v2 migration (add default exclusions)
+    if "active_exclusions" in stored and not (stored.get("_migrations") or []):
+        if not isinstance(stored.get("_migrations"), list):
+            stored["_migrations"] = []
+        if "exclusions_v2" not in stored.get("_migrations", []):
+            # Union the stored list with default exclusions, preserving order
+            default_exclusions = ["BMW Z4", "Saturn", "Mazda MX-5"]
+            stored_list = stored.get("active_exclusions", [])
+            # Merge, keeping stored items first, then adding any defaults not already in the list
+            merged = list(stored_list)
+            for ex in default_exclusions:
+                if ex not in merged:
+                    merged.append(ex)
+            stored["active_exclusions"] = merged
+            stored["_migrations"].append("exclusions_v2")
+            db.set_setting(SETTINGS_KEY, stored, path)
+
+    return _deep_merge(DEFAULT_STATE, stored)
 
 
 def save_state(update: dict[str, Any], path=None) -> dict[str, Any]:
