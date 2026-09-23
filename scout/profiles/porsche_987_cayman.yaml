@@ -34,12 +34,12 @@ weights:
   locality: 0.07
   desirability: 0.07
 dealbreaker_rules:
-  - Cayman S without a satisfactory specialist borescope (cylinders 4-6 photographed)
+  - Cayman S without a satisfactory specialist borescope (cylinders 4-6 photographed) or a documented rebuild with new/re-sleeved cylinders
   - Automatic (Tiptronic) for the enthusiast brief
   - Salvage or rebuilt title
 critical_evidence:
   - key: borescope
-    label: Independent Porsche-specialist borescope with retained photos, especially cylinders 4-6 (no scope, no Cayman S)
+    label: Independent Porsche-specialist borescope with retained photos, especially cylinders 4-6, OR invoices for an engine rebuild with new or re-sleeved cylinders (no scope and no rebuild record, no Cayman S)
     severity: hard
     applies_when: {min_engine_liters: 3.3, or_trim_contains: "S"}
   - key: dme_overrev
