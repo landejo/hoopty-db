@@ -30,7 +30,7 @@ def is_blocked(detail: dict) -> bool:
 SOLD_RE = re.compile(r"\b(sold|sold for|no longer available|this listing has ended|listing ended)\b", re.I)
 PENDING_RE = re.compile(r"\b(pending|sale pending|deposit taken|deposit received|on hold)\b", re.I)
 ENDED_RE = re.compile(r"\b(bid to|reserve not met|auction ended|ended)\b", re.I)
-PRICE_RE = re.compile(r"\$\s?([\d,]{3,})")
+PRICE_RE = re.compile(r"\$\s?(?:([\d,]{3,})|(\d+(?:\.\d+)?)\s?[kK]\b)")
 
 
 def detect_availability(item: dict[str, Any], site: str) -> str:
@@ -57,7 +57,10 @@ def parse_price(text: str | None) -> int | None:
     if not m:
         return None
     try:
-        v = int(m.group(1).replace(",", ""))
+        if m.group(1):
+            v = int(m.group(1).replace(",", ""))
+        else:
+            v = round(float(m.group(2)) * 1000)
     except ValueError:
         return None
     return v if 0 < v < 2_000_000 else None
@@ -274,9 +277,16 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     # already know to be a car (a removed listing page is not a kayak).
     _row = db.get_listing(lid) or {}
     known_car = bool((norm.get("year") or _row.get("year")) and (norm.get("make") or norm.get("model") or _row.get("make") or _row.get("model")))
-    if norm.get("is_vehicle") is False and not known_car:
+    not_vehicle = norm.get("is_vehicle") is False and not known_car
+    # Junk heuristic: cheap Facebook rows with no year and no model are almost
+    # never actual cars (parts, toys, kayaks) even when the normalizer missed them.
+    price_now = updates.get("price", _row.get("price"))
+    has_year_or_model = bool((norm.get("year") or _row.get("year")) or (norm.get("model") or _row.get("model")))
+    junk = price_now is not None and price_now < 1000 and not has_year_or_model
+    if not_vehicle or junk:
         updates["role"] = "ignored"
-        updates["normalized"]["ignored_reason"] = "not a vehicle (normalizer)"
+        updates["normalized"]["ignored_reason"] = (
+            "not a vehicle (normalizer)" if not_vehicle else "no year/model and price under $1,000")
     # A captured title without a year is site chrome ("Buying", "Price drop -$5,000"):
     # build one from what the reader established.
     cur_title = (db.get_listing(lid) or {}).get("title") or ""

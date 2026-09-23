@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Hoopty Scout",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Sync saved vehicle listings (Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, Bring a Trailer) to the local Hoopty Scout workbench.",
   "permissions": [
     "activeTab",
@@ -95,9 +95,10 @@
     },
     {
       "matches": [
-        "*://*.duckduckgo.com/*",
-        "*://*.bing.com/*",
-        "*://*.google.com/*",
+        "*://www.google.com/search*",
+        "*://www.bing.com/search*",
+        "*://duckduckgo.com/*",
+        "*://html.duckduckgo.com/*",
         "*://*.ebay.com/*",
         "*://*.classic.com/*",
         "*://*.reddit.com/*"

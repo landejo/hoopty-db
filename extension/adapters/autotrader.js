@@ -28,7 +28,7 @@
         const a = document.querySelector(`a[href*="${it.site_id}"]`);
         if (rec && a && (rec.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
         it.url = urlFor(it.site_id);
-        it.sold = /\bsold\b|no longer available|unavailable/i.test(it.card_text);
+        it.sold = /\bsold\b|no longer available/i.test(it.card_text);
         out.push(it);
       }
       return out;

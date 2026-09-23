@@ -5,6 +5,7 @@ let tab = null, page = null, apiBase = DEFAULT_API;
 function setStatus(msg, kind = "info") { $("status").className = "status " + kind; $("status").textContent = msg; }
 
 let busy = false;
+let queuedJobs = 0; // set by refreshJobs; drives the Investigate button's idle state
 async function refreshProgress() {
   const { progress, log } = await chrome.storage.session.get(["progress", "log"]);
   if (log) $("log").textContent = log.join("\n");
@@ -15,7 +16,7 @@ async function refreshProgress() {
   $("cancel").hidden = !busy;
   $("sync").disabled = busy || !(page && page.saved);
   $("add").disabled = busy || !(page && page.detail);
-  $("investigate").disabled = busy || $("investigate").disabled;
+  $("investigate").disabled = busy || queuedJobs === 0;
   if (busy) setStatus(`A ${st.site || ""} ${st.kind || "sync"} is still running (${progress && progress.message ? progress.message : "working"}). Wait for "Done." in the log, or press Stop.`, "warning");
   if (!progress) return;
   $("progress").hidden = false;
@@ -24,7 +25,7 @@ async function refreshProgress() {
   $("progress-msg").textContent = progress.message || "";
   if (progress.state === "done" && progress.totals) {
     const t = progress.totals;
-    setStatus(`Synced: ${t.candidates} candidate(s), ${t.comps} comp(s)` + (t.queued_ai ? `, ${t.queued_ai} AI read(s) running on the server` : "") + (t.errors.length ? `, ${t.errors.length} error(s)` : ""), t.errors.length ? "warning" : "success");
+    setStatus(`Synced: ${t.candidates} candidate(s), ${t.comps} comp(s)` + (t.queued_ai ? `, ${t.queued_ai} AI read(s) running on the server` : "") + (t.blocked ? `, ${t.blocked} blocked by a bot wall` : "") + (t.errors.length ? `, ${t.errors.length} error(s)` : ""), t.errors.length ? "warning" : "success");
   } else if (progress.state === "error") setStatus(progress.message, "error");
 }
 
@@ -65,8 +66,9 @@ async function refreshJobs(health) {
     const jobs = await (await fetch(apiBase + "/api/provenance/jobs?status=queued")).json();
     $("inv-row").hidden = false;
     $("doc-row").hidden = !/carfax|autocheck/i.test(tab.url || "");
+    queuedJobs = jobs.length;
     $("investigate").textContent = jobs.length ? `Run ${jobs.length} queued investigation${jobs.length > 1 ? "s" : ""}` : "No investigations queued";
-    $("investigate").disabled = !jobs.length;
+    $("investigate").disabled = busy || !jobs.length;
     if (tab && tab.url) {
       const r = await fetch(apiBase + "/api/listings/by-url?url=" + encodeURIComponent(tab.url.split("?")[0]));
       if (r.ok) { currentListing = await r.json(); $("queue-current").hidden = false; $("queue-current").textContent = `Investigate this car (#${currentListing.id})`; }

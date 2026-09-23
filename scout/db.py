@@ -281,7 +281,12 @@ def list_listings(role: str | None = None, profile_key: str | None = None,
 
 
 def upsert_listing(values: dict[str, Any], path: Path | None = None) -> tuple[int, bool]:
-    """Insert or update by URL. Returns (id, created)."""
+    """Insert or update by URL. Returns (id, created).
+
+    The deferred-ingest AI path runs off the request thread with no lock, so
+    two near-simultaneous syncs can both see no existing row for the same URL
+    and both try to insert. The loser hits the UNIQUE(url) constraint; instead
+    of raising, fall back to updating the row the winner just created."""
     ts = now()
     existing = get_listing_by_url(values["url"], path)
     prepared = _prep(values, JSON_COLS)
@@ -292,11 +297,20 @@ def upsert_listing(values: dict[str, Any], path: Path | None = None) -> tuple[in
             sets = ", ".join(f"{k}=?" for k in prepared)
             c.execute(f"UPDATE listings SET {sets} WHERE id=?", [*prepared.values(), existing["id"]])
             return existing["id"], False
-        prepared.setdefault("first_seen", ts)
-        cols = ", ".join(prepared)
-        marks = ", ".join("?" for _ in prepared)
-        cur = c.execute(f"INSERT INTO listings ({cols}) VALUES ({marks})", list(prepared.values()))
-        return cur.lastrowid, True
+        insert_prepared = dict(prepared)
+        insert_prepared.setdefault("first_seen", ts)
+        cols = ", ".join(insert_prepared)
+        marks = ", ".join("?" for _ in insert_prepared)
+        try:
+            cur = c.execute(f"INSERT INTO listings ({cols}) VALUES ({marks})", list(insert_prepared.values()))
+            return cur.lastrowid, True
+        except sqlite3.IntegrityError:
+            row = c.execute("SELECT id FROM listings WHERE url=?", (values["url"],)).fetchone()
+            if row is None:
+                raise
+            sets = ", ".join(f"{k}=?" for k in prepared)
+            c.execute(f"UPDATE listings SET {sets} WHERE id=?", [*prepared.values(), row["id"]])
+            return row["id"], False
 
 
 def update_listing(listing_id: int, values: dict[str, Any], path: Path | None = None) -> None:

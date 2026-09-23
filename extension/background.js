@@ -5,9 +5,75 @@ const DEFAULT_API = "http://127.0.0.1:8765";
 const BATCH = 8;
 const MIN_GAP = 1800, MAX_GAP = 3800; // ms between listing loads (be polite)
 
+// `running`/`cancel` are in-memory only: a sync (or investigation) that runs
+// long enough can outlive this service worker, which resets them to false on
+// restart while background tabs it opened are left orphaned. `syncState` in
+// chrome.storage.session is the durable record of "something is running,
+// since when, and which tabs it opened" that survives a worker restart.
 let running = false;
 let cancel = false;
 let runningInfo = { site: "", kind: "" };
+const RUN_STALE_MS = 10 * 60 * 1000; // treat a run this old as dead, not just slow
+let keepaliveTimer = null;
+
+// Calling any extension API resets the service worker's ~30s idle timer, so a
+// periodic no-op call keeps a long sync's worker alive without needing the
+// "alarms" permission.
+function startKeepalive() {
+  stopKeepalive();
+  keepaliveTimer = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 25000);
+}
+function stopKeepalive() {
+  if (keepaliveTimer) { clearInterval(keepaliveTimer); keepaliveTimer = null; }
+}
+
+async function getSyncState() {
+  const { syncState } = await chrome.storage.session.get("syncState");
+  return syncState || null;
+}
+
+async function closeTabs(tabIds) {
+  for (const id of tabIds || []) { try { await chrome.tabs.remove(id); } catch (e) {} }
+}
+
+// Claim the run lock, refusing a second concurrent run. A stale lock (its
+// worker died without reaching the `finally`) is recovered: any tabs it left
+// open are closed before the new run proceeds.
+async function acquireRunLock(kind) {
+  const state = await getSyncState();
+  if (state && state.running) {
+    if (Date.now() - (state.startedAt || 0) < RUN_STALE_MS) {
+      return { ok: false, error: `A ${state.kind || "sync"} is already running.` };
+    }
+    log(`Recovered a stale ${state.kind || "sync"} lock; closing ${((state.tabIds || []).length)} orphaned tab(s).`);
+    await closeTabs(state.tabIds);
+  }
+  running = true; cancel = false; runningInfo = { site: "", kind };
+  await chrome.storage.session.set({ syncState: { running: true, startedAt: Date.now(), kind, tabIds: [] } });
+  startKeepalive();
+  return { ok: true };
+}
+
+async function releaseRunLock() {
+  running = false;
+  stopKeepalive();
+  await chrome.storage.session.remove("syncState");
+}
+
+// Track a tab this run opened, so a worker restart can find and close it.
+async function trackTab(tabId) {
+  const state = await getSyncState();
+  if (!state) return;
+  state.tabIds = (state.tabIds || []).concat([tabId]);
+  await chrome.storage.session.set({ syncState: state });
+}
+
+async function untrackTab(tabId) {
+  const state = await getSyncState();
+  if (!state) return;
+  state.tabIds = (state.tabIds || []).filter((id) => id !== tabId);
+  await chrome.storage.session.set({ syncState: state });
+}
 
 async function getApi() {
   const { api_base } = await chrome.storage.local.get("api_base");
@@ -28,6 +94,12 @@ function log(line) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = () => MIN_GAP + Math.random() * (MAX_GAP - MIN_GAP);
+
+// Mirrors S.soldIn / S.endedIn in common.js. This file runs as the service
+// worker, not a content script, so it can't reach window.__scout — mirror the
+// patterns here instead of duplicating ad-hoc regexes at each call site.
+const SOLD_RE = /\b(sold|no longer available|listing (has )?ended)\b/i;
+const ENDED_RE = /\b(bid to|reserve not met|auction ended|ended)\b/i;
 
 function sendToTab(tabId, msg, tries = 6) {
   return new Promise((resolve) => {
@@ -56,6 +128,7 @@ function waitForLoad(tabId, timeoutMs = 30000) {
 
 async function scrapeUrl(url) {
   const tab = await chrome.tabs.create({ url, active: false });
+  await trackTab(tab.id);
   try {
     await waitForLoad(tab.id);
     await sleep(1500);
@@ -71,6 +144,7 @@ async function scrapeUrl(url) {
     return resp.ok ? resp.detail : { error: resp.error };
   } finally {
     try { await chrome.tabs.remove(tab.id); } catch (e) {}
+    await untrackTab(tab.id);
   }
 }
 
@@ -85,10 +159,10 @@ async function post(path, body) {
 }
 
 async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
-  if (running) return { ok: false, error: "A sync is already running." };
-  running = true; cancel = false; runningInfo = { site: "", kind: "sync" };
+  const lock = await acquireRunLock("sync");
+  if (!lock.ok) return lock;
   await chrome.storage.session.set({ log: [] });
-  const totals = { created: 0, updated: 0, normalized: 0, queued_ai: 0, comps: 0, candidates: 0, profiles_created: 0, skipped_sold: 0, errors: [] };
+  const totals = { created: 0, updated: 0, normalized: 0, queued_ai: 0, comps: 0, candidates: 0, profiles_created: 0, skipped_sold: 0, blocked: 0, errors: [] };
   try {
     await setProgress({ state: "collecting", done: 0, total: 0, message: "Scrolling the saved list…" });
     const ping = await sendToTab(tabId, { type: "ping" });
@@ -116,7 +190,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
       const known = new Map((data.listings || []).map((l) => [l.url, l]));
       if (onlyNew) items = items.map((i) => Object.assign(i, { _known: known.get(i.url) }));
       const present = new Set(allUrls);
-      vanished = (data.listings || []).filter((l) => l.site === site && l.availability === "active" && !present.has(l.url))
+      vanished = (data.listings || []).filter((l) => l.site === site && (l.availability === "active" || l.availability === "pending") && !present.has(l.url))
         .map((l) => ({ site, url: l.url, title: l.title, _vanished: true }));
       if (vanished.length) log(`${vanished.length} previously active listing(s) are gone from the saved page; checking their pages.`);
     } catch (e) { log("Could not fetch known listings; scraping everything."); }
@@ -165,7 +239,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
     log("Error: " + e.message);
     return { ok: false, error: e.message };
   } finally {
-    running = false;
+    await releaseRunLock();
   }
 }
 
@@ -175,8 +249,9 @@ async function addCurrent({ tabId, url }) {
   const resp = await sendToTab(tabId, { type: "detail" });
   if (!resp.ok) return { ok: false, error: resp.error };
   const d = resp.detail;
+  const statusHead = (d.status_text || "").slice(0, 200);
   const item = { site: ping.site, url: url.split("?")[0], title: d.title, price_text: (d.bid_text || ""), card_text: d.status_text, detail: d,
-                 sold: /\bsold\b/i.test(d.status_text.slice(0, 200)), ended: /\bbid to\b/i.test(d.status_text.slice(0, 200)) };
+                 sold: SOLD_RE.test(statusHead), ended: ENDED_RE.test(statusHead) && !SOLD_RE.test(statusHead) };
   try {
     const res = await post("/api/ingest", { site: ping.site, items: [item], include_sold: true, defer_ai: false });
     return { ok: true, res };
@@ -187,7 +262,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "sync") { runSync(msg).then(sendResponse); return true; }
   if (msg.type === "add_current") { addCurrent(msg).then(sendResponse); return true; }
   if (msg.type === "cancel") { cancel = true; sendResponse({ ok: true }); return false; }
-  if (msg.type === "status") { sendResponse({ running, site: runningInfo.site, kind: runningInfo.kind }); return false; }
+  if (msg.type === "status") {
+    getSyncState().then((state) => {
+      const stillRunning = running || !!(state && state.running && Date.now() - (state.startedAt || 0) < RUN_STALE_MS);
+      sendResponse({ running: stillRunning, site: runningInfo.site, kind: runningInfo.kind || (state && state.kind) || "" });
+    });
+    return true;
+  }
   return false;
 });
 
@@ -214,11 +295,15 @@ const MAX_DEEPEN = 8;
 
 async function searchPage(url, settleMs) {
   const tab = await chrome.tabs.create({ url, active: false });
+  await trackTab(tab.id);
   try {
     await waitForLoad(tab.id);
     const resp = await sendToTab(tab.id, { type: "search_results", settleMs }, 8);
     return resp.ok ? resp : { results: [], error: resp.error };
-  } finally { try { await chrome.tabs.remove(tab.id); } catch (e) {} }
+  } finally {
+    try { await chrome.tabs.remove(tab.id); } catch (e) {}
+    await untrackTab(tab.id);
+  }
 }
 
 async function runInvestigation(job) {
@@ -266,15 +351,15 @@ async function runInvestigation(job) {
 }
 
 async function runQueuedInvestigations() {
-  if (running) return { ok: false, error: "A sync is already running." };
-  running = true; cancel = false; runningInfo = { site: "", kind: "investigation" };
+  const lock = await acquireRunLock("investigation");
+  if (!lock.ok) return lock;
   try {
     const api = await getApi();
     const jobs = await (await fetch(api + "/api/provenance/jobs?status=queued")).json();
     let done = 0;
     for (const job of jobs) { const r = await runInvestigation(job); if (r.ok) done++; if (cancel) break; }
     return { ok: true, done, total: jobs.length };
-  } catch (e) { return { ok: false, error: e.message }; } finally { running = false; }
+  } catch (e) { return { ok: false, error: e.message }; } finally { await releaseRunLock(); }
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

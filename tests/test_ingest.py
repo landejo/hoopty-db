@@ -22,6 +22,15 @@ def test_parse_price():
     assert parse_price("Sold for $31,000") == 31000
     assert parse_price("$12") is None
     assert parse_price(None) is None
+    assert parse_price("$9,999") == 9999
+    assert parse_price("Bid to $12,500") == 12500
+
+
+def test_parse_price_k_suffix():
+    assert parse_price("$12.5k") == 12500
+    assert parse_price("$1.2K") == 1200
+    assert parse_price("$5k") == 5000
+    assert parse_price("12.5k miles") is None  # no leading $: that's mileage, not a price
 
 
 def test_sold_becomes_comp_and_active_becomes_candidate():
@@ -119,6 +128,22 @@ def test_ignored_listing_never_comes_back_as_candidate():
     assert db.get_listing_by_url(url)["role"] == "ignored"
     from scout.ingest import rescore_listing
     assert rescore_listing(lid) is None
+
+
+def test_cheap_no_year_no_model_facebook_row_is_ignored(monkeypatch):
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    monkeypatch.setattr("scout.vin.decode_vin", lambda *a, **k: None)
+    import scout.ai.normalize as nz
+    # The normalizer says it IS a vehicle (a misread), but with no year/model and
+    # a price under $1,000 it's almost certainly parts/junk, not a car.
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": True, "price": 250, "prelim_summary": "wheels"})
+    url = "https://www.facebook.com/marketplace/item/junk/"
+    ing.ingest_items("facebook", [_item(url, title="Set of 4 wheels", price="$250")], run_ai=True)
+    row = db.get_listing_by_url(url)
+    assert row["role"] == "ignored"
+    assert row["normalized"]["ignored_reason"] == "no year/model and price under $1,000"
 
 
 def test_normalizer_skip_marks_not_a_vehicle(monkeypatch):

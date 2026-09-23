@@ -9,7 +9,9 @@
   S.text = (el) => (el ? (el.innerText || el.textContent || "") : "").replace(/\s+\n/g, "\n").trim();
 
   S.priceIn = (txt) => {
-    const m = (txt || "").match(/\$\s?[\d,]{3,}/);
+    // Matches "$24,500" and shorthand like "$12.5k" / "$1.2K"; never bare
+    // "12.5k" without a leading "$" (that's a mileage reading, not a price).
+    const m = (txt || "").match(/\$\s?[\d,]{3,}|\$\s?\d+(?:\.\d+)?\s?[kK]\b/);
     return m ? m[0].replace(/\s/g, "") : "";
   };
 
