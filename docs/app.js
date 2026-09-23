@@ -23,13 +23,20 @@
   applyTheme();
 
   // ---------- data ----------
+  const detailCache = new Map(); // static mode only: id -> full listing, fetched on demand
   async function loadData() {
     try {
       const r = await fetch("/api/health", { cache: "no-store" });
       if (r.ok) { state.local = true; state.health = await r.json(); }
     } catch (e) {}
-    const url = state.local ? "/api/export" : "data/scout.json?ts=" + Date.now();
-    const r = await fetch(url, { cache: "no-store" });
+    detailCache.clear();
+    let r;
+    if (state.local) {
+      r = await fetch("/api/export", { cache: "no-store" });
+    } else {
+      r = await fetch("data/index.json?ts=" + Date.now(), { cache: "no-store" });
+      if (!r.ok) r = await fetch("data/scout.json?ts=" + Date.now(), { cache: "no-store" }); // pre-switchover fallback
+    }
     state.data = await r.json();
     state.byId = new Map(state.data.listings.map((l) => [l.id, l]));
     state.profiles = new Map(state.data.profiles.map((p) => [p.key, p]));
@@ -52,6 +59,20 @@
       if (document.hidden) return;
       try { const r = await fetch("/api/health", { cache: "no-store" }); if (r.ok) { state.health = await r.json(); updateModePill(); } } catch (e) {}
     }, 10000);
+  }
+  // Static mode only: the index carries a summary; fetch the full listing
+  // (evidence, photos, provenance, timeline, ...) the first time its detail
+  // page is opened, then cache it and merge it into the listing object.
+  async function ensureDetail(l) {
+    if (state.local || l._detailLoaded) return l;
+    if (detailCache.has(l.id)) { Object.assign(l, detailCache.get(l.id)); l._detailLoaded = true; return l; }
+    const r = await fetch(`data/l/${l.id}.json?ts=` + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error("detail not found");
+    const full = await r.json();
+    detailCache.set(l.id, full);
+    Object.assign(l, full);
+    l._detailLoaded = true;
+    return l;
   }
   async function api(path, method = "GET", body) {
     const r = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -117,7 +138,8 @@
   // outrank a priced listing with the same assessed score. Sort-only penalty.
   function isEarlyBid(l) {
     const c = l.assessment?.costs;
-    if (c && (c.price_basis === "unpriced" || c.price_basis === "current_bid") && (c.notes || []).some((n) => /early bid/i.test(n))) return true;
+    if (c?.price_basis === "unpriced") return true;
+    if (c?.price_basis === "current_bid" && (c.notes || []).some((n) => /early bid/i.test(n))) return true;
     if ((l.normalized?.quick_gates || []).some((g) => /early bid/i.test(g))) return true;
     if ((l.assessment?.gates || []).some((g) => /early bid/i.test(g.reason || ""))) return true;
     return false;
@@ -396,6 +418,13 @@
   function renderDetail(app, id) {
     const l = state.byId.get(id);
     if (!l) return app.appendChild(h(`<div class="empty"><h2>Not found</h2></div>`));
+    if (!state.local && !l._detailLoaded) {
+      app.appendChild(h(`<div class="empty"><h2>Loading…</h2></div>`));
+      ensureDetail(l)
+        .then(() => { if ((location.hash || "").includes(`/l/${id}`)) { app.innerHTML = ""; renderDetail(app, id); } })
+        .catch((e) => { app.innerHTML = `<div class="empty"><h2>Could not load details</h2><p>${esc(e.message)}</p></div>`; });
+      return;
+    }
     const A = l.assessment, N = l.normalized || {}, prof = state.profiles.get(l.profile_key);
     const E = A?.evidence, S = A?.score, C = A?.costs;
     const photos = l.photos && l.photos.length ? l.photos : l.thumb ? [l.thumb] : [];
@@ -700,6 +729,14 @@
   // ---------- compare ----------
   function renderCompare(app) {
     const rows = state.compare.map((id) => state.byId.get(id)).filter(Boolean);
+    // Static mode: compare reads full assessment costs/evidence, not just the index summary.
+    if (!state.local && rows.some((l) => !l._detailLoaded)) {
+      app.appendChild(h(`<div class="empty"><h2>Loading…</h2></div>`));
+      Promise.all(rows.map((l) => ensureDetail(l)))
+        .then(() => { if ((location.hash || "").startsWith("#/compare")) { app.innerHTML = ""; renderCompare(app); } })
+        .catch((e) => { app.innerHTML = `<div class="empty"><h2>Could not load details</h2><p>${esc(e.message)}</p></div>`; });
+      return;
+    }
     app.appendChild(h(`<div class="hero"><div><h1>Compare</h1><p>Side by side. Pick up to four from the board.</p></div><a class="btn sm ghost" href="#/">← Board</a></div>`));
     if (!rows.length) return app.appendChild(h(`<div class="empty"><h2>Nothing selected</h2></div>`));
     const facts = [["Price", (l) => money(l.sold_price || l.price)], ["Mileage", (l) => l.mileage ? num(l.mileage) + " mi" : "—"], ["Year", (l) => l.year ?? "—"], ["Trim", (l) => l.trim || "—"], ["Engine", (l) => l.engine || "—"], ["Transmission", (l) => l.transmission || "—"], ["Location", (l) => l.location || "—"], ["Listed", listedAge], ["Site", (l) => siteName(l.site)],
