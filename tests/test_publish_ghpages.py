@@ -105,7 +105,7 @@ def test_publish_creates_orphan_gh_pages_commit(git_repo):
     lst = {l["id"]: l for l in index["listings"]}
     assert "photos" not in lst[ids[0]]
     assert "evidence" not in lst[ids[0]]["assessment"]
-    assert "costs" not in lst[ids[0]]["assessment"]
+    assert set(lst[ids[0]]["assessment"].get("costs", {})) <= {"price_basis"}   # only the sort key, no cost detail
     assert lst[ids[0]]["assessment"]["verdict"] == "Pursue"
 
     detail = json.loads(_git_bare(bare, "show", f"{sha}:data/l/{ids[0]}.json").stdout)
