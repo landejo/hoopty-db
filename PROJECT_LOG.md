@@ -3,6 +3,24 @@
 Running log of high-effort work sessions. Newest entry first. Each entry ends
 with a System State Summary per the Claude environment rules.
 
+## 2026-09-22 — Full audit (read-only, no code changes)
+
+Opus-led audit with Sonnet sub-agents across backend, extension, viewer,
+policy/AI, pipeline and live data. Report:
+`data/audits/Hoopty_Scout_Audit_v1_20260922.md` (untracked). Headline: the
+public export leaks VINs/phone numbers via `raw` free text and Autotrader
+URLs; CORS `*` with no auth; publish reports success on failure; no DB
+backup; verdict/confidence cannot discriminate at listing stage (0 Pursue,
+confidence median 15).
+
+**System State Summary**
+- Active tools: pytest (87/87 pass), read-only sqlite, browser pane on the
+  local workbench.
+- Modified paths: `PROJECT_LOG.md` (this entry), new untracked
+  `data/audits/Hoopty_Scout_Audit_v1_20260922.md`.
+- Open dependencies: the user decides whether to rewrite public history for the
+  leaked `docs/data/scout.json`; the P0 fixes in the report are not started.
+
 ## 2026-09-11 — Autotrader adapter: saved cards found again (0.3.2)
 
 Autotrader's saved-listings page moved saved cards to
