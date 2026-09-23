@@ -37,19 +37,22 @@ def compute_next_steps(listing: dict[str, Any], classified: dict[str, list], sta
 
     def add(s: str) -> None:
         if s and len(steps) < 3:
-            steps.append(s[:159])
+            steps.append(s if len(s) < 160 else s[:158].rsplit(" ", 1)[0].rstrip(",;:") + "…")
+
+    def short(label: str) -> str:   # "Documented timing-belt ... (date and mileage)" -> the part before the detail
+        return label.split(" (")[0].split("; ")[0].strip()
 
     if not listing.get("vin"):
         add("Ask for the VIN")
     if stage == "listing" and classified["document"]:
-        add(f"Request records: {', '.join(it['label'] for it in classified['document'][:3])}")
+        add(f"Request records: {'; '.join(short(it['label']) for it in classified['document'][:3])}")
     for q in evidence.seller_questions:
         q = q.strip()
         if q and not any(q.lower() == s.lower() for s in steps):
             add(q)
             break
     if stage == "docs" and classified["inspection"]:
-        add(f"Book a PPI focused on: {', '.join(it['label'] for it in classified['inspection'][:3])}")
+        add(f"Book a PPI focused on: {'; '.join(short(it['label']) for it in classified['inspection'][:3])}")
     return steps
 
 
