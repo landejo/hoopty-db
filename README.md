@@ -37,7 +37,8 @@ Load the extension: `chrome://extensions` → Developer mode → **Load unpacked
    so those rows become comps. The popup can be closed; progress continues.
 4. Open the workbench (http://127.0.0.1:8765). Cards show a preliminary Haiku score. Open a
    card → **Analyze with Opus** for the deep read (roughly $0.50–1.50 per listing).
-5. **Publish** (header button) exports `docs/data/scout.json`, commits, and pushes.
+5. **Publish** (header button) exports the data and force-pushes it to `gh-pages` (see
+   "GitHub Pages" below) — `main` is untouched.
 
 On a listing page (not the saved list) the popup offers **Add this listing** for one-offs.
 
@@ -127,15 +128,25 @@ written to `data/last_*.log` for debugging.
 
 ## GitHub Pages
 
-Settings → Pages → *Deploy from a branch* → `main` / `/docs`. The published JSON omits seller
-contact details, private-seller names, VINs, and the raw listing text, but everything else
-(your notes, statuses, scores) is public to anyone with the URL. The Pages copy is read-only;
-edits and analyses happen on the local server, then Publish.
+Settings → Pages → *Deploy from a branch* → `gh-pages` / `/` (root). `main` carries no
+data — the site lives entirely on the `gh-pages` branch, which Publish rewrites from
+scratch on every run: one orphan commit (no parent, no accumulated history), force-pushed.
+The published JSON omits seller contact details, private-seller names, VINs, and the raw
+listing text, but everything else (your notes, statuses, scores) is public to anyone with
+the URL. The Pages copy is read-only; edits and analyses happen on the local server, then
+Publish. Data is split into `data/index.json` (everything the board/market/profile views
+need) and `data/l/<id>.json` (one file per listing, fetched on demand when you open its
+detail page).
 
 Publish refuses to write or push if any VIN, phone number or email survives the scrub
-(`publish.find_leaks`), reports git failures instead of claiming success, and will not
-push when the branch is behind `origin`. The local API only answers the workbench and the
-extension (Host + Origin check), not other web pages.
+(`publish.find_leaks`), reports git failures instead of claiming success, and builds the
+`gh-pages` commit with git plumbing (a temporary index + work-tree) so the local `main`
+checkout is never touched. The local API only answers the workbench and the extension
+(Host + Origin check), not other web pages.
+
+**One-time setup (lead only, at switchover):** GitHub → repo Settings → Pages → change
+*Branch* from `main /docs` to `gh-pages` / `(root)`. Until that's done, Pages keeps
+serving the old `main`-branch copy even after this branch's changes land.
 
 **Backups:** `data/scout.db` is copied on every server start and before every publish to
 `~/Documents/Hoopty Scout Backups` (override with `SCOUT_BACKUP_DIR`; the newest 14 are kept).

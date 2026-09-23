@@ -1,10 +1,16 @@
-"""Export the DB to docs/data/*.json for the static viewer, then commit + push.
+"""Export the DB, scrub it, split it for the static viewer, then publish it to
+an orphan `gh-pages` branch (single commit, force-pushed). `main` never carries
+data; each publish replaces the branch's whole history with one commit built
+from git plumbing, so the user's working tree/index on `main` is never touched.
 Seller contact details and private-party seller names never leave the DB."""
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,6 +30,24 @@ PUBLIC_LISTING_FIELDS = [
 ]
 # Only the raw scraper fields docs/app.js actually reads (raw?.time_left, "Auction ends").
 RAW_PUBLIC_FIELDS = {"time_left"}
+
+# Top-level export keys that belong in the light index (everything the board,
+# market and profile views read). "listings" is handled separately.
+INDEX_TOP_LEVEL_KEYS = ["generated_at", "policy_version", "calibration", "sites", "profiles", "markets"]
+
+# Fields dropped from each listing in the index: full assessment evidence,
+# photos, normalized text blobs, timeline, provenance, raw listing text, and
+# local-workbench-only debug info. The detail view fetches these on demand.
+INDEX_LISTING_DROP = {"photos", "provenance", "timeline", "last_error"}
+# Assessment fields the board/market/profile views actually read (verdict
+# chip, score badge, confidence, model tag, staleness note) — not the full
+# evidence/gates/costs payload.
+INDEX_ASSESSMENT_FIELDS = ["verdict", "model", "assessed_at", "policy_version", "shared_from", "context_changed", "confidence"]
+# Normalized fields the board reads (search text, red-flag/quick-gate chips,
+# price-drop total) — not the full ratings/breakdown/vin-decode blobs.
+INDEX_NORMALIZED_FIELDS = ["prelim_summary", "red_flags", "quick_gates", "price_drops"]
+
+DETAIL_PHOTO_CAP = 16
 
 VIN_RE = re.compile(r"\b(?=[A-HJ-NPR-Z0-9]{17}\b)(?=[A-HJ-NPR-Z0-9]*[0-9])(?=[A-HJ-NPR-Z0-9]*[A-HJ-NPR-Z])[A-HJ-NPR-Z0-9]{17}\b")
 PHONE_RE = re.compile(r"(?<!\d)(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}(?!\d)")
@@ -156,6 +180,8 @@ def build_export() -> dict[str, Any]:
 
 
 def write_export(data: dict[str, Any] | None = None, out_dir: Path | None = None) -> Path:
+    """Write the full (unsplit) export. Kept for local/manual use; the publish
+    flow below uses split_export() instead."""
     data = data or build_export()
     out_dir = out_dir or SITE_DATA_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -164,17 +190,88 @@ def write_export(data: dict[str, Any] | None = None, out_dir: Path | None = None
     return path
 
 
-def _run(*cmd: str) -> subprocess.CompletedProcess:
-    return subprocess.run(list(cmd), cwd=ROOT, capture_output=True, text=True)
+def _index_listing(l: dict[str, Any]) -> dict[str, Any]:
+    out = {k: v for k, v in l.items() if k not in INDEX_LISTING_DROP}
+    a = l.get("assessment")
+    if a:
+        summary = {k: a[k] for k in INDEX_ASSESSMENT_FIELDS if k in a}
+        summary["score"] = {"total": (a.get("score") or {}).get("total")}
+        out["assessment"] = summary
+    n = l.get("normalized")
+    if n:
+        out["normalized"] = {k: n[k] for k in INDEX_NORMALIZED_FIELDS if k in n}
+    return out
 
 
-def _rev_count(range_: str) -> int:
-    r = _run("git", "rev-list", "--count", range_)
-    return int(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip().isdigit() else 0
+def _detail_listing(l: dict[str, Any]) -> dict[str, Any]:
+    out = dict(l)
+    if out.get("photos"):
+        out["photos"] = out["photos"][:DETAIL_PHOTO_CAP]
+    return out
 
 
-def git_publish(message: str = "Publish scout data") -> dict[str, Any]:
-    """Build + scrub the export, back up the DB, commit docs/data and push.
+def split_export(export: dict[str, Any]) -> tuple[dict[str, Any], dict[Any, dict[str, Any]]]:
+    """Split an already-redacted export into a light index (board/market/profile
+    views) and per-listing detail payloads (detail view, fetched on demand)."""
+    listings = export.get("listings", [])
+    index = {k: export[k] for k in INDEX_TOP_LEVEL_KEYS if k in export}
+    index["listings"] = [_index_listing(l) for l in listings]
+    details = {l["id"]: _detail_listing(l) for l in listings}
+    return index, details
+
+
+def _dump(data: Any) -> str:
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def _stage_site(staging: Path, index: dict[str, Any], details: dict[Any, dict[str, Any]]) -> dict[str, int]:
+    """Populate the staging dir with static assets + split data. Returns a
+    sizes report."""
+    for item in DOCS_DIR.iterdir():
+        if item.name == "data":
+            continue
+        dest = staging / item.name
+        if item.is_dir():
+            shutil.copytree(item, dest)
+        else:
+            shutil.copy2(item, dest)
+    (staging / ".nojekyll").write_text("")
+
+    data_dir = staging / "data"
+    l_dir = data_dir / "l"
+    l_dir.mkdir(parents=True, exist_ok=True)
+
+    index_json = _dump(index)
+    (data_dir / "index.json").write_text(index_json)
+
+    detail_sizes: dict[Any, int] = {}
+    for lid, d in details.items():
+        s = _dump(d)
+        (l_dir / f"{lid}.json").write_text(s)
+        detail_sizes[lid] = len(s.encode())
+
+    total = len(index_json.encode()) + sum(detail_sizes.values())
+    largest = max(detail_sizes.values(), default=0)
+    return {
+        "index_bytes": len(index_json.encode()),
+        "detail_files": len(detail_sizes),
+        "largest_detail_bytes": largest,
+        "total_bytes": total,
+    }
+
+
+def _run(*cmd: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    full_env = dict(os.environ)
+    if env:
+        full_env.update(env)
+    return subprocess.run(list(cmd), cwd=ROOT, capture_output=True, text=True, env=full_env)
+
+
+def git_publish(message: str | None = None) -> dict[str, Any]:
+    """Build + scrub the export, split it, back up the DB, and publish a single
+    orphan commit to `gh-pages` (force-pushed). `main`'s working tree and index
+    are never touched — everything below uses git plumbing against a temporary
+    index file and a temporary work-tree.
     Returns {ok, changed, detail}; aborts before writing/committing on any leak."""
     export = build_export()
     leaks = find_leaks(export)
@@ -189,30 +286,48 @@ def git_publish(message: str = "Publish scout data") -> dict[str, Any]:
     except Exception as e:
         log.append(f"backup failed: {e}")
 
-    path = write_export(export)
-    rel = str(path.relative_to(ROOT))
-    r = _run("git", "add", rel)
-    log.append(f"$ git add {rel}\n{r.stdout}{r.stderr}")
-    if r.returncode != 0:
-        return {"ok": False, "changed": False, "detail": "\n".join(log)}
+    index, details = split_export(export)
 
-    r = _run("git", "commit", "-m", message, "--", rel)
-    log.append(f"$ git commit -m {message!r} -- {rel}\n{r.stdout}{r.stderr}")
-    changed = r.returncode == 0
-    if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
-        return {"ok": False, "changed": False, "detail": "\n".join(log)}
+    with tempfile.TemporaryDirectory(prefix="hoopty-publish-") as tmp:
+        tmp_path = Path(tmp)
+        staging = tmp_path / "site"
+        staging.mkdir()
+        sizes = _stage_site(staging, index, details)
+        log.append(f"sizes: {sizes}")
 
-    r = _run("git", "fetch")
-    log.append(f"$ git fetch\n{r.stdout}{r.stderr}")
-    if not changed and _rev_count("@{u}..HEAD") == 0:
-        log.append("nothing to push")
-        return {"ok": True, "changed": False, "detail": "\n".join(log)}
-    if _rev_count("HEAD..@{u}") > 0:
-        log.append("behind upstream; not pushing")
-        return {"ok": False, "changed": changed, "detail": "\n".join(log)}
+        index_file = tmp_path / "index"
+        env = {"GIT_INDEX_FILE": str(index_file)}
 
-    r = _run("git", "push")
-    log.append(f"$ git push\n{r.stdout}{r.stderr}")
-    if r.returncode != 0:
-        return {"ok": False, "changed": changed, "detail": "\n".join(log)}
-    return {"ok": True, "changed": changed, "detail": "\n".join(log)}
+        r = _run("git", f"--work-tree={staging}", "add", "-A", env=env)
+        log.append(f"$ git --work-tree={staging} add -A\n{r.stdout}{r.stderr}")
+        if r.returncode != 0:
+            return {"ok": False, "changed": False, "detail": "\n".join(log)}
+
+        r = _run("git", "write-tree", env=env)
+        log.append(f"$ git write-tree\n{r.stdout}{r.stderr}")
+        if r.returncode != 0:
+            return {"ok": False, "changed": False, "detail": "\n".join(log)}
+        tree_sha = r.stdout.strip()
+
+        r = _run("git", "fetch", "origin", "gh-pages")
+        log.append(f"$ git fetch origin gh-pages\n{r.stdout}{r.stderr}")
+
+        r = _run("git", "rev-parse", "origin/gh-pages^{tree}")
+        remote_tree = r.stdout.strip() if r.returncode == 0 else None
+        if remote_tree == tree_sha:
+            log.append("nothing changed; not pushing")
+            return {"ok": True, "changed": False, "detail": "\n".join(log)}
+
+        commit_message = message or f"Publish scout data {datetime.now(timezone.utc).replace(microsecond=0).isoformat()}"
+        r = _run("git", "commit-tree", tree_sha, "-m", commit_message)
+        log.append(f"$ git commit-tree {tree_sha} -m {commit_message!r}\n{r.stdout}{r.stderr}")
+        if r.returncode != 0:
+            return {"ok": False, "changed": False, "detail": "\n".join(log)}
+        commit_sha = r.stdout.strip()
+
+        r = _run("git", "push", "--force", "origin", f"{commit_sha}:refs/heads/gh-pages")
+        log.append(f"$ git push --force origin {commit_sha}:refs/heads/gh-pages\n{r.stdout}{r.stderr}")
+        if r.returncode != 0:
+            return {"ok": False, "changed": True, "detail": "\n".join(log)}
+
+        return {"ok": True, "changed": True, "detail": "\n".join(log)}

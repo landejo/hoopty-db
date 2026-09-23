@@ -8,3 +8,4 @@ data/*.log
 .DS_Store
 .pytest_cache/
 data/handoffs/
+docs/data/

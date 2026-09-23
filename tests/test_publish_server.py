@@ -80,42 +80,10 @@ def test_find_leaks_empty_on_seeded_export():
     assert find_leaks(export) == []
 
 
-def test_git_publish_leak_aborts_before_git(monkeypatch):
-    import scout.publish as publish
 
-    def boom(*a, **k):
-        raise AssertionError("git must not run when a leak is found")
-    monkeypatch.setattr(publish, "build_export", lambda: {"notes": "VIN 5TDZA23A15S123456"})
-    monkeypatch.setattr(publish.subprocess, "run", boom)
-    result = publish.git_publish()
-    assert result["ok"] is False and result["changed"] is False
-    assert "notes" in result["detail"]
-
-
-def test_git_publish_push_failure(monkeypatch, tmp_path):
-    import subprocess as sp
-    import scout.publish as publish
-
-    monkeypatch.setattr(publish, "build_export", lambda: {"listings": []})
-    monkeypatch.setattr(publish, "ROOT", tmp_path)
-    monkeypatch.setattr(publish, "SITE_DATA_DIR", tmp_path / "docs" / "data")
-
-    def fake_run(cmd, cwd=None, capture_output=None, text=None):
-        if cmd[:2] == ["git", "add"]:
-            return sp.CompletedProcess(cmd, 0, "", "")
-        if cmd[:2] == ["git", "commit"]:
-            return sp.CompletedProcess(cmd, 0, "1 file changed", "")
-        if cmd[:2] == ["git", "fetch"]:
-            return sp.CompletedProcess(cmd, 0, "", "")
-        if cmd[:3] == ["git", "rev-list", "--count"]:
-            return sp.CompletedProcess(cmd, 0, "0\n", "")
-        if cmd[:2] == ["git", "push"]:
-            return sp.CompletedProcess(cmd, 1, "", "rejected")
-        raise AssertionError(f"unexpected command {cmd}")
-    monkeypatch.setattr(publish.subprocess, "run", fake_run)
-    result = publish.git_publish()
-    assert result["ok"] is False and result["changed"] is True
-    assert "rejected" in result["detail"]
+# Orphan gh-pages publish flow (git plumbing against a temp index + work-tree,
+# force-pushed) is covered in tests/test_publish_ghpages.py, which uses a real
+# tmp git repo + bare "origin" rather than mocking subprocess.run.
 
 
 def test_publish_endpoint_returns_502_on_failure(monkeypatch):
