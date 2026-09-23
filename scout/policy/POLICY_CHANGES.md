@@ -34,7 +34,10 @@ attached documents.
    cond_gain`, capped at 100, where `doc_gain`/`cond_gain` are the documentation
    / condition headroom, capped by 5 (4) points per still-open document
    (inspection) item, plus a one-time +5 if major service or an accident is
-   claimed without documentation.
+   claimed without documentation, and in total by 12 documentation and 8
+   condition points (`DOC_GAIN_CAP` / `COND_GAIN_CAP`): records and a clean PPI
+   rarely move a car further than that, and without the cap a listing that
+   discloses less would out-rank one that discloses more.
 4. **New verdict path.** With open questions only (no observed conditional),
    `score.total >= 45` and `upside >= 75`, at the Listing or Questions stage:
    `Pursue conditionally`, "worth pursuing if the open questions check out."
@@ -42,7 +45,7 @@ attached documents.
    expected before the seller has answered anything. Otherwise (low score, low
    upside, or Docs/PPI stage) it still caps at `Maybe / verify` as before.
 5. **Priority** (`Assessment.priority`, 0-100) ranks which car is worth
-   pursuing next: `round(0.4 * score.total + 0.6 * upside)`, minus 10 per
+   pursuing next: `round(0.6 * score.total + 0.4 * upside)` (proven evidence outweighs hoped-for evidence), minus 10 per
    observed conditional, minus 8 for an unpriced or early-bid auction, minus 5
    for a stale listing; zero for any hard/strategy/configuration gate.
 6. **Next steps** (`Assessment.next_steps`, up to 3): ask for the VIN if

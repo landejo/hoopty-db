@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from scout.evidence import COND_GAIN_PER_ITEM, GAIN_PER_ITEM, classify
+from scout.evidence import COND_GAIN_CAP, COND_GAIN_PER_ITEM, DOC_GAIN_CAP, GAIN_PER_ITEM, classify
 from scout.policy.preferences import (
     CATEGORY_POINTS, CONFIDENCE_PROVISIONAL, DOC_CAP_CONDITIONAL_MISSING, DOC_CAP_HARD_MISSING,
     LOGISTICS_CAP_BY_BAND, RELIST_MARKUP_FLAG, RELIST_PRICE_VALUE_CAP, SCORE_BANDS, VERDICT_RANK,
@@ -145,8 +145,8 @@ def compute_upside(score: Score, classified: dict[str, list]) -> int:
     """Score the car could reach if its still-open questions resolve favourably."""
     n_doc, n_insp = len(classified["document"]), len(classified["inspection"])
     bonus = 5 if any(it["key"] in _OPEN_FLAG_LABELS for it in classified["document"]) else 0
-    doc_gain = min(max(0, 25 - score.documentation), GAIN_PER_ITEM * n_doc + bonus) if (n_doc or bonus) else 0
-    cond_gain = min(max(0, 25 - score.condition), COND_GAIN_PER_ITEM * n_insp) if n_insp else 0
+    doc_gain = min(max(0, 25 - score.documentation), GAIN_PER_ITEM * n_doc + bonus, DOC_GAIN_CAP) if (n_doc or bonus) else 0
+    cond_gain = min(max(0, 25 - score.condition), COND_GAIN_PER_ITEM * n_insp, COND_GAIN_CAP) if n_insp else 0
     return min(100, score.total + doc_gain + cond_gain)
 
 

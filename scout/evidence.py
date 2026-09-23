@@ -26,6 +26,8 @@ _INSPECTION = re.compile(
 DOC_MAX = 25          # documentation is 25 of the 100 points
 GAIN_PER_ITEM = 5     # observed on the GX470: documents moved documentation 10 -> 20
 COND_GAIN_PER_ITEM = 4  # condition points a resolved inspection-only item is worth (policy 1.4.0 upside)
+DOC_GAIN_CAP = 12      # realistic ceilings: records rarely add more than ~12 documentation points,
+COND_GAIN_CAP = 8      # and a clean PPI ~8 condition points; stops thin listings out-ranking disclosed ones
 
 
 def classify(item_key: str, label: str = "") -> str:

@@ -192,20 +192,20 @@ def test_verdict_hard_gate_rejects_and_priority_is_zero():
 def test_priority_base_formula():
     score = _score(total=70)
     classified = {"document": [], "inspection": [], "observed": []}
-    assert compute_priority(score, 90, [], classified, _costs()) == round(0.4 * 70 + 0.6 * 90)
+    assert compute_priority(score, 90, [], classified, _costs()) == round(0.6 * 70 + 0.4 * 90)
 
 
 def test_priority_penalizes_observed_conditionals():
     score = _score(total=70)
     gates = [_gate("conditional", "salvage_or_rebuilt_title", "Salvage / rebuilt title")]
     classified = classify_conditionals(gates, "listing")
-    assert compute_priority(score, 70, gates, classified, _costs()) == round(0.4 * 70 + 0.6 * 70) - 10
+    assert compute_priority(score, 70, gates, classified, _costs()) == round(0.6 * 70 + 0.4 * 70) - 10
 
 
 def test_priority_penalizes_unpriced_or_expected_hammer_price_basis():
     score = _score(total=70)
     classified = {"document": [], "inspection": [], "observed": []}
-    base = round(0.4 * 70 + 0.6 * 70)
+    base = round(0.6 * 70 + 0.4 * 70)
     assert compute_priority(score, 70, [], classified, _costs("unpriced")) == base - 8
     assert compute_priority(score, 70, [], classified, _costs("expected_hammer")) == base - 8
     assert compute_priority(score, 70, [], classified, _costs("asking")) == base
@@ -216,7 +216,7 @@ def test_priority_penalizes_stale_listing_gate():
     gates = [_gate("conditional", "stale_listing", "stale")]
     classified = classify_conditionals(gates, "listing")
     upside = compute_upside(score, classified)
-    base = round(0.4 * 70 + 0.6 * upside)
+    base = round(0.6 * 70 + 0.4 * upside)
     assert compute_priority(score, upside, gates, classified, _costs()) == base - 5
 
 

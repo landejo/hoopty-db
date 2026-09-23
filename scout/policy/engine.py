@@ -21,7 +21,7 @@ def compute_priority(score, upside: int, gates: list[Gate], classified: dict[str
     right now, relative to the others (policy 1.4.0)."""
     if any(g.kind in {"hard", "strategy", "configuration"} for g in gates):
         return 0
-    p = 0.4 * score.total + 0.6 * upside
+    p = 0.6 * score.total + 0.4 * upside   # proven evidence outweighs hoped-for evidence
     p -= 10 * len(classified["observed"])
     if costs.price_basis in {"unpriced", "expected_hammer"}:
         p -= 8
