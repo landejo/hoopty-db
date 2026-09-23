@@ -3,6 +3,8 @@ Also serves docs/ so the viewer runs locally with write access."""
 from __future__ import annotations
 
 import asyncio
+import os
+import re
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -21,7 +23,43 @@ from scout.policy.preferences import MISSIONS
 from scout.policy.state import load_state, reset_state, save_state
 
 app = FastAPI(title="Hoopty Scout")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Only the local viewer (served by this same process) and the Chrome extension
+# are legitimate callers. No wildcard: /api/* can push to a public repo,
+# trigger paid AI calls, and delete/read listings (including VINs/seller data).
+_ALLOWED_ORIGINS = [f"http://127.0.0.1:{CONFIG.port}", f"http://localhost:{CONFIG.port}"]
+_EXTENSION_ORIGIN_RE = r"^chrome-extension://[a-p]{32}$"
+_ALLOWED_HOSTS = {"127.0.0.1", "localhost", "testserver"}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_origin_regex=_EXTENSION_ORIGIN_RE,
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
+    allow_headers=["Content-Type"],
+)
+
+
+def _origin_allowed(origin: str) -> bool:
+    return origin in _ALLOWED_ORIGINS or bool(re.match(_EXTENSION_ORIGIN_RE, origin))
+
+
+@app.middleware("http")
+async def _api_guard(request, call_next):
+    """Anti DNS-rebinding + anti cross-site-request guard for the whole API.
+    Runs on every method, including GET, so a hostile page can't trigger
+    side-effect GETs or read /api/export either."""
+    if request.url.path.startswith("/api/"):
+        host = (request.headers.get("host") or "").split(":")[0]
+        if host not in _ALLOWED_HOSTS:
+            return JSONResponse({"detail": "forbidden host"}, status_code=403)
+        origin = request.headers.get("origin")
+        if origin is not None:
+            if not _origin_allowed(origin):
+                return JSONResponse({"detail": "forbidden origin"}, status_code=403)
+        elif request.headers.get("sec-fetch-site") == "cross-site":
+            return JSONResponse({"detail": "forbidden"}, status_code=403)
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -68,6 +106,12 @@ def task_status() -> dict[str, Any]:
 def _startup() -> None:
     db.init_db()
     sync_seed_profiles()
+    if os.environ.get("SCOUT_BACKUP_DIR") != "off":
+        try:
+            from scout.backup import backup_db
+            backup_db("startup")
+        except Exception as e:
+            print(f"warning: startup backup failed: {e}")
 
 
 @app.get("/api/health")
@@ -561,8 +605,10 @@ def patch_profile(key: str, patch: ProfilePatch) -> dict[str, Any]:
 
 @app.post("/api/publish")
 async def publish() -> dict[str, Any]:
-    out = await asyncio.to_thread(git_publish)
-    return {"ok": True, "git": out}
+    result = await asyncio.to_thread(git_publish)
+    if not result["ok"]:
+        raise HTTPException(502, result["detail"])
+    return {"ok": True, "changed": result["changed"], "git": result["detail"]}
 
 
 @app.post("/api/export/write")

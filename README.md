@@ -132,6 +132,14 @@ contact details, private-seller names, VINs, and the raw listing text, but every
 (your notes, statuses, scores) is public to anyone with the URL. The Pages copy is read-only;
 edits and analyses happen on the local server, then Publish.
 
+Publish refuses to write or push if any VIN, phone number or email survives the scrub
+(`publish.find_leaks`), reports git failures instead of claiming success, and will not
+push when the branch is behind `origin`. The local API only answers the workbench and the
+extension (Host + Origin check), not other web pages.
+
+**Backups:** `data/scout.db` is copied on every server start and before every publish to
+`~/Documents/Hoopty Scout Backups` (override with `SCOUT_BACKUP_DIR`; the newest 14 are kept).
+
 ## Adapters are best-effort
 
 The five site adapters read the DOM of pages you are logged in to. They rely on URL patterns

@@ -4,19 +4,126 @@ from fastapi.testclient import TestClient
 
 from scout import db
 from scout.ingest import ingest_items
-from scout.publish import build_export, scrub_listing, write_export
+from scout.publish import build_export, find_leaks, redact_public, scrub_listing, write_export
 
 
 def test_scrub_strips_private_seller_and_contact():
     row = {"id": 1, "url": "u", "seller_type": "Private", "seller_name": "Jane Doe",
            "seller_contact": "555-1212", "vin": "WBS", "raw_text": "secret",
-           "raw": {"seller_phone": "555", "bid_text": "$1"}}
+           "raw": {"seller_phone": "555", "time_left": "2 days"}}
     out = scrub_listing(row)
     assert "seller_name" not in out and "seller_contact" not in out
     assert "vin" not in out and "raw_text" not in out
-    assert out["raw"] == {"bid_text": "$1"}
+    assert out["raw"] == {"time_left": "2 days"}
     row["seller_type"] = "Dealer"
     assert scrub_listing(row)["seller_name"] == "Jane Doe"
+
+
+def test_scrub_drops_free_text_raw_fields():
+    row = {"id": 1, "url": "u", "raw": {"status_text": "Call John at 831-555-1234", "essentials": "VIN 5TDZA23A15S123456",
+                                         "time_left": "2 days", "bid_count": 4, "auction_end_text": "closes soon"}}
+    out = scrub_listing(row)
+    assert out["raw"] == {"time_left": "2 days"}
+
+
+def test_redact_public_strips_vin_phone_email():
+    export = {
+        "listings": [{
+            "url": "https://www.autotrader.com/marketplace/buy/5TDZA23A15S123456",
+            "raw": {"time_left": "call (831) 555-1234 or 831.555.9999"},
+            "notes": "seller email is jane.doe@example.com, VIN 5TDZA23A15S123456",
+            "timeline": [{"url": "https://www.autotrader.com/marketplace/buy/5TDZA23A15S123456"}],
+            "assessment": {
+                "evidence": {
+                    "rationale": "VIN 5TDZA23A15S123456 confirms it, call +1 831 555 1234",
+                    "critical_evidence": [{"evidence": "seller phone 831-555-1234... contact them"}],
+                    "facts": [{"key": "vin", "value": "5TDZA23A15S123456"}, {"key": "mileage", "value": "88000"}],
+                },
+            },
+            "provenance": {"note": "matched via VIN 5TDZA23A15S123456"},
+            "seller_questions": ["ask about vin 5TDZA23A15S123456"],
+        }],
+    }
+    out = redact_public(export)
+    l = out["listings"][0]
+    assert "5TDZA23A15S123456" not in json.dumps(out)
+    assert "[VIN]" in l["url"] and "[VIN]" in l["timeline"][0]["url"]
+    assert "[phone]" in l["raw"]["time_left"]
+    assert "[email]" in l["notes"] and "[VIN]" in l["notes"]
+    assert "[VIN]" in l["assessment"]["evidence"]["rationale"] and "[phone]" in l["assessment"]["evidence"]["rationale"]
+    assert "[phone]" in l["assessment"]["evidence"]["critical_evidence"][0]["evidence"]
+    assert "[VIN]" in l["provenance"]["note"]
+    facts = {f["key"]: f.get("value") for f in l["assessment"]["evidence"]["facts"]}
+    assert facts["vin"] is None and facts["mileage"] == "88000"
+    assert find_leaks(out) == []
+
+
+def test_redact_public_leaves_non_leaks_alone():
+    safe = {
+        "price": "$12,345", "mileage": "123,456 mi", "year": "2019", "listed": "2026-09-22",
+        "generated_at": "2026-09-22T10:00:00+00:00", "no_digit_17": "ABCDEFGHJKLMNPRST",
+        "thumb_hash": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+    }
+    out = redact_public(dict(safe))
+    assert out == safe
+    assert find_leaks(out) == []
+
+
+def test_find_leaks_empty_on_seeded_export():
+    ingest_items("carscom", [{"url": "https://www.cars.com/vehicledetail/vin-5TDZA23A15S123456/", "title": "2015 Lexus GX 460",
+                               "price_text": "$18,000", "detail": {"text": "x" * 300,
+                               "status_text": "seller phone is 831-555-1234, ask for Jane at jane@example.com"}}],
+                 run_ai=False)
+    lid = db.list_listings()[0]["id"]
+    db.update_listing(lid, {"notes": "VIN is 5TDZA23A15S123456, call 831-555-1234", "vin": "5TDZA23A15S123456"})
+    export = build_export()
+    assert find_leaks(export) == []
+
+
+def test_git_publish_leak_aborts_before_git(monkeypatch):
+    import scout.publish as publish
+
+    def boom(*a, **k):
+        raise AssertionError("git must not run when a leak is found")
+    monkeypatch.setattr(publish, "build_export", lambda: {"notes": "VIN 5TDZA23A15S123456"})
+    monkeypatch.setattr(publish.subprocess, "run", boom)
+    result = publish.git_publish()
+    assert result["ok"] is False and result["changed"] is False
+    assert "notes" in result["detail"]
+
+
+def test_git_publish_push_failure(monkeypatch, tmp_path):
+    import subprocess as sp
+    import scout.publish as publish
+
+    monkeypatch.setattr(publish, "build_export", lambda: {"listings": []})
+    monkeypatch.setattr(publish, "ROOT", tmp_path)
+    monkeypatch.setattr(publish, "SITE_DATA_DIR", tmp_path / "docs" / "data")
+
+    def fake_run(cmd, cwd=None, capture_output=None, text=None):
+        if cmd[:2] == ["git", "add"]:
+            return sp.CompletedProcess(cmd, 0, "", "")
+        if cmd[:2] == ["git", "commit"]:
+            return sp.CompletedProcess(cmd, 0, "1 file changed", "")
+        if cmd[:2] == ["git", "fetch"]:
+            return sp.CompletedProcess(cmd, 0, "", "")
+        if cmd[:3] == ["git", "rev-list", "--count"]:
+            return sp.CompletedProcess(cmd, 0, "0\n", "")
+        if cmd[:2] == ["git", "push"]:
+            return sp.CompletedProcess(cmd, 1, "", "rejected")
+        raise AssertionError(f"unexpected command {cmd}")
+    monkeypatch.setattr(publish.subprocess, "run", fake_run)
+    result = publish.git_publish()
+    assert result["ok"] is False and result["changed"] is True
+    assert "rejected" in result["detail"]
+
+
+def test_publish_endpoint_returns_502_on_failure(monkeypatch):
+    import scout.server as server
+    monkeypatch.setattr(server, "git_publish", lambda: {"ok": False, "changed": False, "detail": "aborted: possible leak at $.notes"})
+    with TestClient(server.app) as c:
+        r = c.post("/api/publish")
+        assert r.status_code == 502 and "leak" in r.json()["detail"]
 
 
 def test_export_shape_and_market_percentile(tmp_path):

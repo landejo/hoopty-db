@@ -451,7 +451,7 @@
         ${(N.vin_contradictions || []).length ? `<p class="small" style="color:var(--rose)"><b>Decode vs listing:</b> ${N.vin_contradictions.map((c) => esc(c.detail)).join("; ")}</p>` : ""}
         <p class="muted small">No deep assessment yet${state.local ? "; run one from Actions." : "."}</p></div>`));
     }
-    main.appendChild(h(`<details class="panel"><summary class="muted">Listing as captured${l.options?.length ? ` · ${l.options.length} options` : ""}</summary>${l.options?.length ? `<p><b>Options:</b> ${l.options.map(esc).join(", ")}</p>` : ""}<p class="muted small">Raw listing text stays on the local server and is not published. The assessment above is stored separately from it.</p></details>`));
+    main.appendChild(h(`<details class="panel"><summary class="muted">Listing as captured${l.options?.length ? ` · ${l.options.length} options` : ""}</summary>${l.options?.length ? `<p><b>Options:</b> ${l.options.map(esc).join(", ")}</p>` : ""}<p class="muted small">Raw listing text, VINs and seller contact info are stripped before anything is published; only the fields shown here leave the local server.</p></details>`));
 
     // ----- side -----
     if (state.local) {
@@ -710,7 +710,7 @@
 
   // ---------- global wiring ----------
   $("#search").oninput = (e) => { state.q = e.target.value; if ((location.hash || "#/") === "#/" || location.hash.startsWith("#/?")) { const list = $("#list"); if (list) { route(); } } else location.hash = "#/"; };
-  $("#publish").onclick = async (e) => { e.target.disabled = true; e.target.textContent = "Publishing…"; try { const r = await api("/api/publish", "POST"); toast(/Everything up-to-date|nothing to commit/.test(r.git) ? "Nothing new to publish" : "Published"); } catch (err) { toast("Publish failed: " + err.message, 5000); } e.target.disabled = false; e.target.textContent = "Publish"; };
+  $("#publish").onclick = async (e) => { e.target.disabled = true; e.target.textContent = "Publishing…"; try { const r = await api("/api/publish", "POST"); toast(r.changed ? "Published" : "Nothing new to publish"); } catch (err) { toast("Publish failed: " + err.message, 5000); } e.target.disabled = false; e.target.textContent = "Publish"; };
 
   loadData().then(() => { route(); if (state.local) watchTask(); }).catch((e) => { $("#app").innerHTML = `<div class="empty"><h2>Could not load data</h2><p>${esc(e.message)}</p></div>`; });
 })();

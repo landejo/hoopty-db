@@ -21,3 +21,11 @@ def temp_db(tmp_path, monkeypatch):
     from scout.profiles import sync_seed_profiles
     sync_seed_profiles()
     yield path
+
+
+@pytest.fixture(autouse=True)
+def temp_backup_dir(tmp_path, monkeypatch):
+    """Keep the startup backup hook (see scout.server._startup) out of the
+    user's real ~/Documents while tests run."""
+    monkeypatch.setenv("SCOUT_BACKUP_DIR", str(tmp_path / "backups"))
+    yield

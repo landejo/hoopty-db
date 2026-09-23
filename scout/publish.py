@@ -3,6 +3,7 @@ Seller contact details and private-party seller names never leave the DB."""
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,19 +22,54 @@ PUBLIC_LISTING_FIELDS = [
     "num_owners", "listing_date", "auction_end", "options", "profile_key", "profile_confidence",
     "normalized", "prelim_score", "analyzed_at", "status", "notes", "pinned", "raw", "mission", "provenance", "vehicle_id", "verdict_override", "verdict_override_reason",
 ]
-PRIVATE_FIELDS = {"seller_contact", "raw_text", "vin"}
+# Only the raw scraper fields docs/app.js actually reads (raw?.time_left, "Auction ends").
+RAW_PUBLIC_FIELDS = {"time_left"}
+
+VIN_RE = re.compile(r"\b(?=[A-HJ-NPR-Z0-9]{17}\b)(?=[A-HJ-NPR-Z0-9]*[0-9])(?=[A-HJ-NPR-Z0-9]*[A-HJ-NPR-Z])[A-HJ-NPR-Z0-9]{17}\b")
+PHONE_RE = re.compile(r"(?<!\d)(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}(?!\d)")
+EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
 
 def scrub_listing(row: dict[str, Any]) -> dict[str, Any]:
     out = {k: row.get(k) for k in PUBLIC_LISTING_FIELDS if k in row}
     if (row.get("seller_type") or "").lower() == "dealer" and row.get("seller_name"):
         out["seller_name"] = row["seller_name"]
-    raw = dict(row.get("raw") or {})
-    for k in list(raw):
-        if any(s in k.lower() for s in ("phone", "email", "contact", "seller_url", "profile")):
-            raw.pop(k)
-    out["raw"] = raw
+    raw = row.get("raw") or {}
+    out["raw"] = {k: raw[k] for k in RAW_PUBLIC_FIELDS if k in raw}
     return out
+
+
+def _redact_str(s: str) -> str:
+    return EMAIL_RE.sub("[email]", PHONE_RE.sub("[phone]", VIN_RE.sub("[VIN]", s)))
+
+
+def redact_public(obj: Any) -> Any:
+    """Defensive final pass over the whole export: strips VINs, phone numbers and
+    emails out of every string, and drops the value of any {"key": "vin", ...} fact."""
+    if isinstance(obj, dict):
+        if obj.get("key") == "vin" and "value" in obj:
+            obj = {**obj, "value": None}
+        return {k: redact_public(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [redact_public(v) for v in obj]
+    if isinstance(obj, str):
+        return _redact_str(obj)
+    return obj
+
+
+def find_leaks(obj: Any, path: str = "$") -> list[str]:
+    """Paths of any VIN/phone/email still present in obj. Empty on a properly scrubbed export."""
+    leaks: list[str] = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            leaks += find_leaks(v, f"{path}.{k}")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            leaks += find_leaks(v, f"{path}[{i}]")
+    elif isinstance(obj, str):
+        if VIN_RE.search(obj) or PHONE_RE.search(obj) or EMAIL_RE.search(obj):
+            leaks.append(path)
+    return leaks
 
 
 def _budget_signature(budget: dict[str, Any], urgency: str | None) -> str:
@@ -108,7 +144,7 @@ def build_export() -> dict[str, Any]:
             if a.get("mission") and l.get("mission") and a["mission"] != l["mission"]:
                 a["context_changed"].append(f"mission ({a['mission'].replace('_', ' ')} → {l['mission'].replace('_', ' ')})")
             a.pop("context", None)   # keep the numbers off the public page
-    return {
+    return redact_public({
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "policy_version": POLICY_VERSION,
         "calibration": calibration,
@@ -116,7 +152,7 @@ def build_export() -> dict[str, Any]:
         "profiles": profiles,
         "markets": markets,
         "listings": listings,
-    }
+    })
 
 
 def write_export(data: dict[str, Any] | None = None, out_dir: Path | None = None) -> Path:
@@ -128,14 +164,55 @@ def write_export(data: dict[str, Any] | None = None, out_dir: Path | None = None
     return path
 
 
-def git_publish(message: str = "Publish scout data") -> str:
-    """Commit docs/data and push. Returns the git output."""
-    path = write_export()
+def _run(*cmd: str) -> subprocess.CompletedProcess:
+    return subprocess.run(list(cmd), cwd=ROOT, capture_output=True, text=True)
+
+
+def _rev_count(range_: str) -> int:
+    r = _run("git", "rev-list", "--count", range_)
+    return int(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip().isdigit() else 0
+
+
+def git_publish(message: str = "Publish scout data") -> dict[str, Any]:
+    """Build + scrub the export, back up the DB, commit docs/data and push.
+    Returns {ok, changed, detail}; aborts before writing/committing on any leak."""
+    export = build_export()
+    leaks = find_leaks(export)
+    if leaks:
+        return {"ok": False, "changed": False, "detail": "aborted: possible leak at " + ", ".join(leaks[:5])}
+
+    log = []
+    try:
+        from scout.backup import backup_db
+        backup_db("publish")
+        log.append("backup ok")
+    except Exception as e:
+        log.append(f"backup failed: {e}")
+
+    path = write_export(export)
     rel = str(path.relative_to(ROOT))
-    out = []
-    for cmd in (["git", "add", rel], ["git", "commit", "-m", message, "--", rel], ["git", "push"]):
-        r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
-        out.append(f"$ {' '.join(cmd)}\n{r.stdout}{r.stderr}")
-        if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
-            break
-    return "\n".join(out)
+    r = _run("git", "add", rel)
+    log.append(f"$ git add {rel}\n{r.stdout}{r.stderr}")
+    if r.returncode != 0:
+        return {"ok": False, "changed": False, "detail": "\n".join(log)}
+
+    r = _run("git", "commit", "-m", message, "--", rel)
+    log.append(f"$ git commit -m {message!r} -- {rel}\n{r.stdout}{r.stderr}")
+    changed = r.returncode == 0
+    if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
+        return {"ok": False, "changed": False, "detail": "\n".join(log)}
+
+    r = _run("git", "fetch")
+    log.append(f"$ git fetch\n{r.stdout}{r.stderr}")
+    if not changed and _rev_count("@{u}..HEAD") == 0:
+        log.append("nothing to push")
+        return {"ok": True, "changed": False, "detail": "\n".join(log)}
+    if _rev_count("HEAD..@{u}") > 0:
+        log.append("behind upstream; not pushing")
+        return {"ok": False, "changed": changed, "detail": "\n".join(log)}
+
+    r = _run("git", "push")
+    log.append(f"$ git push\n{r.stdout}{r.stderr}")
+    if r.returncode != 0:
+        return {"ok": False, "changed": changed, "detail": "\n".join(log)}
+    return {"ok": True, "changed": changed, "detail": "\n".join(log)}
