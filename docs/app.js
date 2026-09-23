@@ -8,7 +8,7 @@
   const num = (n) => (n == null ? "—" : Number(n).toLocaleString());
   const STATUSES = ["New", "Pursue", "Verify", "Contacted", "PPI Scheduled", "Offer Made", "Pass", "Purchased"];
 
-  const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "score", role: "candidate", view: "cards", max_price: "", max_mileage: "", max_age: "", statuses: {} }),
+  const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "pursue", role: "candidate", view: "cards", max_price: "", max_mileage: "", max_age: "", statuses: {} }),
                   q: "", compare: load("compare", []), theme: load("theme", null) };
 
   function load(k, d) { try { const v = localStorage.getItem("scout." + k); const out = v ? JSON.parse(v) : d; if (k === "filters" && out && !Array.isArray(out.profiles)) out.profiles = out.profile ? [out.profile] : []; if (k === "filters" && out && typeof out.statuses !== "object") out.statuses = out.status ? { [out.status]: "include" } : {}; return out; } catch (e) { return d; } }
@@ -161,6 +161,10 @@
     return `<span class="badge none">n/a</span>`;
   }
   function availChip(a) { const c = { active: "olive", pending: "mustard", sold: "rose", ended: "walnut", removed: "slate", withdrawn: "rose" }[a] || ""; return `<span class="chip ${c === "walnut" ? "mustard" : c}">${esc(a)}</span>`; }
+  const STAGE_LABELS = { listing: "Listing", questions: "Asked", docs: "Docs in", ppi: "PPI done" };
+  const STAGE_TONE = { listing: "", questions: "mustard", docs: "teal", ppi: "olive" };
+  function stageChip(l) { const st = l.assessment?.stage; if (!st) return ""; return `<span class="chip ${STAGE_TONE[st] || ""}" title="Pursuit stage">${esc(STAGE_LABELS[st] || st)}</span>`; }
+  function upsideTag(l) { const a = l.assessment, s = scoreOf(l); if (!a || a.upside == null || s == null || a.upside <= s) return ""; return `<b class="score-tag upside" title="Could reach ${a.upside}/100 if the open questions check out">↑${a.upside}</b>`; }
   function title(l) { return l.title || [l.year, l.make, l.model, l.trim].filter(Boolean).join(" ") || "Untitled listing"; }
   function safeUrl(u) { return u && /^https?:\/\//i.test(u) ? u : null; }
   function photo(l) { return (l.photos && l.photos[0]) || l.thumb || null; }
@@ -222,13 +226,28 @@
         if (bs != null) return 1;
         return (calibrated(b) ?? -1) - (calibrated(a) ?? -1);
       },
+      // Default: assessed-with-priority first (pursue-next rank), then
+      // assessed-without-priority by score, then unassessed by prelim.
+      pursue: (a, b) => {
+        const as = scoreOf(a), bs = scoreOf(b);
+        if (as != null && bs != null) {
+          const ap = a.assessment?.priority, bp = b.assessment?.priority;
+          if (ap != null && bp != null) return bp - ap;
+          if (ap != null) return -1;
+          if (bp != null) return 1;
+          return (bs - (isEarlyBid(b) ? 10 : 0)) - (as - (isEarlyBid(a) ? 10 : 0));
+        }
+        if (as != null) return -1;
+        if (bs != null) return 1;
+        return (calibrated(b) ?? -1) - (calibrated(a) ?? -1);
+      },
       price: (a, b) => (a.price ?? 9e9) - (b.price ?? 9e9),
       price_desc: (a, b) => (b.price ?? -1) - (a.price ?? -1),
       mileage: (a, b) => (a.mileage ?? 9e9) - (b.mileage ?? 9e9),
       newest: (a, b) => (b.listing_date || b.first_seen || "").localeCompare(a.listing_date || a.first_seen || ""),
       year: (a, b) => (b.year ?? 0) - (a.year ?? 0),
     };
-    rows.sort(sorters[f.sort] || sorters.score);
+    rows.sort(sorters[f.sort] || sorters.pursue);
     rows.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     // One card per car: listings sharing a vehicle (same VIN) fold into the
     // best-ranked one, which carries the other venues as `also_on`.
@@ -270,7 +289,7 @@
         <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
         <select id="f-avail"><option value="">Any availability</option>${["active", "pending", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
         <span class="chips" id="f-statuses" title="Click: show only · click again: hide · third click: clear"></span>
-        <select id="f-sort">${[["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]].map(([k, v]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+        <select id="f-sort">${[["pursue", "Pursue next"], ["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]].map(([k, v]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${v}</option>`).join("")}</select>
         <label><input type="checkbox" id="f-analyzed" ${f.analyzed ? "checked" : ""}> analyzed only</label>
         <label title="Hide listings priced above this">≤ $<input type="number" class="num" id="f-max-price" min="0" step="500" placeholder="max price" value="${esc(f.max_price)}"></label>
         <label title="Hide listings with more miles than this">≤ <input type="number" class="num" id="f-max-mileage" min="0" step="5000" placeholder="max miles" value="${esc(f.max_mileage)}"> mi</label>
@@ -371,15 +390,15 @@
     const drops = (l.normalized?.price_drops || []).reduce((a, d) => a + (d.amount || 0), 0) + (l.history || []).filter((s) => s.price).reduce((a, s, i, arr) => a + (i && arr[i - 1].price > s.price ? arr[i - 1].price - s.price : 0), 0);
     const el = h(`
       <article class="card ${l.role}" data-id="${l.id}" tabindex="0" role="link" aria-label="${esc(title(l))}">
-        <div class="photo">${p ? `<img loading="lazy" src="${esc(p)}" alt="">` : `<div class="nophoto">⌁</div>`}
-          <span class="score">${badge(l)}${scoreOf(l) == null && prelimOf(l) != null ? `<b class="score-tag">prelim</b>` : ""}</span><span class="site">${siteChip(l.site)}</span></div>
+        <div class="photo">${p ? `<img loading="lazy" referrerpolicy="no-referrer" src="${esc(p)}" alt="">` : `<div class="nophoto">⌁</div>`}
+          <span class="score">${badge(l)}${scoreOf(l) == null && prelimOf(l) != null ? `<b class="score-tag">prelim</b>` : ""}${upsideTag(l)}</span><span class="site">${siteChip(l.site)}</span></div>
         <div class="body">
           <div class="title">${esc(title(l))}${(() => { const r = rankOf(l); return r ? ` <span class="chip" title="rank among active candidates in this profile">#${r.rank} of ${r.of}</span>` : ""; })()}</div>
           <div class="price">${l.role === "comp" && (l.sold_price || l.price) ? money(l.sold_price || l.price) + `<small>${l.availability === "sold" ? "sold" : esc(l.price_kind || "")}</small>` : money(l.price) + (l.price_kind && l.price_kind !== "asking" ? `<small>${esc(l.price_kind.replace("_", " "))}</small>` : "")}</div>
           <div class="meta"><span class="mono">${l.mileage ? num(l.mileage) + " mi" : "— mi"}</span><span>${esc(l.location || "—")}</span><span>${listedAge(l)}</span>${l.transmission ? `<span>${esc(l.transmission)}</span>` : ""}</div>
           ${(l.documents || []).length ? `<span class="chip olive" title="${esc((l.documents || []).map((d) => d.kind).join(", "))}">📄 ${l.documents.length}</span>` : ""}${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
           <div class="foot">
-            <div class="row" style="gap:6px">${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${v ? `<span class="chip ${verdictTone(v)}" title="${l.verdict_override ? "Your override (computed: " + esc(computedVerdictOf(l) || "none") + ")" : "computed"}">${l.verdict_override ? "★ " : ""}${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
+            <div class="row" style="gap:6px">${stageChip(l)}${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${v ? `<span class="chip ${verdictTone(v)}" title="${l.verdict_override ? "Your override (computed: " + esc(computedVerdictOf(l) || "none") + ")" : "computed"}">${l.verdict_override ? "★ " : ""}${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
             <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label><span class="pill-status">${esc(l.status || "New")}</span></span>
           </div>
         </div>
@@ -393,7 +412,7 @@
   function tableView(rows) {
     const cols = [["", (l) => badge(l)], ["Listing", (l) => `<a href="#/l/${l.id}">${esc(title(l))}</a>`], ["Price", (l) => `<span class="mono">${money(l.sold_price || l.price)}</span>`],
       ["Miles", (l) => `<span class="mono">${num(l.mileage)}</span>`], ["Year", (l) => l.year ?? "—"], ["Trans.", (l) => esc(l.transmission || "—")], ["Location", (l) => esc(l.location || "—")],
-      ["Site", (l) => siteChip(l.site)], ["Listed", (l) => listedAge(l)], ["Assessed", (l) => l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}">✓ ${esc(modelTag(l.assessment))} · ${ago(l.assessment.assessed_at)}</span>` : `<span class="muted small">preliminary</span>`], ["Verdict", (l) => esc(verdictOf(l) || "—")], ["Mission", (l) => esc(missionLabel(l.mission))], ["Status", (l) => esc(l.status || "New")]];
+      ["Site", (l) => siteChip(l.site)], ["Listed", (l) => listedAge(l)], ["Assessed", (l) => l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}">✓ ${esc(modelTag(l.assessment))} · ${ago(l.assessment.assessed_at)}</span>` : `<span class="muted small">preliminary</span>`], ["Verdict", (l) => esc(verdictOf(l) || "—")], ["Next", (l) => l.assessment?.priority != null ? `<span class="mono">${l.assessment.priority}</span>` : "—"], ["Mission", (l) => esc(missionLabel(l.mission))], ["Status", (l) => esc(l.status || "New")]];
     return h(`<div class="tablewrap"><table class="data"><thead><tr>${cols.map(([c]) => `<th>${c}</th>`).join("")}</tr></thead>
       <tbody>${rows.map((l) => `<tr>${cols.map(([, f]) => `<td>${f(l)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
   }
@@ -412,6 +431,61 @@
     const t = h(`<div class="tray"><span>${state.compare.length} to compare</span><a class="btn sm primary" href="#/compare">Compare</a><button class="btn sm ghost" id="clear-cmp">Clear</button></div>`);
     $("#clear-cmp", t).onclick = () => { state.compare = []; save("compare", []); renderTray(app); document.querySelectorAll(".cmp input").forEach((i) => (i.checked = false)); };
     document.body.appendChild(t);
+  }
+
+  // ---------- path to pursue (detail page) ----------
+  const STAGE_STEPS = [["listing", "Listing"], ["questions", "Questions sent"], ["docs", "Docs in"], ["ppi", "PPI done"]];
+  function pathToPursuePanel(l) {
+    const A = l.assessment;
+    if (!A || !A.stage) return null; // old assessment, no stage data — nothing to render
+    const idx = STAGE_STEPS.findIndex(([k]) => k === A.stage);
+    const oq = A.open_questions || {};
+    const s = scoreOf(l);
+    const steps = STAGE_STEPS.map(([, label], i) => `<li class="${i < idx ? "done" : i === idx ? "current" : ""}">${i < idx ? "✓ " : ""}${esc(label)}</li>`).join("");
+    const section = (label, items) => (items && items.length) ? `<div class="path-section"><b>${esc(label)}</b><ul class="list small">${items.map((x) => `<li>${esc(x.label ?? x)}</li>`).join("")}</ul></div>` : "";
+    const panel = h(`<div class="panel accent-teal">
+      <h3>Path to pursue</h3>
+      <ol class="stepper">${steps}</ol>
+      ${s != null && A.upside != null && A.upside > s ? `<p class="small">Now <b>${s}</b> → could reach <b>${A.upside}</b></p>` : ""}
+      ${section("Ask the seller for documents", oq.document)}
+      ${section("Needs an inspection", oq.inspection)}
+      ${section("Observed problems", oq.observed)}
+      ${A.next_steps?.length ? `<div class="path-section"><b>Next steps</b><ol class="list small">${A.next_steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>` : ""}
+    </div>`);
+    if (state.local) {
+      const contactedIdx = STATUSES.indexOf("Contacted");
+      const alreadySent = STATUSES.indexOf(l.status || "New") >= contactedIdx;
+      const row = h(`<div class="row" style="margin-top:10px">
+        <button class="btn sm" id="ptp-draft">Draft records request</button>
+        ${alreadySent ? "" : `<button class="btn sm ghost" id="ptp-sent">Mark questions sent</button>`}
+      </div>`);
+      panel.appendChild(row);
+      const area = h(`<div id="ptp-area"></div>`);
+      panel.appendChild(area);
+      $("#ptp-draft", row).onclick = async (e) => {
+        e.target.disabled = true;
+        try {
+          const g = await api(`/api/evidence-gaps?listing_id=${l.id}`);
+          area.innerHTML = "";
+          const ta = h(`<textarea class="notes" readonly style="min-height:140px;margin-top:8px">${esc(g.message || "")}</textarea>`);
+          const copyBtn = h(`<button class="btn sm ghost" style="margin-top:6px">Copy</button>`);
+          copyBtn.onclick = () => {
+            const done = () => toast("Copied");
+            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(g.message || "").then(done).catch(() => { ta.select(); document.execCommand("copy"); done(); });
+            else { ta.select(); document.execCommand("copy"); done(); }
+          };
+          area.append(ta, copyBtn);
+        } catch (err) { toast(err.message, 4000); }
+        e.target.disabled = false;
+      };
+      const sentBtn = $("#ptp-sent", row);
+      if (sentBtn) sentBtn.onclick = async (e) => {
+        e.target.disabled = true;
+        try { await api(`/api/listings/${l.id}`, "PATCH", { status: "Contacted" }); await loadData(); route(); toast("Marked as sent"); }
+        catch (err) { toast(err.message, 4000); e.target.disabled = false; }
+      };
+    }
+    return panel;
   }
 
   // ---------- detail ----------
@@ -457,7 +531,7 @@
     const grid = h(`<div class="detail"></div>`); grid.append(main, side); app.appendChild(grid);
 
     if (photos.length) {
-      const g = h(`<div class="gallery"><div class="main"><img src="${esc(photos[0])}" alt=""></div><div class="thumbs">${photos.map((p, i) => `<img src="${esc(p)}" class="${i === 0 ? "on" : ""}" alt="">`).join("")}</div></div>`);
+      const g = h(`<div class="gallery"><div class="main"><img loading="lazy" referrerpolicy="no-referrer" src="${esc(photos[0])}" alt=""></div><div class="thumbs">${photos.map((p, i) => `<img loading="lazy" referrerpolicy="no-referrer" src="${esc(p)}" class="${i === 0 ? "on" : ""}" alt="">`).join("")}</div></div>`);
       g.querySelectorAll(".thumbs img").forEach((im) => (im.onclick = () => { $(".main img", g).src = im.src; g.querySelectorAll(".thumbs img").forEach((x) => x.classList.toggle("on", x === im)); }));
       main.appendChild(g); main.appendChild(h(`<div style="height:16px"></div>`));
     }
@@ -489,9 +563,12 @@
         ${l.verdict_override ? `<p class="small" style="background:var(--chip-teal);border-radius:8px;padding:6px 10px"><b>Your verdict: ${esc(l.verdict_override)}</b> (the system computed ${esc(A.verdict)}).${l.verdict_override_reason ? " " + esc(l.verdict_override_reason) : ""}</p>` : ""}
         ${(A.context_changed || []).length ? `<p class="small" style="background:var(--chip-mustard);border-radius:8px;padding:6px 10px"><b>Context changed since this assessment:</b> ${esc(A.context_changed.join("; "))}. The arithmetic has been re-derived, but the model's ratings were formed under the old settings. Re-assess to refresh them.</p>` : ""}
         <p><b>${esc(A.verdict_reason)}</b></p>
+        ${A.verdict === "Pursue conditionally" && (A.stage === "listing" || A.stage === "questions") ? `<p class="muted small" style="margin-top:-6px">worth pursuing if the open questions check out</p>` : ""}
         ${E.mission_note ? `<p><b>Jason fit:</b> ${esc(E.mission_note)}</p>` : ""}
         <p>${esc(E.rationale)}</p>
         ${E.next_action ? `<p class="small" style="margin:8px 0 0"><b>Next action:</b> ${esc(E.next_action)}</p>` : ""}</div>`));
+      const ptp = pathToPursuePanel(l);
+      if (ptp) main.appendChild(ptp);
       if (hard.length) main.appendChild(h(`<div class="panel accent-rose"><h3>Hard gates (override the score)</h3>${list(hard.map((g) => g.reason))}</div>`));
       if (cond.length) main.appendChild(h(`<div class="panel accent-mustard"><h3>Unresolved conditions (cap the verdict)</h3>${list(cond.map((g) => g.reason))}</div>`));
       if (E.contradictions?.length) main.appendChild(h(`<div class="panel accent-rose"><h3>Contradictions</h3>${list(E.contradictions.map((c) => `${c.severity}: ${c.topic} — ${c.detail}`))}</div>`));
@@ -743,7 +820,7 @@
     const facts = [["Price", (l) => money(l.sold_price || l.price)], ["Mileage", (l) => l.mileage ? num(l.mileage) + " mi" : "—"], ["Year", (l) => l.year ?? "—"], ["Trim", (l) => l.trim || "—"], ["Engine", (l) => l.engine || "—"], ["Transmission", (l) => l.transmission || "—"], ["Location", (l) => l.location || "—"], ["Listed", listedAge], ["Site", (l) => siteName(l.site)],
       ["Score", (l) => scoreOf(l) ?? "—"], ["Confidence", (l) => l.assessment?.confidence ?? "—"], ["Verdict", (l) => verdictOf(l) || "—"], ["Mission", (l) => missionLabel(l.mission)], ["Max price", (l) => money(l.assessment?.costs?.max_price)], ["All-in", (l) => l.assessment ? money(l.assessment.costs.all_in_low) + "–" + money(l.assessment.costs.all_in_high) : "—"], ["Hard gates", (l) => (l.assessment?.gates || []).filter((g) => g.kind !== "conditional").length], ["Unresolved", (l) => (l.assessment?.gates || []).filter((g) => g.kind === "conditional").length],
       ["Red flags", (l) => (l.normalized?.red_flags || []).length], ["Status", (l) => l.status || "New"]];
-    const c = h(`<div class="compare">${rows.map((l) => `<div class="col">${photo(l) ? `<img src="${esc(photo(l))}" alt="">` : ""}<h3 style="margin:10px 0 6px"><a href="#/l/${l.id}">${esc(title(l))}</a></h3>
+    const c = h(`<div class="compare">${rows.map((l) => `<div class="col">${photo(l) ? `<img loading="lazy" referrerpolicy="no-referrer" src="${esc(photo(l))}" alt="">` : ""}<h3 style="margin:10px 0 6px"><a href="#/l/${l.id}">${esc(title(l))}</a></h3>
       <div class="kv">${facts.map(([k, f]) => `<span class="k">${k}</span><span class="mono">${esc(f(l))}</span>`).join("")}</div>
       ${l.assessment ? `<h3 style="margin-top:12px">Main risks</h3><ul class="list small">${(l.assessment.evidence.concerns || []).slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`).join("")}</div>`);
     app.appendChild(c);

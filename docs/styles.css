@@ -227,3 +227,16 @@ button.busy, .btn.busy { opacity: .5; pointer-events: none; }
 
 /* Screen-reader-only label (e.g. the search input's <label>). */
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* A [hidden] element must actually disappear — some rules (.btn, .taskbar,
+   etc.) declare `display` at equal specificity and would otherwise win. */
+[hidden] { display: none !important; }
+
+/* Path to pursue (detail page) */
+.stepper { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0 0 10px; }
+.stepper li { padding: 4px 12px; border-radius: 999px; background: var(--chip-slate); color: var(--ink-2); font-size: 13px; }
+.stepper li.done { background: var(--chip-olive); color: #3B5424; }
+.stepper li.current { background: var(--teal); color: #fff; font-weight: 600; }
+html[data-theme="dark"] .stepper li.done { color: #C2D6A6; }
+.path-section { margin-top: 8px; }
+.score-tag.upside { color: var(--muted); font-weight: 600; margin-left: 4px; }
