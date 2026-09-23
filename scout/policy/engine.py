@@ -73,6 +73,8 @@ def compute_headline(verdict: str, reason: str, score: Score, gates: list[Gate],
         from scout.policy.preferences import CATEGORY_LABELS, CATEGORY_POINTS
         weak = sorted(CATEGORY_POINTS, key=lambda k: getattr(score, k) / CATEGORY_POINTS[k])[:2]
         names = " and ".join(CATEGORY_LABELS[k].split(" & ")[0].split(" / ")[0].lower() for k in weak)
+        if observed and verdict == "Reject":
+            return _clip(f"{verdict} — score {score.total}/100 and observed: {observed[0]}")
         tail = ("; nothing observed wrong, low priority" + (f", {open_n} open" if open_n else "")) if "nothing observed wrong" in reason else ""
         return _clip(f"{verdict} — score {score.total}/100, weakest on {names}{tail}.")
     return _clip(f"{verdict} — {reason}")
