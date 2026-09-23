@@ -138,7 +138,7 @@
   // outrank a priced listing with the same assessed score. Sort-only penalty.
   function isEarlyBid(l) {
     const c = l.assessment?.costs;
-    if (c?.price_basis === "unpriced") return true;
+    if (c?.price_basis === "unpriced" || c?.price_basis === "expected_hammer") return true;   // live auction: price not final
     if (c?.price_basis === "current_bid" && (c.notes || []).some((n) => /early bid/i.test(n))) return true;
     if ((l.normalized?.quick_gates || []).some((g) => /early bid/i.test(g))) return true;
     if ((l.assessment?.gates || []).some((g) => /early bid/i.test(g.reason || ""))) return true;
@@ -613,6 +613,7 @@
         <span class="k muted">Not counted · overdue allowance</span><span class="mono muted">${money(C.overdue_allowance)}</span>
         <span class="k muted">Not counted · risk reserve</span><span class="mono muted">${money(C.risk_reserve)}</span>
         ${C.with_catchup_high ? `<span class="k muted">If all of that lands</span><span class="mono muted">${money(C.with_catchup_low)}–${money(C.with_catchup_high)}</span>` : ""}
+        ${C.fair_mid ? `<span class="k">Market fair value</span><span class="mono">${money(C.fair_low)}–${money(C.fair_high)} <span class="muted">mid ${money(C.fair_mid)}</span></span>` : ""}
         <span class="k">Recommended offer</span><span class="mono">${money(C.offer_low)}–${money(C.offer_high)}</span>
         <span class="k"><b>Maximum price / hammer</b></span><span class="mono"><b>${money(C.max_price)}</b></span></div>
         ${C.notes?.length ? `<ul class="list small" style="margin-top:8px">${C.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}</div>`));
