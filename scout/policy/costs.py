@@ -44,7 +44,7 @@ def risk_reserve(profile: dict[str, Any], gates: list[Gate], state: dict[str, An
     return base + counted * int(state.get("reserve_per_unresolved_conditional", 1000))
 
 
-def price_basis(listing: dict[str, Any], evidence: EvidenceInterpretation, comps_median: int | None,
+def price_basis(listing: dict[str, Any], evidence: EvidenceInterpretation, fair: dict[str, Any] | None,
                 state: dict[str, Any]) -> tuple[str, int, list[str]]:
     """An early bid on a reserve auction is not a price (§10)."""
     notes: list[str] = []
@@ -56,8 +56,8 @@ def price_basis(listing: dict[str, Any], evidence: EvidenceInterpretation, comps
         expected = None
         if evidence.expected_hammer:
             expected = (evidence.expected_hammer.low + evidence.expected_hammer.high) // 2
-        elif comps_median:
-            expected = comps_median
+        elif fair and fair.get("basis") == "sold":
+            expected = fair.get("mid")
         reserve = evidence.flags.reserve_auction
         early, hrs = is_early_bid(listing, state)
         left = f" ({round(hrs / 24, 1)} days left)" if hrs is not None else ""
@@ -66,8 +66,8 @@ def price_basis(listing: dict[str, Any], evidence: EvidenceInterpretation, comps
                          + f"; it carries no weight until the closing day. Using expected hammer ${expected:,} for cost and value.")
             return "expected_hammer", int(expected), notes
         if early:
-            notes.append(f"Current bid ${price:,} is an early bid{left} and no expected hammer is available; treat every price figure below as provisional.")
-            return "current_bid", price, notes
+            notes.append(f"Current bid ${price:,} is an early bid{left}; no expected hammer or comps: price unknown.")
+            return "unpriced", price, notes
         if expected and expected > price:
             notes.append(f"Current bid ${price:,} treated as an early bid" + (" on a reserve auction" if reserve == "yes" else "")
                          + f"; using expected hammer ${expected:,} for cost and value.")
@@ -79,8 +79,8 @@ def price_basis(listing: dict[str, Any], evidence: EvidenceInterpretation, comps
 
 
 def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceInterpretation,
-                  gates: list[Gate], state: dict[str, Any], comps_median: int | None) -> CostBreakdown:
-    basis, price, notes = price_basis(listing, evidence, comps_median, state)
+                  gates: list[Gate], state: dict[str, Any], fair: dict[str, Any] | None) -> CostBreakdown:
+    basis, price, notes = price_basis(listing, evidence, fair, state)
     site = listing.get("site") or ""
     fee = buyer_fee(site, price, state)
     transport = transport_cost(listing.get("location"), state)
@@ -110,9 +110,22 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
                 break
             h = h2
         max_price = max(0, int(h))
-    anchor = min(price, max_price) if price and max_price else (price or max_price)
-    offer_hi = int(anchor)
-    offer_lo = int(anchor * 0.92)
+    kw_mid = (kw_lo + kw_hi) // 2
+    fair_mid = fair.get("mid") if fair else None
+    if fair_mid is not None:
+        candidates = [v for v in (price, max_price or None, fair_mid - kw_mid) if v is not None]
+        offer_hi = max(0, int(min(candidates)))
+        fair_low_net = (fair.get("low") if fair.get("low") is not None else fair_mid) - kw_mid
+        offer_lo = max(0, int(min(offer_hi, max(int(0.85 * offer_hi), fair_low_net))))
+        if fair_mid - kw_mid > price:
+            offer_hi = price
+            offer_lo = min(offer_lo, offer_hi)
+        basis_word = "sales" if fair.get("basis") == "sold" else "asking prices"
+        notes.append(f"Offer anchored on fair value ${fair_mid:,} ({fair.get('n')} {basis_word}) less known work ${kw_mid:,}.")
+    else:
+        anchor = min(price, max_price) if price and max_price else (price or max_price)
+        offer_hi = int(anchor)
+        offer_lo = int(anchor * 0.92)
     if price and max_price and max_price < 0.6 * price:
         notes.append(f"Maximum price ${max_price:,} is far below the ${price:,} {basis.replace('_', ' ')}; price mismatch.")
     if kw_hi:
@@ -124,4 +137,6 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
                          immediate_service_low=imm_lo, immediate_service_high=imm_hi,
                          overdue_allowance=overdue, risk_reserve=reserve, tax_and_registration=tax,
                          all_in_low=all_in_lo, all_in_high=all_in_hi, with_catchup_low=catch_lo, with_catchup_high=catch_hi,
-                         max_price=max_price, offer_low=offer_lo, offer_high=offer_hi, notes=notes)
+                         max_price=max_price, offer_low=offer_lo, offer_high=offer_hi, notes=notes,
+                         fair_mid=fair_mid, fair_low=fair.get("low") if fair else None,
+                         fair_high=fair.get("high") if fair else None, fair_note=(fair.get("note") if fair else ""))

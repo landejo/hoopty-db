@@ -370,16 +370,15 @@ def repair_roles() -> list[dict[str, Any]]:
 
 def rescore_listing(lid: int, state: dict[str, Any] | None = None) -> int | None:
     """Deterministic preliminary score (0-100) from stored data; no AI."""
+    from scout import market
     from scout.policy.state import load_state
     from scout.scoring import preliminary_score
     row = db.get_listing(lid)
     if not row or row.get("role") == "ignored":
         return None
     prof = db.get_profile(row["profile_key"]) if row.get("profile_key") else None
-    comps = db.list_listings(role="comp", profile_key=row["profile_key"]) if row.get("profile_key") else []
-    peers = [p for p in (db.list_listings(role="candidate", profile_key=row["profile_key"]) if row.get("profile_key") else [])
-             if p["availability"] == "active"]
-    total, breakdown = preliminary_score(row, prof, state or load_state(), comps, peers)
+    fair = market.fair_value(row, db.list_listings(profile_key=row["profile_key"])) if row.get("profile_key") else None
+    total, breakdown = preliminary_score(row, prof, state or load_state(), fair)
     n = dict(row.get("normalized") or {})
     n["prelim_breakdown"] = breakdown
     db.update_listing(lid, {"prelim_score": total, "normalized": n})

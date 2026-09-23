@@ -54,10 +54,10 @@ def test_preliminary_score_separates_similar_cars():
     base = {"id": 1, "site": "facebook", "year": 2001, "make": "BMW", "model": "Z3 3.0i roadster", "transmission": "Manual",
             "mileage": 80000, "price": 12500, "location": "San Jose, CA", "vin": "WBACN53431LJ58954", "mission": "enthusiast_bridge",
             "normalized": {"ratings": {"documentation": {"score": 6, "why": "receipts listed"}, "condition": {"score": 7, "why": "clean"}, "spec": {"score": 7, "why": "sport pkg"}}, "red_flags": []}}
-    peers = [{"id": 2, "price": 14000, "mileage": 90000}, {"id": 3, "price": 15500, "mileage": 70000}, {"id": 4, "price": 13000, "mileage": 85000}]
-    local_cheap, b1 = preliminary_score(base, prof, DEFAULT_STATE, [], peers)
-    remote_auto_pricey, b2 = preliminary_score({**base, "id": 5, "transmission": "Automatic", "price": 17500, "location": "Boston, MA", "vin": None}, prof, DEFAULT_STATE, [], peers)
-    same_but_remote, b3 = preliminary_score({**base, "id": 6, "location": "Boston, MA"}, prof, DEFAULT_STATE, [], peers)
+    fair = {"mid": 14000, "low": 13000, "high": 15500, "n": 3, "basis": "asking", "relaxed": [], "note": "3 asking prices"}
+    local_cheap, b1 = preliminary_score(base, prof, DEFAULT_STATE, fair)
+    remote_auto_pricey, b2 = preliminary_score({**base, "id": 5, "transmission": "Automatic", "price": 17500, "location": "Boston, MA", "vin": None}, prof, DEFAULT_STATE, fair)
+    same_but_remote, b3 = preliminary_score({**base, "id": 6, "location": "Boston, MA"}, prof, DEFAULT_STATE, fair)
     assert local_cheap > same_but_remote > remote_auto_pricey
     assert local_cheap - remote_auto_pricey >= 25          # real distance, not 3.9 vs 3.8
     assert b1["price_value"]["points"] >= 9 and b2["price_value"]["points"] <= 4   # cheap vs pricey, market-relative only
@@ -74,8 +74,8 @@ def test_preliminary_score_uses_sold_comps_and_penalizes_red_flags():
     l = {"id": 1, "site": "cargurus", "year": 2002, "make": "BMW", "model": "Z3 3.0i", "transmission": "Manual", "mileage": 60000,
          "price": 20000, "location": "Reno, NV", "mission": "enthusiast_bridge",
          "normalized": {"ratings": {"condition": {"score": 8, "why": ""}}, "red_flags": ["a", "b", "c"]}}
-    comps = [{"sold_price": 15000, "mileage": 70000}, {"sold_price": 16000, "mileage": 60000}, {"sold_price": 14000, "mileage": 90000}]
-    total, b = preliminary_score(l, prof, DEFAULT_STATE, comps, [])
+    fair = {"mid": 15000, "low": 14000, "high": 16000, "n": 3, "basis": "sold", "relaxed": [], "note": "3 sales"}
+    total, b = preliminary_score(l, prof, DEFAULT_STATE, fair)
     assert "sold comps" in b["price_value"]["why"] and b["price_value"]["points"] <= 4
     assert b["condition"]["points"] == 20      # red flags are noted, not double-counted
     assert b["documentation"]["points"] == 2   # unread listing starts at 1/10, no VIN
@@ -88,7 +88,7 @@ def test_unread_listing_scores_below_a_typical_assessment():
     prof = db.get_profile("z3_30i")
     l = {"id": 1, "site": "facebook", "year": 2001, "make": "BMW", "model": "Z3 3.0i", "transmission": "Manual", "mileage": 80000,
          "price": 12500, "location": "San Jose, CA", "mission": "enthusiast_bridge", "normalized": {}}
-    total, b = preliminary_score(l, prof, DEFAULT_STATE, [], [])
+    total, b = preliminary_score(l, prof, DEFAULT_STATE, None)
     assert total <= 55 and b["documentation"]["points"] == 2
 
 
@@ -104,7 +104,7 @@ def test_listing_age_penalty_and_stale_gate():
     old = {**base, "listing_date": (date.today() - timedelta(days=365)).isoformat()}
     assert age_penalty(listing_age_days(fresh), DEFAULT_STATE) == (0, "")
     assert age_penalty(listing_age_days(old), DEFAULT_STATE)[0] == 8  # a year old: heaviest step
-    assert preliminary_score(fresh, prof, DEFAULT_STATE, [], [])[0] - preliminary_score(old, prof, DEFAULT_STATE, [], [])[0] == 8
+    assert preliminary_score(fresh, prof, DEFAULT_STATE, None)[0] - preliminary_score(old, prof, DEFAULT_STATE, None)[0] == 8
     assert any(g.startswith("stale") for g in quick_gates(old, prof, "enthusiast_bridge", DEFAULT_STATE))
     assert not any(g.startswith("stale") for g in quick_gates(fresh, prof, "enthusiast_bridge", DEFAULT_STATE))
     live_auction = {**old, "site": "bat"}
@@ -126,10 +126,10 @@ def test_early_bid_is_not_a_price_until_the_last_day():
     closing = {**l, "raw": {"time_left": "2:39:23", "time_left_seen_at": now.isoformat()}}
     assert is_early_bid(closing, DEFAULT_STATE, now)[0] is False
     prof = db.get_profile("gx470")
-    comps = [{"sold_price": 12000, "mileage": 150000}, {"sold_price": 14000, "mileage": 140000}, {"sold_price": 13000, "mileage": 170000}]
-    total, b = preliminary_score(l, prof, DEFAULT_STATE, comps, [])
+    fair = {"mid": 13000, "low": 12000, "high": 14000, "n": 3, "basis": "sold", "relaxed": [], "note": "3 sales"}
+    total, b = preliminary_score(l, prof, DEFAULT_STATE, fair)
     assert "early bid" in b["price_value"]["why"] and "ignored" in b["price_value"]["why"]
-    assert b["price_value"]["points"] <= 9  # valued at the comp median, not at the $3,600 bid
+    assert b["price_value"]["points"] <= 9  # valued at fair value, not at the $3,600 bid
 
 
 def test_price_reference_prefers_sales_and_labels_the_source():
@@ -138,12 +138,12 @@ def test_price_reference_prefers_sales_and_labels_the_source():
     prof = db.get_profile("z3_30i")
     l = {"id": 1, "site": "cargurus", "year": 2002, "make": "BMW", "model": "Z3 3.0i", "transmission": "Manual",
          "mileage": 60000, "price": 16000, "location": "San Jose, CA", "mission": "enthusiast_bridge", "normalized": {}}
-    peers = [{"id": 2, "price": 25000, "mileage": 40000}, {"id": 3, "price": 24000, "mileage": 45000}]
     # Two sold comps are used even though the old rule needed three.
-    comps = [{"sold_price": 14000, "mileage": 70000}, {"sold_price": 15000, "mileage": 65000}]
-    _, b = preliminary_score(l, prof, DEFAULT_STATE, comps, peers)
+    fair_sold = {"mid": 14500, "low": 14000, "high": 15000, "n": 2, "basis": "sold", "relaxed": [], "note": "2 sales"}
+    _, b = preliminary_score(l, prof, DEFAULT_STATE, fair_sold)
     assert b["price_value"]["why"].startswith("price is") and "sold comps: 2" in b["price_value"]["why"]
     # With no sold data the source is named as asking prices.
-    _, b2 = preliminary_score(l, prof, DEFAULT_STATE, [], peers)
-    assert "asking prices, no sold data" in b2["price_value"]["why"]
+    fair_asking = {"mid": 24500, "low": 24000, "high": 25000, "n": 2, "basis": "asking", "relaxed": [], "note": "2 asking prices"}
+    _, b2 = preliminary_score(l, prof, DEFAULT_STATE, fair_asking)
+    assert "asking prices: 2" in b2["price_value"]["why"]
     assert b2["price_value"]["points"] > b["price_value"]["points"]   # cheap against askings, fair against sales
