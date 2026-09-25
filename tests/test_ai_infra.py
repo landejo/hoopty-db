@@ -318,3 +318,27 @@ def test_photo_blocks_skips_non_image_content_type(monkeypatch, tmp_path):
     monkeypatch.setattr("urllib.request.urlopen",
                         lambda req, timeout=8: _FakeHTTPResponse(b"<html></html>", "text/html"))
     assert photos.photo_blocks(["https://example.com/notreally.jpg"]) == []
+
+
+def test_refusal_fallback_covers_opus_5_5():
+    """Opus 5.5 runs broader safety classifiers than Opus 5; its requests carry the
+    server-side fallback too (accepted by the API, probed 2026-09-25)."""
+    from scout.ai import _supports_fallback
+    assert _supports_fallback("claude-opus-5-5") and _supports_fallback("claude-opus-5")
+    assert not _supports_fallback("claude-sonnet-5") and not _supports_fallback("claude-haiku-4-5")
+
+
+def test_effort_is_set_per_tier(monkeypatch):
+    from scout.config import Config
+    for k in ("SCOUT_MODEL_DEEP", "SCOUT_MODEL_MID", "SCOUT_MODEL_TOP", "SCOUT_EFFORT_DEEP", "SCOUT_EFFORT_MID"):
+        monkeypatch.delenv(k, raising=False)   # isolate from the developer's .env
+    monkeypatch.setenv("SCOUT_EFFORT_TOP", "medium")   # also the default since the 2026-09-25 eval
+    c = Config.load()
+    assert c.effort_top == "medium" and c.effort_deep == "medium" and c.effort_mid == "low"
+
+
+def test_a_tier_pinned_to_an_older_model_keeps_high_effort(monkeypatch):
+    from scout.config import Config
+    monkeypatch.setenv("SCOUT_MODEL_DEEP", "claude-opus-5")
+    monkeypatch.delenv("SCOUT_EFFORT_DEEP", raising=False)
+    assert Config.load().effort_deep == "high"

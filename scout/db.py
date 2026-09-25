@@ -222,6 +222,7 @@ def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 _ADDITIVE_COLUMNS = {
+    "ai_calls": [("effort", "TEXT")],
     "listings": [("mission", "TEXT"), ("vehicle_id", "INTEGER"), ("provenance_json", "TEXT"), ("mission_user_set", "INTEGER DEFAULT 0"),
                  ("verdict_override", "TEXT"), ("verdict_override_reason", "TEXT"), ("unseen_syncs", "INTEGER DEFAULT 0"),
                  ("role_user_set", "INTEGER DEFAULT 0")],
@@ -905,13 +906,13 @@ def merge_listings(src_id: int, dst_id: int, path: Path | None = None) -> dict[s
 def add_ai_call(kind: str, model: str, input_tokens: int = 0, output_tokens: int = 0,
                 cache_write_tokens: int = 0, cache_read_tokens: int = 0, cost_usd: float = 0.0,
                 stop_reason: str | None = None, listing_id: int | None = None,
-                path: Path | None = None) -> int:
+                path: Path | None = None, effort: str | None = None) -> int:
     with connect(path) as c:
         cur = c.execute(
             "INSERT INTO ai_calls (created_at, kind, model, input_tokens, output_tokens, cache_write_tokens, "
-            "cache_read_tokens, cost_usd, stop_reason, listing_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "cache_read_tokens, cost_usd, stop_reason, listing_id, effort) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (now(), kind, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
-             cost_usd, stop_reason, listing_id),
+             cost_usd, stop_reason, listing_id, effort),
         )
         return cur.lastrowid
 

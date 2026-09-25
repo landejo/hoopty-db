@@ -10,14 +10,15 @@ if TYPE_CHECKING:
 
 _client: "Anthropic | None" = None
 
-# Server-side refusal fallback (beta): re-routes a refused claude-opus-5 request
-# to another model within the same call. Not enabled for claude-opus-5-5 - its
-# support isn't confirmed, and the fallback set is model-specific.
+# Server-side refusal fallback (beta): re-routes a refused request to the model
+# Anthropic recommends for that refusal category, within the same call.
+# claude-opus-5-5 accepts it too (probed 2026-09-25) and needs it more: it runs
+# broader safety classifiers (bio, reasoning_extraction) than claude-opus-5.
 _FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
 def _supports_fallback(model: str) -> bool:
-    return model.startswith("claude-opus-5") and not model.startswith("claude-opus-5-5")
+    return model.startswith("claude-opus-5")
 
 
 def get_client() -> "Anthropic | None":
@@ -48,7 +49,8 @@ def _system_blocks(system: "str | list[str]", cache_system: bool) -> list[dict]:
     return blocks
 
 
-def _log_call(kind: str, model: str, usage, stop_reason: str | None, listing_id: int | None) -> None:
+def _log_call(kind: str, model: str, usage, stop_reason: str | None, listing_id: int | None,
+              effort: str | None = None) -> None:
     """Write one ai_calls row. Never let logging break the actual call."""
     try:
         from scout import db
@@ -58,7 +60,7 @@ def _log_call(kind: str, model: str, usage, stop_reason: str | None, listing_id:
         cache_read_tokens = getattr(usage, "cache_read_input_tokens", 0) or 0
         cost_usd = estimate_cost(model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens)
         db.add_ai_call(kind, model, input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
-                       cost_usd, stop_reason, listing_id)
+                       cost_usd, stop_reason, listing_id, effort=effort)
     except Exception:
         pass
 
@@ -90,7 +92,7 @@ def call_text(model: str, system: "str | list[str]", user, max_tokens: int, log_
             msg = stream.get_final_message()
 
     served_model = getattr(msg, "model", None) or model
-    _log_call(log_name, served_model, msg.usage, msg.stop_reason, listing_id)
+    _log_call(log_name, served_model, msg.usage, msg.stop_reason, listing_id, effort=effort if not model.startswith("claude-haiku") else None)
 
     if msg.stop_reason == "refusal":
         raise RuntimeError("Model refused the request.")

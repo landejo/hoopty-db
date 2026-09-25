@@ -174,8 +174,10 @@ class Ratings(BaseModel):
 
 
 class MoneyRange(BaseModel):
-    low: int = Field(ge=0, le=100000)
-    high: int = Field(ge=0, le=100000)
+    # Same bound as a listing price: an expected hammer for a $130k 911 is real
+    # (a $100k cap rejected its whole assessment, 2026-09-25).
+    low: int = Field(ge=0, le=2000000)
+    high: int = Field(ge=0, le=2000000)
 
     @field_validator("high")
     @classmethod
@@ -417,6 +419,7 @@ class Assessment(BaseModel):
     context: dict = Field(default_factory=dict)   # budget + urgency the judgement was formed under
     assessed_at: str
     model: str
+    effort: str | None = None      # output_config.effort the model ran at (None: before 2026-09-25)
     # Stage + pursue-next priority (policy 1.4.0, see POLICY_CHANGES.md).
     stage: Literal["listing", "questions", "docs", "ppi"] = "listing"
     upside: int | None = None      # score reachable if open questions resolve favourably

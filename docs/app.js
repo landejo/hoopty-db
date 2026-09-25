@@ -200,7 +200,7 @@
     const i = pool.findIndex((x) => x.id === l.id);
     return i < 0 ? null : { rank: i + 1, of: pool.length };
   }
-  function modelTag(a) { const m = (a && a.model) || ""; return /opus/.test(m) ? "Opus" : /sonnet/.test(m) ? "Sonnet" : /haiku/.test(m) ? "Haiku" : m ? m.split("-")[1] : ""; }
+  function modelTag(a) { const m = (a && a.model) || ""; const v = (m.match(/-(\d)-(\d)$/) || []).slice(1).join(".") || (m.match(/-(\d)$/) || [])[1] || ""; const fam = /opus/.test(m) ? "Opus" : /sonnet/.test(m) ? "Sonnet" : /haiku/.test(m) ? "Haiku" : /fable/.test(m) ? "Fable" : m ? m.split("-")[1] : ""; return fam ? (fam + (v ? " " + v : "")) : ""; }
   function badge(l) {
     const s = scoreOf(l);
     if (s != null) return `<span class="badge ${s >= 75 ? "hi" : s >= 60 ? "mid" : "lo"}" title="Score /100 · policy ${esc(l.assessment.policy_version)}">${s}</span>`;
@@ -390,7 +390,7 @@
         </div>
         ${state.local ? `<div class="board-actions">
           <button class="btn sm" id="check-avail">Check availability</button>
-          <button class="btn sm primary" id="reassess-top">Re-assess next tier <span class="opt">${esc(modelName(state.health?.models?.top))}</span></button>
+          <button class="btn sm primary" id="reassess-top">Re-assess next tier <span class="opt">${esc(tierLabel("top"))}</span></button>
           <span class="muted small" id="actions-note"></span></div>` : ""}
         <div id="list"></div>
       </section></div>`);
@@ -471,6 +471,13 @@
     renderTray(app);
   }
 
+  // "Opus 5.5 medium · ~29¢" from what the server is configured with and has measured.
+  function tierLabel(t) {
+    const H = state.health || {}, key = { full: "deep", quick: "mid", top: "top" }[t];
+    const m = H.models?.[key], e = H.efforts?.[key], c = H.assess_cost?.[t];
+    return [modelName(m), e].filter(Boolean).join(" ") + (c != null ? ` · ~${c < 1 ? Math.round(c * 100) + "¢" : "$" + c.toFixed(2)}` : "");
+  }
+  function tierCost(t) { return state.health?.assess_cost?.[t] ?? null; }
   function modelName(m) { return !m ? "Opus" : m.replace(/^claude-/, "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/-(\d)$/, " $1").replace(/^./, (c) => c.toUpperCase()); }
 
   // ---------- board actions (local mode) ----------
@@ -500,7 +507,7 @@
       try { cycle = await api("/api/reassess/cycle"); } catch (e) { return; }
       const all = ranking(), done = new Set(cycle.done), left = all.filter((l) => !done.has(l.id)).length;
       const tier = left ? cycle.next_tier : 1;
-      top.innerHTML = `Re-assess tier ${tier} <span class="opt">${esc(modelName(cycle.model))}</span>`;
+      top.innerHTML = `Re-assess tier ${tier} <span class="opt">${esc(tierLabel("top"))}</span>`;
       top.title = cycle.started_at
         ? `Cycle started ${ago(cycle.started_at)}: ${done.size} of ${all.length} cars re-assessed. Next press takes the next ${cycle.tier_size} not yet done, in board order. Restarts at tier 1 ${until(cycle.restarts_at)} (${cycle.cycle_days} days after tier 1).`
         : `Starts a new cycle with the board's top ${cycle.tier_size}; each later press takes the next ${cycle.tier_size}. Restarts at tier 1 after ${cycle.cycle_days} days.`;
@@ -790,7 +797,7 @@
     // ----- side -----
     if (state.local) {
       const act = h(`<div class="panel"><h3>Actions</h3>
-        <div class="row"><button class="btn primary" id="analyze">${A ? "Re-assess" : "Assess"} <span class="muted small" style="color:inherit;opacity:.8">Opus · ~35¢</span></button><button class="btn" id="analyze-quick" title="Same prompt and photos on Sonnet: triage tier">Quick assess <span class="muted small">Sonnet · ~30¢</span></button><button class="btn sm ghost" id="renorm" title="Re-run sync-time normalization">Re-normalize</button></div>
+        <div class="row"><button class="btn primary" id="analyze">${A ? "Re-assess" : "Assess"} <span class="muted small" style="color:inherit;opacity:.8">${esc(tierLabel("full"))}</span></button><button class="btn" id="analyze-quick" title="Same prompt and photos at lower effort: triage tier">Quick assess <span class="muted small">${esc(tierLabel("quick"))}</span></button><button class="btn sm ghost" id="renorm" title="Re-run sync-time normalization">Re-normalize</button></div>
         <div class="row" style="margin-top:8px"><button class="btn sm" id="adddoc" title="Paste a Carfax, AutoCheck, invoice or service record: gold-tier evidence in the next assessment">+ Attach document</button></div>
         <div id="doclist" class="small muted" style="margin-top:6px"></div>
         <div class="row" style="margin-top:8px"><button class="btn sm warm" id="investigate" title="Queue a same-car search; the extension runs it in your browser">${P ? "Re-investigate provenance" : "Investigate provenance"}</button><span class="muted small" id="inv-status"></span></div>
@@ -981,15 +988,15 @@
     if (!state.local) return app.appendChild(h(`<div class="empty"><h2>Local only</h2><p>Edit policy state on the local workbench. Published policy version: ${esc(state.data.policy_version || "—")}</p></div>`));
     let cfg;
     try { cfg = await api("/api/settings"); } catch (e) { return app.appendChild(h(`<div class="empty"><h2>${esc(e.message)}</h2></div>`)); }
-    const tools = h(`<div class="panel"><h3>Scores</h3><div class="row"><button class="btn sm warm" id="assess-all">Quick-assess unassessed active candidates (Sonnet, ~30¢ each)</button><button class="btn sm warm" id="assess-all-redo">Re-assess ALL active candidates (Sonnet)</button></div><div class="row" style="margin-top:8px"><button class="btn sm" id="rescore">Recompute preliminary scores (free)</button><button class="btn sm warm" id="renorm-missing">Re-normalize listings missing ratings (${esc((state.health?.models?.fast || "fast model").replace("claude-", "").replace(/-\d.*$/, ""))}, ~1–2¢ each)</button><button class="btn sm ghost" id="renorm-all">Re-normalize everything</button><span class="muted small" id="tool-status"></span></div><p class="muted small" style="margin:8px 0 0">Preliminary scores use the guide's 100-point rubric: documentation 25, condition 25, price/value 15, mission fit 15, logistics 10, spec 10. Price, budget, transmission and location are computed; documentation, condition and spec come from the fast model's read of the listing.</p></div>`);
+    const tools = h(`<div class="panel"><h3>Scores</h3><div class="row"><button class="btn sm warm" id="assess-all">Quick-assess unassessed active candidates (${esc(tierLabel("quick"))} each)</button><button class="btn sm warm" id="assess-all-redo">Re-assess ALL active candidates (${esc(tierLabel("quick"))} each)</button></div><div class="row" style="margin-top:8px"><button class="btn sm" id="rescore">Recompute preliminary scores (free)</button><button class="btn sm warm" id="renorm-missing">Re-normalize listings missing ratings (${esc((state.health?.models?.fast || "fast model").replace("claude-", "").replace(/-\d.*$/, ""))}, ~1–2¢ each)</button><button class="btn sm ghost" id="renorm-all">Re-normalize everything</button><span class="muted small" id="tool-status"></span></div><p class="muted small" style="margin:8px 0 0">Preliminary scores use the guide's 100-point rubric: documentation 25, condition 25, price/value 15, mission fit 15, logistics 10, spec 10. Price, budget, transmission and location are computed; documentation, condition and spec come from the fast model's read of the listing.</p></div>`);
     app.appendChild(tools);
     const run = async (path, label, q = "") => { $("#tool-status", tools).textContent = label + "…"; setTimeout(watchTask, 300); try { const r = await api(path + q, "POST"); $("#tool-status", tools).textContent = JSON.stringify(r).slice(0, 200); await loadData(); } catch (e) { $("#tool-status", tools).textContent = e.message; } pollTask(); };
     $("#rescore", tools).onclick = () => run("/api/rescore", "Rescoring");
     const ho = h(`<div class="panel"><h3>Handoff bundle</h3><div class="row"><button class="btn sm" id="handoff">Write handoff for the top <input type="number" class="num" id="handoff-n" value="10" min="3" max="40" style="width:70px"> candidates</button><span class="muted small" id="handoff-status"></span></div><p class="muted small" style="margin:8px 0 0">Writes a versioned Markdown + JSON bundle to data/handoffs/: methodology, policy state, profiles, every fact and cost figure per car, price history, comps, photo links and the captured listing text, plus the guide as an appendix. For a second opinion from another analyst.</p></div>`);
     tools.after(ho);
     $("#handoff", ho).onclick = async () => { $("#handoff-status", ho).textContent = "Writing…"; try { const r = await api(`/api/handoff?n=${$("#handoff-n", ho).value || 10}`, "POST"); $("#handoff-status", ho).textContent = r.markdown; } catch (e) { $("#handoff-status", ho).textContent = e.message; } };
-    $("#assess-all", tools).onclick = () => { const n = state.data.listings.filter((l) => l.role === "candidate" && (l.availability === "active" || l.availability === "pending") && l.profile_key && !l.assessment).length; if (!n) return toast("Nothing unassessed"); if (confirm(`Quick-assess ${n} listing(s) on Sonnet, roughly $${(n * 0.3).toFixed(2)}? This runs one at a time and can take ${Math.ceil(n * 2.5)} minutes.`)) run("/api/assess-all", `Quick-assessing ${n} listing(s)`, "?tier=quick"); };
-    $("#assess-all-redo", tools).onclick = () => { const n = state.data.listings.filter((l) => l.role === "candidate" && (l.availability === "active" || l.availability === "pending") && l.profile_key).length; if (!n) return toast("No active candidates"); if (confirm(`Re-assess all ${n} active candidate(s) on Sonnet, roughly $${(n * 0.3).toFixed(2)}, including the ones already assessed? About ${Math.ceil(n * 2.5)} minutes.`)) run("/api/assess-all", `Re-assessing ${n} listing(s)`, "?tier=quick&only_unassessed=false"); };
+    $("#assess-all", tools).onclick = () => { const n = state.data.listings.filter((l) => l.role === "candidate" && (l.availability === "active" || l.availability === "pending") && l.profile_key && !l.assessment).length; if (!n) return toast("Nothing unassessed"); if (confirm(`Quick-assess ${n} listing(s) on ${tierLabel("quick").split(" · ")[0]}, roughly $${(n * (tierCost("quick") ?? 0.2)).toFixed(2)}? This runs one at a time and can take ${Math.ceil(n * 1)} minutes.`)) run("/api/assess-all", `Quick-assessing ${n} listing(s)`, "?tier=quick"); };
+    $("#assess-all-redo", tools).onclick = () => { const n = state.data.listings.filter((l) => l.role === "candidate" && (l.availability === "active" || l.availability === "pending") && l.profile_key).length; if (!n) return toast("No active candidates"); if (confirm(`Re-assess all ${n} active candidate(s) on ${tierLabel("quick").split(" · ")[0]}, roughly $${(n * (tierCost("quick") ?? 0.2)).toFixed(2)}, including the ones already assessed? About ${Math.ceil(n * 1)} minutes.`)) run("/api/assess-all", `Re-assessing ${n} listing(s)`, "?tier=quick&only_unassessed=false"); };
     $("#renorm-missing", tools).onclick = () => run("/api/renormalize-all", "Re-normalizing (this can take a few minutes)");
     $("#renorm-all", tools).onclick = () => { if (confirm("Re-run the fast model on every listing?")) run("/api/renormalize-all", "Re-normalizing everything", "?only_missing_ratings=false"); };
     const panel = h(`<div class="panel"><div class="row" style="justify-content:space-between"><h3>Policy ${esc(cfg.policy_version)}</h3><div class="row"><button class="btn sm" id="save">Save</button><button class="btn sm ghost" id="reset">Reset to defaults</button></div></div>

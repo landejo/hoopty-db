@@ -285,7 +285,7 @@ def _fmt_row(r: dict[str, Any]) -> str:
 def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission: str, state: dict[str, Any],
                       vin_history: dict[str, Any], snapshots: list[dict[str, Any]],
                       peers: list[dict[str, Any]], comps: list[dict[str, Any]], model: str | None = None,
-                      fair: dict[str, Any] | None = None) -> EvidenceInterpretation:
+                      fair: dict[str, Any] | None = None, effort: str = "high") -> EvidenceInterpretation:
     critical = "\n".join(f"  - {c['key']}: {c.get('label', c['key'])} [{c.get('severity', 'conditional')}]"
                          for c in profile.get("critical_evidence") or []) or "  (none defined for this model)"
     from scout.policy.state import budget_for
@@ -325,7 +325,7 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
     )
     user = photos + [{"type": "text", "text": user_text}] if photos else user_text
     text = call_json_text(model or CONFIG.model_deep, system, user, max_tokens=32000, log_name="last_assess",
-                          effort="high", listing_id=listing_id)
+                          effort=effort, listing_id=listing_id)
     data = coerce.parse_json(text)
     try:
         return EvidenceInterpretation.model_validate(data)
@@ -340,7 +340,7 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
                                   ". Return the complete JSON object again with every key listed above, including `ratings` "
                                   "(all six categories, each {rating, rationale}), `evidence_quality` and `immediate_service_estimate`.")
     text = call_json_text(model or CONFIG.model_deep, [STATIC_SYSTEM, reminder_dynamic], user, max_tokens=32000,
-                          log_name="last_assess", effort="high", listing_id=listing_id)
+                          log_name="last_assess", effort=effort, listing_id=listing_id)
     try:
         return EvidenceInterpretation.model_validate(coerce.parse_json(text))
     except ValidationError as e:

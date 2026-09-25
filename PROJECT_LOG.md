@@ -3,6 +3,38 @@
 Running log of high-effort work sessions. Newest entry first. Each entry ends
 with a System State Summary per the Claude environment rules.
 
+## 2026-09-25 (night) — Every car on Opus 5.5; effort evaluation; Opus 5.5 refactors
+
+**Overnight run.** All 37 active/pending candidates assessed on claude-opus-5-5
+(skipping ones already done). 40 paid assessment calls, $12.48 measured
+(average $0.31 at high effort). #263 (1994 911 Widebody) failed twice: the
+output schema capped money ranges at $100k and its expected hammer was
+$140k-185k. Cap raised to $2M; re-run succeeded (Reject: $182k all-in).
+
+**Effort evaluation** (6 cars, one per profile, on a DB copy; baseline = the
+stored Opus 5.5 @ high assessment; 21 runs, ~$4.80):
+
+| variant | verdict same | next step same | mean abs score change | mean abs rating change | critical evidence agree | cost | time |
+|---|---|---|---|---|---|---|---|
+| Opus 5.5 high, re-run (noise floor, n=3) | 3/3 | 2/3 | 1.7 | 0.28 | 10/10 | $0.30 | 107 s |
+| Opus 5.5 medium | 6/6 | 4/6 | 1.5 | 0.33 | 22/22 | $0.29 | 93 s |
+| Opus 5.5 low | 6/6 | 3/6 | 2.7 (max 8) | 0.42 | 21/22 | $0.18 | 43 s |
+| Sonnet 5 high (old quick tier) | 6/6 | 4/6 | 3.2 | 0.83 | 21/22 | $0.18 | 134 s |
+
+Medium is inside high's run-to-run noise; low matches Sonnet's cost at 3x
+the speed with half the drift. Small sample (6 cars): directional, not proof.
+
+**Changes.** Defaults: full + tier re-assess on Opus 5.5 at medium, quick
+tier on Opus 5.5 at low (was Sonnet 5 at high); a tier pinned to an older
+model keeps high. Effort is recorded on every AI call and stored assessment;
+cost estimates are per model + effort. Opus 5.5 calls carry the server-side
+refusal fallback (API accepts it; probed). UI labels show model, effort and
+measured cost; assessment chips show the model version.
+
+**Open for Jason:** `.env` pins `SCOUT_MODEL_DEEP=claude-opus-5`, so the Assess
+button still runs Opus 5 (at high). Change that line to `claude-opus-5-5` (or
+delete it) to move it to Opus 5.5 at medium.
+
 ## 2026-09-25 — Sold/gone by hand, Best score order, Autotrader sold wording
 
 - Status Sold/Ended, or your own "Do not pursue" whose reason says the car is

@@ -246,6 +246,7 @@ def rescore_assessment(listing: dict[str, Any], profile: dict[str, Any], stored:
     d = a.model_dump()
     d["assessed_at"] = stored.get("assessed_at", d["assessed_at"])
     d["rescored_from"] = stored.get("policy_version")
+    d["effort"] = stored.get("effort")   # re-derivation keeps what the model ran at
     if stored.get("context"):
         d["context"] = stored["context"]
     d["mission"] = stored.get("mission", d["mission"])   # what the model was told, not what the listing says now

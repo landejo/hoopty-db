@@ -167,10 +167,10 @@ Asking prices are never described as sale prices.
 |---|---|---|---|
 | Normalize: facts, profile pick, quick read, red flags, prelim ratings | `SCOUT_MODEL_FAST` (Sonnet 5 by default; Haiku 4.5 is the cheaper option) | every new/changed listing, comps included | ~$0.02 |
 | Profile generation for an unknown make/model/generation | `SCOUT_MODEL_DEEP` (Opus) | once per new model, marked *unverified* | ~$0.30 |
-| Full assessment: evidence interpretation for the policy engine (facts, provenance, critical evidence, flags, ratings, questions, PPI focus), with up to 12 photos (downscaled to 1568 px, cached in data/photo_cache) | `SCOUT_MODEL_DEEP` (Opus) | only when you click | ~$0.35 |
-| Quick assessment: identical prompt and photos on the mid tier, for triage across the board | `SCOUT_MODEL_MID` (Sonnet) | only when you click, or "quick-assess all" | ~$0.15 |
+| Full assessment: evidence interpretation for the policy engine (facts, provenance, critical evidence, flags, ratings, questions, PPI focus), with up to 12 photos (downscaled to 1568 px, cached in data/photo_cache) | `SCOUT_MODEL_DEEP` (Opus 5.5, `medium` effort) | only when you click, or "Re-assess next tier" | ~$0.29 |
+| Quick assessment: identical prompt and photos at `low` effort, for triage across the board | `SCOUT_MODEL_MID` (Opus 5.5, `low` effort) | only when you click, or "quick-assess all" | ~$0.18 |
 
-Every call is logged with tokens and estimated cost in the `ai_calls` table (`GET /api/ai-spend`); the static part of each system prompt is cached. Every model response passes through `scout/coerce.py` before it is stored. Raw responses are
+Every call is logged with tokens, effort and estimated cost in the `ai_calls` table (`GET /api/ai-spend`); the static part of each system prompt is cached. Opus 5.5 calls carry the server-side refusal fallback. Effort per tier is set with `SCOUT_EFFORT_DEEP` / `_MID` / `_TOP`; the 2026-09-25 evaluation behind the defaults is in PROJECT_LOG.md. Every model response passes through `scout/coerce.py` before it is stored. Raw responses are
 written to `data/last_*.log` for debugging.
 
 ## GitHub Pages

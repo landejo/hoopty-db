@@ -44,7 +44,11 @@ PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do [ -n "$p" ] && kill "$p" 2>/dev/null || true; done; }
 trap cleanup EXIT
 
-fresh_db() { rm -f "$SB/scout.db"; sqlite3 "$ROOT/data/scout.db" ".backup '$SB/scout.db'"; }
+fresh_db() {
+  rm -f "$SB/scout.db"; sqlite3 "$ROOT/data/scout.db" ".backup '$SB/scout.db'"
+  # The suites start from tier 1: drop a re-assess cycle your real board is part-way through.
+  sqlite3 "$SB/scout.db" "DELETE FROM settings WHERE key='reassess_cycle'"
+}
 start_server() {   # $1 = "ai" to use the fake Anthropic API
   local extra=(ANTHROPIC_API_KEY= SCOUT_STARTUP_RESCORE_DELAY=${RESCORE_DELAY:-0})
   if [ "${1:-}" = ai ]; then extra=(SCOUT_STARTUP_RESCORE_DELAY=0 ANTHROPIC_API_KEY=fake-e2e-key ANTHROPIC_BASE_URL=http://127.0.0.1:$FAKE_PORT); fi

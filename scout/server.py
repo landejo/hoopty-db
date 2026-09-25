@@ -216,6 +216,8 @@ async def _autopublish_loop() -> None:
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "ai": CONFIG.ai_enabled, "models": {"deep": CONFIG.model_deep, "mid": CONFIG.model_mid, "fast": CONFIG.model_fast, "top": CONFIG.model_top},
+            "efforts": {"deep": CONFIG.effort_deep, "mid": CONFIG.effort_mid, "top": CONFIG.effort_top},
+            "assess_cost": {t: assess_cost(t)["per_listing"] for t in ("full", "quick", "top")},
             "skip_sold": CONFIG.skip_sold, "policy_version": POLICY_VERSION, "ai_queue": ai_queue_depth(),
             "autopublish": autopublish.status()}
 
@@ -394,7 +396,9 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     token = None if nested else _task_start(f"{'Quick' if tier == 'quick' else 'Full'} assessment · {row.get('title') or listing_id} · {model}", 1)
     async with _ai_lock:
         try:
-            evidence = await asyncio.to_thread(interpret_listing, row, prof, mission, state, history, snaps, peers, comps, model, fair=fair)
+            effort = {"quick": CONFIG.effort_mid, "top": CONFIG.effort_top}.get(tier, CONFIG.effort_deep)
+            evidence = await asyncio.to_thread(interpret_listing, row, prof, mission, state, history, snaps, peers, comps, model,
+                                               fair=fair, effort=effort)
         except Exception as e:
             db.log_event("assess_error", listing_id, str(e))
             if token:
@@ -408,6 +412,7 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     result = assess(row, prof, evidence, state, vin_history=history, fair=fair,
                     mission=mission, model=model, stage=stage)
     data = result.model_dump()
+    data["effort"] = effort
     db.add_assessment(listing_id, data)
     db.update_listing(listing_id, {"analyzed_at": db.now(), "analysis_model": model, "mission": mission})
     db.log_event("assessed", listing_id, f"{result.verdict} {result.score.total}/100 c{result.confidence}")
@@ -542,25 +547,41 @@ async def reassess(payload: ReassessPayload) -> dict[str, Any]:
             "skipped": skipped, "model": model, "tier": tier_no, "cycle_restarted": restarted or bool(cycle and cycle.get("expired_previous"))}
 
 
+# Measured 2026-09-25 (effort eval, 6 cars each): used until this database has
+# 3+ assessment calls at the same model + effort.
+EVAL_ASSESS_COST = {("claude-opus-5-5", "medium"): 0.29, ("claude-opus-5-5", "low"): 0.18,
+                    ("claude-opus-5-5", "high"): 0.30, ("claude-sonnet-5", "high"): 0.18}
+
+
+def _tier_model_effort(tier: str) -> tuple[str, str]:
+    return {"quick": (CONFIG.model_mid, CONFIG.effort_mid), "top": (CONFIG.model_top, CONFIG.effort_top)}.get(
+        tier, (CONFIG.model_deep, CONFIG.effort_deep))
+
+
 @app.get("/api/assess-cost")
 def assess_cost(tier: str = "top") -> dict[str, Any]:
-    """Measured cost of one assessment on the tier's model, from ai_calls.
-    With fewer than 3 calls on that model, scales the other Opus average by the
-    per-token price ratio and says so."""
+    """Measured cost of one assessment at the tier's model and effort, from
+    ai_calls; else the 2026-09-25 eval figure; else the other Opus average
+    scaled by the per-token price ratio. Says which."""
     from scout.config import PRICES
-    model = {"quick": CONFIG.model_mid, "top": CONFIG.model_top}.get(tier, CONFIG.model_deep)
+    model, effort = _tier_model_effort(tier)
     with db.connect() as c:
+        r = c.execute("SELECT COUNT(*) n, AVG(cost_usd) avg FROM ai_calls WHERE kind='last_assess' AND model=? AND effort=?",
+                      (model, effort)).fetchone()
         rows = c.execute("SELECT model, COUNT(*) n, AVG(cost_usd) avg FROM ai_calls WHERE kind='last_assess' GROUP BY model").fetchall()
+    if r["n"] >= 3:
+        return {"model": model, "effort": effort, "per_listing": round(r["avg"], 3),
+                "basis": f"average of {r['n']} measured assessments on {model} at {effort} effort"}
+    if (model, effort) in EVAL_ASSESS_COST:
+        return {"model": model, "effort": effort, "per_listing": EVAL_ASSESS_COST[(model, effort)],
+                "basis": f"measured in the 2026-09-25 effort evaluation ({model}, {effort} effort)"}
     by = {r["model"]: (r["n"], r["avg"]) for r in rows}
-    if by.get(model, (0, 0))[0] >= 3:
-        n, avg = by[model]
-        return {"model": model, "per_listing": round(avg, 3), "basis": f"average of {n} measured assessments on {model}"}
     ref = max(((m, v) for m, v in by.items() if m.startswith("claude-opus") and v[0] >= 3), key=lambda x: x[1][0], default=None)
     if ref and model in PRICES and ref[0] in PRICES:
         ratio = PRICES[model][0] / PRICES[ref[0]][0]
-        return {"model": model, "per_listing": round(ref[1][1] * ratio, 3),
+        return {"model": model, "effort": effort, "per_listing": round(ref[1][1] * ratio, 3),
                 "basis": f"{ref[1][0]} measured {ref[0]} assessments averaging ${ref[1][1]:.2f}, scaled by the per-token price ratio ({ratio:.2f})"}
-    return {"model": model, "per_listing": None, "basis": "no measured assessments yet"}
+    return {"model": model, "effort": effort, "per_listing": None, "basis": "no measured assessments yet"}
 
 
 # ---------- availability check (sold / delisted / ended detection) ----------

@@ -462,3 +462,10 @@ def test_startup_reconciles_cars_you_already_said_are_gone(monkeypatch):
                 break
             time.sleep(0.1)
     assert (db.get_listing(row["id"])["availability"], db.get_listing(row["id"])["role"]) == ("sold", "comp")
+
+
+def test_expected_hammer_above_100k_is_accepted():
+    """A $131k 911 auction's expected hammer of $145k-185k failed validation (2026-09-25)."""
+    from scout.policy.schema import MoneyRange
+    r = MoneyRange(low=145000, high=185000)
+    assert (r.low, r.high) == (145000, 185000)
