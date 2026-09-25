@@ -10,3 +10,4 @@ data/*.log
 data/handoffs/
 docs/data/
 data/photo_cache/
+e2e/node_modules/

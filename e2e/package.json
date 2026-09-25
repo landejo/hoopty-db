@@ -1,0 +1,7 @@
+{
+  "name": "hoopty-matic-e2e",
+  "private": true,
+  "description": "End-to-end tests: real browser + extension + server + git, in a sandbox (see run.sh)",
+  "scripts": { "e2e": "./run.sh" },
+  "devDependencies": { "playwright": "1.58.0" }
+}
