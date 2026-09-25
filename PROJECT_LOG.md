@@ -3,6 +3,23 @@
 Running log of high-effort work sessions. Newest entry first. Each entry ends
 with a System State Summary per the Claude environment rules.
 
+## 2026-09-25 — Curiosities
+
+New role `curiosity` (scout/curiosity.py): followed out of interest, not a
+serious candidate. Automatic over `curiosity_over_price` ($40,000, listed price
+or expected hammer, whichever is higher), back to candidate under it; a role
+set by hand wins. Curious tab, chip, Role-menu option, tile count. Excluded
+from tier re-assess / quick-assess-all; still synced, availability-checked and
+turned into a comp when sold. Applied at ingest, after an AI read, after an
+assessment, on a Policy change to the line, after an availability check, and
+at startup. On a copy of the real data: #272, #261, #6, #237, #238 move to
+curiosities; #263 (the 911 example) is Ignored by hand, so it stays until
+Jason picks "curiosity" in its Role menu.
+E2E harness: the fake API replays an answer with no expected hammer; tier 2
+is "up to 15 not yet done" (tier 1 can shrink the pool).
+Tests: 261 unit; E2E startup 5/5, ux 32/32, replay 12/12, reassess 12/12,
+published 12/12.
+
 ## 2026-09-25 (night) — Every car on Opus 5.5; effort evaluation; Opus 5.5 refactors
 
 **Overnight run.** All 37 active/pending candidates assessed on claude-opus-5-5

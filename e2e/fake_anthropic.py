@@ -9,7 +9,9 @@ def _evidence(db_path: str) -> str:
     c = sqlite3.connect(db_path)
     for (aj,) in c.execute("SELECT assessment_json FROM assessments WHERE model LIKE 'claude-opus%' ORDER BY id DESC"):
         ev = json.loads(aj).get("evidence")
-        if ev and ev.get("ratings"):
+        # No expected hammer: replayed on every car, a $150k hammer would make
+        # them all curiosities and empty the ranking the suite pages through.
+        if ev and ev.get("ratings") and not ev.get("expected_hammer"):
             return json.dumps(ev)
     raise SystemExit("no stored Opus assessment to replay in " + db_path)
 

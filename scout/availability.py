@@ -281,6 +281,8 @@ def apply(listing_id: int, detail: dict[str, Any] | None) -> dict[str, Any]:
         changed = True
     db.update_listing(listing_id, updates)
     if changed:
+        from scout.curiosity import sync as sync_curiosity
+        sync_curiosity(listing_id)   # a rescued comp may be over the curiosity line
         after = db.get_listing(listing_id)
         db.add_snapshot(listing_id, after.get("sold_price") or after.get("price"), after.get("price_kind"),
                         after.get("availability"), None)

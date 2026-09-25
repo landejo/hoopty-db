@@ -169,6 +169,11 @@ def _startup() -> None:
         import threading
 
         def _rescore_stale() -> None:
+            # Cars over the curiosity line (or back under it) take their role first.
+            from scout.curiosity import sync_all
+            moved = sync_all()
+            if moved:
+                db.log_event("curiosity_sync", None, f"{len(moved)} role change(s): " + ", ".join(f"#{m['id']} {m['role']}" for m in moved))
             # Cars you marked sold / gone before that moved them off the board.
             from scout.availability import mark_off_market_by_user
             for r in db.list_listings():
@@ -315,7 +320,7 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         updates["notes"] = patch.notes[:20_000]
     if patch.pinned is not None:
         updates["pinned"] = 1 if patch.pinned else 0
-    if patch.role in {"candidate", "comp", "ignored"}:
+    if patch.role in {"candidate", "comp", "ignored", "curiosity"}:
         updates["role"] = patch.role
         updates["role_user_set"] = 1   # syncs no longer flip it back
     if patch.profile_key is not None:
@@ -414,6 +419,8 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     data = result.model_dump()
     data["effort"] = effort
     db.add_assessment(listing_id, data)
+    from scout.curiosity import sync as sync_curiosity
+    sync_curiosity(listing_id)   # an expected hammer over the line makes it a curiosity
     db.update_listing(listing_id, {"analyzed_at": db.now(), "analysis_model": model, "mission": mission})
     db.log_event("assessed", listing_id, f"{result.verdict} {result.score.total}/100 c{result.confidence}")
     if token:
@@ -664,9 +671,12 @@ def get_settings() -> dict[str, Any]:
 @app.put("/api/settings")
 def put_settings(update: dict[str, Any]) -> dict[str, Any]:
     try:
-        return {"ok": True, "state": save_state(update)}
+        st = save_state(update)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    from scout.curiosity import sync_all
+    moved = sync_all(st)   # the curiosity line may have moved
+    return {"ok": True, "state": st, "curiosity_changes": moved}
 
 
 @app.post("/api/settings/reset")

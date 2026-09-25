@@ -349,11 +349,12 @@
     const pursue = cands.filter((l) => l.status === "Pursue" || /^Pursue/.test(verdictOf(l) || "")).length;
     const contact = cands.filter((l) => nextStepOf(l)?.action === "Contact now").length;
     const ignored = L.filter((l) => l.role === "ignored").length;
+    const curious = L.filter((l) => l.role === "curiosity" && (l.availability === "active" || l.availability === "pending")).length;
     app.appendChild(h(`
       <div class="hero">
         <div><h1>The board</h1><p>Everything you've saved, normalized and scored. Sold and ended listings feed the <a href="#/market">market view</a>.</p></div>
         <div class="tiles bento">
-          <div class="tile lead"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} assessed${state.data.calibration?.offset != null ? ` · prelim ${offsetPhrase(state.data.calibration.offset)}` : ""}</div></div>
+          <div class="tile lead"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} assessed${state.data.calibration?.offset != null ? ` · prelim ${offsetPhrase(state.data.calibration.offset)}` : ""}${curious ? ` · ${curious} curiosities followed` : ""}</div></div>
           <div class="tile"><div class="k">Contact now</div><div class="v">${contact}</div><div class="s">${pursue} marked Pursue</div></div>
           <div class="tile"><div class="k">Market comps</div><div class="v">${comps}</div><div class="s">sold + ended${ignored ? ` · ${ignored} ignored` : ""}</div></div>
           <div class="tile"><div class="k">Profiles</div><div class="v">${state.data.profiles.length}</div><div class="s">${state.data.profiles.filter((p) => !p.verified).length} unverified</div></div>
@@ -366,7 +367,7 @@
       <details class="rail" ${matchMedia("(max-width: 900px)").matches ? "" : "open"}>
         <summary>Filters</summary>
         <div class="rail-sec"><h4>Show</h4>
-          <span class="seg wide" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span></div>
+          <span class="seg wide" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="curiosity" class="${f.role === "curiosity" ? "on" : ""}" title="Followed out of interest, not a serious candidate (over your curiosity line, or set by hand)">Curious</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span></div>
         <div class="rail-sec"><h4>Model <span class="muted small">⌥-click: only this</span></h4><span class="chips stack" id="f-profiles"></span></div>
         <div class="rail-sec"><h4>Next step</h4><span class="seg wide" id="f-next">${["", "Contact now", "Watch", "Skip"].map((k) => `<button data-v="${k}" class="${(f.next || "") === k ? "on" : ""}">${k ? k.replace(" now", "") : "Any"}</button>`).join("")}</span></div>
         <div class="rail-sec"><h4>Status <span class="muted small">click: only · again: hide</span></h4><span class="chips" id="f-statuses"></span></div>
@@ -408,7 +409,7 @@
       }));
     };
     const rerender = () => { save("filters", f); bindChips(); bindStatusChips(); renderList(); };
-    bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp" || f.role === "ignored") f.avail = ""; if (f.role === "candidate") f.avail = f.avail || "active"; save("filters", f); route(); }));
+    bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp" || f.role === "ignored") f.avail = ""; if (f.role === "candidate" || f.role === "curiosity") f.avail = f.avail || "active"; save("filters", f); route(); }));
     bar.querySelectorAll("#view button").forEach((b) => (b.onclick = () => { f.view = b.dataset.v; save("filters", f); route(); }));
     bar.querySelectorAll("#f-next button").forEach((b) => (b.onclick = () => { f.next = b.dataset.v; bar.querySelectorAll("#f-next button").forEach((x) => x.classList.toggle("on", x === b)); rerender(); }));
     $("#f-site", bar).onchange = (e) => { f.site = e.target.value; rerender(); };
@@ -443,7 +444,7 @@
     function renderList() {
       const rows = filtered();
       state.boardOrder = rows.map((l) => l.id);   // prev / next on the detail page follow this
-      $("#count", bar).textContent = `${rows.length} ${f.role === "comp" ? "comp" : f.role === "ignored" ? "ignored listing" : f.role === "candidate" ? "car" : "listing"}${rows.length === 1 ? "" : "s"}`;
+      $("#count", bar).textContent = `${rows.length} ${f.role === "comp" ? "comp" : f.role === "ignored" ? "ignored listing" : f.role === "curiosity" ? "curiosit" + (rows.length === 1 ? "y" : "ie") : f.role === "candidate" ? "car" : "listing"}${rows.length === 1 ? "" : "s"}`;
       $("#count-note", bar).textContent = `sorted by ${(SORTS.find(([k]) => k === f.sort) || SORTS[0])[1].toLowerCase()}${f.avail ? " · " + f.avail : ""}`;
       list.innerHTML = "";
       if (f.max_price || f.max_mileage || f.max_age) {
@@ -584,7 +585,7 @@
           ${l.assessment?.headline ? `<div class="headline" title="${esc(l.assessment.headline)}">${esc(l.assessment.headline)}</div>` : ""}
           ${(l.documents || []).length ? `<span class="chip olive" title="${esc((l.documents || []).map((d) => d.kind).join(", "))}">📄 ${l.documents.length}</span>` : ""}${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
           <div class="foot">
-            <div class="row" style="gap:6px">${stageChip(l)}${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${nextStepOf(l) && !l.verdict_override ? nextChip(l) : v ? `<span class="chip ${verdictTone(v)}" title="${l.verdict_override ? "Your override (computed: " + esc(computedVerdictOf(l) || "none") + ")" : "computed"}">${l.verdict_override ? "★ " : ""}${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
+            <div class="row" style="gap:6px">${stageChip(l)}${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${l.role === "curiosity" ? `<span class="chip curiosity" title="Followed out of interest, not a serious candidate">Curiosity</span>` : nextStepOf(l) && !l.verdict_override ? nextChip(l) : v ? `<span class="chip ${verdictTone(v)}" title="${l.verdict_override ? "Your override (computed: " + esc(computedVerdictOf(l) || "none") + ")" : "computed"}">${l.verdict_override ? "★ " : ""}${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
             <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label><span class="pill-status">${esc(l.status || "New")}</span></span>
           </div>
         </div>
@@ -806,7 +807,7 @@
         <label style="display:block;margin-top:10px">Mission <select id="mission">${MISSIONS.map((m) => `<option value="${m}" ${l.mission === m ? "selected" : ""}>${missionLabel(m)}</option>`).join("")}</select> <span class="muted small">pragmatic bridge lifts the manual gate</span></label>
         <div class="row" style="margin-top:10px"><label>Status <select id="status">${STATUSES.map((s) => `<option ${l.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
         <label><input type="checkbox" id="pin" ${l.pinned ? "checked" : ""}> pinned</label>
-        <label>Role <select id="role"><option value="candidate" ${l.role === "candidate" ? "selected" : ""}>candidate</option><option value="comp" ${l.role === "comp" ? "selected" : ""}>comp</option><option value="ignored" ${l.role === "ignored" ? "selected" : ""}>ignored (not a car / not for me)</option></select></label></div>
+        <label>Role <select id="role"><option value="candidate" ${l.role === "candidate" ? "selected" : ""}>candidate</option><option value="curiosity" ${l.role === "curiosity" ? "selected" : ""}>curiosity (following, not a serious candidate)</option><option value="comp" ${l.role === "comp" ? "selected" : ""}>comp</option><option value="ignored" ${l.role === "ignored" ? "selected" : ""}>ignored (not a car / not for me)</option></select></label></div>
         <label style="display:block;margin-top:10px">Profile <select id="prof"><option value="">— none —</option>${state.data.profiles.map((p) => `<option value="${p.key}" ${l.profile_key === p.key ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select></label>
         <textarea class="notes" id="notes" placeholder="Your notes (saved on blur)">${esc(l.notes || "")}</textarea>
         <div class="row" style="margin-top:10px;justify-content:space-between">${l.availability === "sold" || l.availability === "ended" ? `<span class="muted small">Off the market: ${esc(l.availability)}</span>` : `<button class="btn sm" id="mark-gone" title="Sold or no longer available: becomes a market comp, leaves the candidates board, verdict Do not pursue">Mark sold / gone</button>`}<button class="btn sm ghost" id="delete" title="Remove this listing and its history from the workbench">Delete listing</button></div></div>`);
@@ -873,7 +874,7 @@
       $("#mission", act).onchange = (e) => patch({ mission: e.target.value });
       $("#status", act).onchange = (e) => patch({ status: e.target.value });
       $("#pin", act).onchange = (e) => patch({ pinned: e.target.checked });
-      $("#role", act).onchange = (e) => patch({ role: e.target.value }).then(() => { if (e.target.value === "ignored") { toast("Hidden from the board"); location.hash = "#/"; } });
+      $("#role", act).onchange = (e) => patch({ role: e.target.value }).then(() => { if (e.target.value === "ignored") { toast("Hidden from the board"); location.hash = "#/"; } else if (e.target.value === "curiosity") toast("Now a curiosity: under the Curious tab, out of bulk assessments"); });
       $("#prof", act).onchange = (e) => patch({ profile_key: e.target.value });
       $("#notes", act).onblur = (e) => { if (e.target.value !== (l.notes || "")) patch({ notes: e.target.value }); };
     } else {

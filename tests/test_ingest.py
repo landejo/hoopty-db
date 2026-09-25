@@ -2,7 +2,7 @@ from scout import db
 from scout.ingest import detect_availability, ingest_items, parse_price
 
 
-def _item(url, title="2001 BMW Z3 M Coupe", price="$42,000", sold=False, text="lots of text " * 20):
+def _item(url, title="2001 BMW Z3 M Coupe", price="$32,000", sold=False, text="lots of text " * 20):
     return {"url": url, "title": title, "price_text": price, "sold": sold,
             "card_text": f"{title}\n{price}", "detail": {"text": text, "photos": ["https://x/1.jpg"]}}
 

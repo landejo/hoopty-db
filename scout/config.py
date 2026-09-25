@@ -104,7 +104,7 @@ def estimate_cost(model: str, input_tokens: int = 0, output_tokens: int = 0,
 
 
 AVAILABILITY = ["active", "pending", "sold", "ended", "removed", "withdrawn", "unknown"]
-ROLES = ["candidate", "comp"]
+ROLES = ["candidate", "comp", "curiosity", "ignored"]
 
 STATUSES = [
     "New", "Pursue", "Verify", "Contacted", "PPI Scheduled",

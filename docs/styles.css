@@ -94,7 +94,7 @@ h3 { font-size: 16px; }
 .board-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
 .board-actions .opt { font-weight: 500; opacity: .8; font-size: 12px; }
 .seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--bg-2); border-radius: 999px; }
-.seg.wide { display: grid; grid-template-columns: repeat(4, 1fr); }
+.seg.wide { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
 .seg.wide button { padding: 5px 2px; font-size: 12px; }
 .seg button { border: 0; background: transparent; border-radius: 999px; padding: 5px 11px; cursor: pointer; color: var(--ink-2); font-weight: 600; font-size: 13px; }
 .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(16,19,26,.15); }
@@ -317,3 +317,7 @@ html[data-theme="dark"] .stepper li.done { color: #C2D6A6; }
 .panel.accent-olive.next-panel { border-left-width: 6px; }
 .grid-divider { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 10px; padding: 14px 4px 2px; border-top: 1px dashed var(--line-2); color: var(--muted); font-size: 13px; }
 .grid-divider span { font-weight: 800; color: var(--ink); font-size: 15px; }
+/* Curiosities: followed out of interest, not serious candidates */
+.chip.curiosity { background: var(--chip-slate); color: var(--ink-2); font-weight: 700; font-style: italic; }
+.card.curiosity { opacity: .92; }
+.card.curiosity .photo { filter: saturate(.75); }

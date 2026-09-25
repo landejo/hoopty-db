@@ -97,7 +97,7 @@ def test_publish_endpoint_returns_502_on_failure(monkeypatch):
 def test_export_shape_and_market_percentile(tmp_path):
     ingest_items("bat", [
         {"url": "https://bringatrailer.com/listing/a/", "title": "2002 BMW Z3 M Coupe", "price_text": "Sold for $50,000", "detail": {"text": "x" * 300}},
-        {"url": "https://bringatrailer.com/listing/b/", "title": "2001 BMW Z3 M Coupe", "price_text": "$45,000", "detail": {"text": "y" * 300}},
+        {"url": "https://bringatrailer.com/listing/b/", "title": "2001 BMW Z3 M Coupe", "price_text": "$35,000", "detail": {"text": "y" * 300}},
     ], include_sold=True, run_ai=False)
     for r in db.list_listings():
         db.update_listing(r["id"], {"profile_key": "z3_m", "sold_price": 50000 if r["role"] == "comp" else None})
@@ -108,7 +108,7 @@ def test_export_shape_and_market_percentile(tmp_path):
     assert data["markets"]["z3_m"]["sold_count"] == 1
     active = next(l for l in data["listings"] if l["role"] == "candidate")
     assert active["price_pct_vs_sold"] == 0
-    assert active["history"][0]["price"] == 45000
+    assert active["history"][0]["price"] == 35000
     path = write_export(data, tmp_path)
     assert json.loads(path.read_text())["markets"]["z3_m"]["sold_median"] == 50000
 

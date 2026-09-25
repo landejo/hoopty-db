@@ -88,7 +88,14 @@ the reason. It ranks on **known merit** (everything except the records you
 have not asked for yet; those are the open-questions to-do list) and on the
 **walk-away** price: the lower of your budget for that car's mission and what
 this car is worth (top of its fair range, less known work and open questions).
-Set a budget per mission on the Policy page with `budgets_by_mission`. After
+Set a budget per mission on the Policy page with `budgets_by_mission`.
+**Curiosities.** A car over `curiosity_over_price` ($40,000; the higher of the
+listed price and the expected auction hammer) is followed as a *curiosity*:
+it has its own **Curious** tab, stays synced and availability-checked, becomes
+a comp when it sells, but is off the candidates board and out of every bulk
+assessment. It returns to the candidates if the price drops under the line.
+Pick "curiosity" in a listing's Role menu to set one by hand; a role you set
+wins over the price rule both ways. After
 questions are sent it says *Follow up*; from documents on, the verdict governs.
 
 `scout/policy/Jason_Car_Assessment_Guide.md` is the authoritative, human-readable

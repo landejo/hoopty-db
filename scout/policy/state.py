@@ -27,6 +27,9 @@ DEFAULT_STATE: dict[str, Any] = {
     #   {"enthusiast_bridge": {"max_price": 15000, "acceptable_all_in": 16500, "defeats_purpose_all_in": 21000},
     #    "future_keeper": {"max_price": 35000, "acceptable_all_in": 38000, "defeats_purpose_all_in": 42000}}
     "budgets_by_mission": {},
+    # Over this (listed price or expected hammer) a car is followed as a curiosity,
+    # not a candidate: off the candidates board, out of bulk assessments. 0 turns it off.
+    "curiosity_over_price": 40000,
     "current_vehicles": [
         {"name": "2018 Lexus RX 350", "role": "household utility, working well"},
         {"name": "2011 BMW 335i (E90, N55, auto)", "role": "finite life; recurring coolant leak; front suspension due"},

@@ -153,6 +153,8 @@ def _run_ai_job(job: dict[str, Any]) -> None:
                     raw.get("bid_count") if isinstance(raw.get("bid_count"), int) else None)
     for err in stats["errors"]:
         db.log_event("normalize_error", lid, err)
+    from scout.curiosity import sync as sync_curiosity  # lazy
+    sync_curiosity(lid)   # the AI read may have found the price
 
 
 def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | None = None,
@@ -208,6 +210,8 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
                 role = "candidate"
         if existing and existing.get("role") == "ignored":
             role = "ignored"  # not a car (or manually ignored): stays out of the way
+        if existing and existing.get("role") == "curiosity" and availability in {"active", "pending"}:
+            role = "curiosity"  # the price rule (scout.curiosity) decides whether it goes back
         values: dict[str, Any] = {
             "site": site, "site_id": item.get("site_id"), "url": url, "role": role,
             "availability": availability, "title": (item.get("title") or existing and existing.get("title") or "")[:300],
@@ -257,6 +261,9 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
         if row.get("vin") or (row.get("year") and row.get("make") and row.get("model")):
             from scout.provenance import link_listing_vehicle  # lazy
             link_listing_vehicle(lid)
+        from scout.curiosity import sync as sync_curiosity  # lazy
+        sync_curiosity(lid)   # over the curiosity line: follow it, but not as a candidate
+        row = db.get_listing(lid)
         stats["comps" if row["role"] == "comp" else "candidates"] += 1
 
     if full_sync and items:

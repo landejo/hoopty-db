@@ -62,6 +62,20 @@ const api = async (page, p, method = "GET", body) => {
   await page.selectOption("#f-sort", "pursue");
   await page.waitForTimeout(300);
 
+  // Curiosities: over the $40k line (listed price or expected hammer) they leave the candidates board.
+  const exC = await api(page, "/api/export");
+  const refPrice = (l) => Math.max(l.price || 0, ["expected_hammer", "current_bid", "asking"].includes(l.assessment?.costs?.price_basis) ? (l.assessment?.costs?.price || 0) : 0);
+  const overLine = exC.listings.filter((l) => (l.role === "candidate" || l.role === "curiosity") && l.availability === "active" && refPrice(l) > 40000);
+  const candIds = await page.$$eval(".card", (cs) => cs.map((c) => Number(c.dataset.id)));
+  const strays = overLine.filter((l) => l.role === "candidate" && candIds.includes(l.id));
+  check("no car over the curiosity line is left on Candidates (unless set by hand)", strays.every((l) => l.role_user_set), strays.map((l) => "#" + l.id).join(","));
+  await page.click('#role button[data-v="curiosity"]');
+  await page.waitForSelector(".card");
+  const cur = await page.$$eval(".card", (cs) => cs.map((c) => ({ id: Number(c.dataset.id), chip: !!c.querySelector(".chip.curiosity") })));
+  check("the Curious tab lists them, each with a Curiosity chip", cur.length >= overLine.filter((l) => !l.role_user_set).length && cur.every((c) => c.chip), `${cur.length} curiosities`);
+  await page.click('#role button[data-v="candidate"]');
+  await page.waitForSelector(".card");
+
   // Scroll memory + focus when returning from a listing.
   await page.evaluate(() => window.scrollTo(0, 1600));
   await page.waitForTimeout(300);
@@ -153,6 +167,17 @@ const api = async (page, p, method = "GET", body) => {
   check("…and listed under Comps", !!(await page.$(`.card[data-id="${victim.id}"]`)));
   await page.click('#role button[data-v="candidate"]');
   await page.waitForSelector(".card");
+
+  // Role menu: make a candidate a curiosity by hand.
+  const exR = await api(page, "/api/export");
+  const pick = exR.listings.find((l) => l.role === "candidate" && l.availability === "active" && !l.verdict_override && l.id !== victim.id && l.id !== cand.id);
+  await page.evaluate((id) => { location.hash = "#/l/" + id; }, pick.id);
+  await page.waitForFunction((id) => location.hash === `#/l/${id}` && document.querySelector("select#role"), pick.id, { polling: 250 });
+  await page.waitForTimeout(600);
+  await page.selectOption("select#role", "curiosity");
+  await page.waitForTimeout(800);
+  const pr = await api(page, `/api/listings/${pick.id}`);
+  check("Role menu: curiosity by hand sticks", pr.role === "curiosity" && pr.role_user_set === 1, `#${pick.id} ${pr.role}/${pr.role_user_set}`);
 
   // Re-assess top 15 with no API key: clear failure, nothing half-done.
   await page.goto(BASE + "/");

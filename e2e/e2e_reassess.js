@@ -50,9 +50,12 @@ async function pressTier(page) {
   check("button now says tier 2", true, await page.textContent("#reassess-top"));
 
   const t2 = await pressTier(page);
-  const overlap = t2.newRequests.length && (await (await page.request.get(BASE + "/api/reassess/cycle")).json()).done;
-  check("tier 2 takes 15 cars not done in tier 1", t2.newRequests.length === 15 && new Set(overlap).size === 30, `ranks ${t2.ranks.join(",")}`);
-  check("tier 2 toast", /Tier 2: 15 re-assessed/.test(t2.toast), t2.toast);
+  const done2 = (await (await page.request.get(BASE + "/api/reassess/cycle")).json()).done;
+  // Tier 1 can move cars out of the ranking (an expected hammer over the curiosity
+  // line), so tier 2 is "up to 15 not yet done", never a repeat.
+  const pool = (await (await page.request.get(BASE + "/api/export")).json()).listings.filter((l) => l.role === "candidate" && ["active", "pending"].includes(l.availability) && l.profile_key).length;
+  check("tier 2 takes up to 15 cars not done in tier 1, no repeats", t2.newRequests.length > 0 && t2.newRequests.length <= 15 && new Set(done2).size === done2.length && done2.length === 15 + t2.newRequests.length, `${t2.newRequests.length} cars, ranks ${t2.ranks.join(",")}; pool ${pool}`);
+  check("tier 2 toast", new RegExp(`Tier 2: ${t2.newRequests.length} re-assessed`).test(t2.toast), t2.toast);
 
   // Age the cycle past 3 days: the next press restarts at tier 1.
   execSync(`sqlite3 -cmd ".timeout 10000" "${path.join(DIR, "scout.db")}" "update settings set value_json=json_set(value_json,'$.started_at','2026-09-20T00:00:00+00:00') where key='reassess_cycle'"`);
