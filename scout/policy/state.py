@@ -22,6 +22,11 @@ DEFAULT_STATE: dict[str, Any] = {
         "acceptable_all_in": 16500,  # what the max hammer is solved backward from
         "defeats_purpose_all_in": 21000,  # above this a bridge car fails the hard cost gate
     },
+    # 1.8.0: per-mission budgets. Each mission overrides only the keys it sets and
+    # inherits the rest from "budget" above, e.g.
+    #   {"enthusiast_bridge": {"max_price": 15000, "acceptable_all_in": 16500, "defeats_purpose_all_in": 21000},
+    #    "future_keeper": {"max_price": 35000, "acceptable_all_in": 38000, "defeats_purpose_all_in": 42000}}
+    "budgets_by_mission": {},
     "current_vehicles": [
         {"name": "2018 Lexus RX 350", "role": "household utility, working well"},
         {"name": "2011 BMW 335i (E90, N55, auto)", "role": "finite life; recurring coolant leak; front suspension due"},
@@ -100,6 +105,14 @@ def load_state(path=None) -> dict[str, Any]:
             db.set_setting(SETTINGS_KEY, stored, path)
 
     return _deep_merge(DEFAULT_STATE, stored)
+
+
+def budget_for(state: dict[str, Any], mission: str | None) -> dict[str, Any]:
+    """The budget that applies to a car on this mission (policy 1.8.0): the
+    mission's overrides on top of the general budget."""
+    base = dict(state.get("budget") or {})
+    over = (state.get("budgets_by_mission") or {}).get(mission or "") or {}
+    return {**base, **{k: v for k, v in over.items() if v is not None}}
 
 
 def save_state(update: dict[str, Any], path=None) -> dict[str, Any]:

@@ -50,6 +50,12 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
     cs = (provenance or {}).get("current_status") or {}
     if provenance and cs.get("available") is False:
         gates.append(Gate(kind="strategy", key="not_actively_available", reason=cs.get("note") or "Seller indicates the car is no longer for sale"))
+    # 1.7.0: a sold or ended listing cannot be bought, whatever its evidence says.
+    if listing.get("availability") in {"sold", "ended"}:
+        chk = ((listing.get("raw") or {}).get("availability_check") or {})
+        how = f" ({chk['evidence']})" if chk.get("evidence") and chk.get("result") in {"sold", "ended", "unavailable"} else ""
+        gates.append(Gate(kind="strategy", key="no_longer_available",
+                          reason=f"No longer available: {'auction ended' if listing['availability'] == 'ended' else 'sold or delisted'}{how}"))
     if "mileage_decreased" in ((provenance or {}).get("flags") or []):
         gates.append(Gate(kind="hard", key="odometer_inconsistency", reason="Reported mileage is lower than an earlier same-car listing (odometer inconsistency unresolved)"))
 
@@ -111,14 +117,18 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
     seen: set[tuple[str, str]] = set()
     gates = [g for g in gates if not ((g.kind, g.reason) in seen or seen.add((g.kind, g.reason)))]
 
-    # Total expected cost defeats the bridge strategy (§8 hard gate).
+    # Total expected cost defeats the purpose (§8 hard gate). 1.8.0: every mission,
+    # against its own budget (budgets_by_mission), not only the bridge missions.
     # Gate on the midpoint of the range (the guide: no false precision from a range);
     # the high end is reported as a note by the cost engine.
-    cap = (state.get("budget") or {}).get("defeats_purpose_all_in")
+    from scout.policy.state import budget_for
+    cap = budget_for(state, mission).get("defeats_purpose_all_in")
     basis = all_in_mid if all_in_mid is not None else all_in_high
-    if basis is not None and cap and mission in {"enthusiast_bridge", "pragmatic_bridge"} and basis > cap:
-        gates.append(Gate(kind="hard", key="cost_defeats_bridge_purpose",
-                          reason=f"Risk-adjusted all-in about ${basis:,} (midpoint of the range) exceeds the bridge ceiling ${cap:,}"))
+    if basis is not None and cap and basis > cap:
+        bridge = mission in {"enthusiast_bridge", "pragmatic_bridge"}
+        gates.append(Gate(kind="hard", key="cost_defeats_bridge_purpose" if bridge else "cost_over_mission_budget",
+                          reason=f"Risk-adjusted all-in about ${basis:,} (midpoint of the range) exceeds the "
+                                 f"{'bridge' if bridge else mission.replace('_', ' ')} ceiling ${cap:,}"))
     return gates
 
 
@@ -203,8 +213,9 @@ def quick_gates(listing: dict[str, Any], profile: dict[str, Any] | None, mission
     if mission in MANUAL_REQUIRED_MISSIONS and trans == "automatic" and not (profile or {}).get("automatic_ok"):
         out.append("automatic (manual brief)")
     price = listing.get("price")
-    mx = (state.get("budget") or {}).get("max_price")
-    if price and mx and mission != "future_keeper" and price > mx:
+    from scout.policy.state import budget_for
+    mx = budget_for(state, mission).get("max_price")
+    if price and mx and price > mx:
         out.append(f"over ${mx:,} budget")
     age = listing_age_days(listing)
     if age is not None and age > int((state.get("listing_age") or {}).get("stale_after_days", 120)):

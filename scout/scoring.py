@@ -53,8 +53,9 @@ def market_stats(comps: list[dict[str, Any]], actives: list[dict[str, Any]]) -> 
     def prices(rows, key):
         return sorted(p for p in (r.get(key) for r in rows) if isinstance(p, int) and p > 0)
 
-    sold = [r for r in comps if r.get("sold_price") or (r.get("availability") == "sold" and r.get("price"))]
-    sold_prices = sorted((r.get("sold_price") or r.get("price")) for r in sold)
+    from scout.market import is_sale, sale_price   # one definition of a sale everywhere
+    sold = [r for r in comps if is_sale(r)]
+    sold_prices = sorted(sale_price(r) for r in sold)
     asking = prices(actives, "price")
     out: dict[str, Any] = {
         "active_count": len(actives),
@@ -108,7 +109,10 @@ def auction_hours_left(l: dict, now=None) -> float | None:
     now = now or datetime.now(timezone.utc)
     if l.get("auction_end"):
         try:
-            end = datetime.fromisoformat(l["auction_end"]).replace(tzinfo=timezone(timedelta(hours=-7)))  # Pacific (PDT)
+            end = datetime.fromisoformat(l["auction_end"])
+            if end.tzinfo is None:   # auction sites show Pacific time; PDT or PST by date
+                from zoneinfo import ZoneInfo
+                end = end.replace(tzinfo=ZoneInfo("America/Los_Angeles"))
             return (end - now).total_seconds() / 3600
         except ValueError:
             pass
@@ -215,8 +219,9 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, fair: di
         why = f"early bid ${price:,} ignored" + (f" ({round(hrs / 24, 1)} days left)" if hrs is not None else "") + (f"; valued at fair value ${est:,}" if est else "; no sold comps, neutral")
     else:
         pv, why = _price_value_points(price, fair_mid)
-    budget = state.get("budget") or {}
     mission = listing.get("mission") or (profile or {}).get("mission_default") or "enthusiast_bridge"
+    from scout.policy.state import budget_for
+    budget = budget_for(state, mission)
     breakdown["price_value"] = {"points": pv, "max": 15, "why": f"{why} ({src_note})"}
 
     trans = (listing.get("transmission") or "").lower()
@@ -228,13 +233,13 @@ def preliminary_score(listing: dict, profile: dict | None, state: dict, fair: di
         fit, fit_why = 9, "pragmatic bridge: solves the immediate problem"
     else:
         fit, fit_why = 10, "utility / capability mission"
-    if price and budget and mission != "future_keeper":
+    if price and budget:
         if budget.get("ideal_low", 0) <= price <= budget.get("ideal_high", 10**9):
             fit += 2; fit_why += " · inside the ideal band"
         elif price <= budget.get("max_price", 10**9):
             fit += 1; fit_why += " · under the max"
         elif price > budget.get("defeats_purpose_all_in", 10**9):
-            fit -= 6; fit_why += " · far over the bridge budget"
+            fit -= 6; fit_why += " · far over the budget"
         else:
             fit -= 3; fit_why += " · over the max"
     year = listing.get("year")

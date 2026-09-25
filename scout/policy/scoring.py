@@ -38,14 +38,15 @@ def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: 
         pts["logistics"] = lcap
         caps.append(f"logistics capped at {lcap}: location band {band or 'unknown'}")
 
-    # Mission fit: price over the bridge budget cannot score as a good fit.
-    budget = state.get("budget") or {}
+    # Mission fit: price over the mission's budget cannot score as a good fit (1.8.0: every mission).
+    from scout.policy.state import budget_for
+    budget = budget_for(state, mission)
     if costs is not None and costs.price_basis == "unpriced":
         # Auction price unknown until closing; cap mission fit at 9
         if pts["mission_fit"] > 9:
             pts["mission_fit"] = 9
             caps.append("mission fit capped at 9: auction price unknown until closing")
-    elif mission in {"enthusiast_bridge", "pragmatic_bridge"}:
+    else:
         # Use costs.price if available, otherwise fall back to listing price
         price = costs.price if costs is not None else (listing.get("price") or 0)
         max_price = budget.get("max_price")
@@ -59,7 +60,7 @@ def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: 
                 cap = 6 if price > budget.get("defeats_purpose_all_in", 10**9) else 9
             if pts["mission_fit"] > cap:
                 pts["mission_fit"] = cap
-                caps.append(f"mission fit capped at {cap}: price above the bridge budget")
+                caps.append(f"mission fit capped at {cap}: price above the {mission.replace('_', ' ')} budget")
     if mission == "pragmatic_bridge" and pts["mission_fit"] > 11:
         pts["mission_fit"] = 11
         caps.append("mission fit capped at 11: pragmatic bridge solves the immediate problem, not the enthusiast brief")

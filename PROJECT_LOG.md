@@ -3,6 +3,128 @@
 Running log of high-effort work sessions. Newest entry first. Each entry ends
 with a System State Summary per the Claude environment rules.
 
+## 2026-09-25 — Policy 1.8.0: walk-away, budgets per mission, merit, next step
+
+- Built items 1-4 of the scoring review (see POLICY_CHANGES 1.8.0). Viewer:
+  next-step chip on cards (your own verdict wins where set), walk-away under the
+  price (amber near, red over), Next-step filter, "Contact now" tile, next-step
+  block and walk-away derivation on the listing page.
+- Startup re-derive is now a visible task; a board opened mid-update refreshes
+  itself when it ends.
+- Statuses of #35, #128, #129, #130, #220 changed Purchased -> Sold on the live
+  server (Jason). #220 is still an active candidate until the availability check
+  reads its page.
+- On a copy of the real data under 1.8.0: 5 Contact now, 9 Watch, 19 Skip.
+- Tests: 249 unit; E2E startup 5/5, ux 24/24, replay 12/12, reassess 12/12,
+  published 12/12.
+
+## 2026-09-25 — Bug pass 3 (E2E-led)
+
+Fixed, each with a unit test and covered by an E2E suite:
+- Market: "pricier than X% of sold comps" and the market sold median/count
+  counted reserve-not-met bids and live comps as sales (now `market.is_sale`);
+  the 3-year comp recency filter read a nonexistent `sold_at` and fell back to
+  `last_seen`, which every sync refreshes; the Market view plotted live comps as sold.
+- Published board: the index dropped the early-bid sort signal (now
+  `assessment.early_bid`); "published 1h ago" was the minimum ("just now", "9m ago").
+- Tasks: a new task inherited an availability run's old heartbeat and was ended
+  as "stalled" on the first poll (then 409 no longer guarded, auto-publish could
+  push mid-run); provenance could end another task's banner or leave its own
+  stuck forever; stall window 180 → 300 s and the extension reports every page.
+- Auto-publish: the first edit of a new sitting published ~30 s later as a
+  "checkpoint" (used the previous sitting's publish time); edits made while a
+  publish ran were dropped from the pending count.
+- Extension (0.4.1): a second run could "recover" a live run's lock after 10 min
+  and close its tab; now refused while running, and staleness is measured from
+  the last page opened.
+- Viewer: a finished run re-rendered listing/Settings pages (scroll to top,
+  unsaved Settings edits lost); now only the board re-renders.
+- Roles set by hand before `role_user_set` existed are backfilled from the
+  event log on every start (#4 and #216 would have flipped back).
+- Stored assessments now move to the current policy at server start (72 were on
+  1.5/1.6, so 1.7.0's sold gate never reached them); `last_seen` is no longer
+  bumped by a check that could not read the page; auction end times use
+  America/Los_Angeles (was fixed UTC-7).
+
+E2E: startup 3/3, ux 18/18, replay 12/12, reassess 12/12, published 12/12.
+Not fixed: `db.merge_listings` does not carry role/role_user_set (rare).
+
+## 2026-09-24 (later) — End-to-end verification; tiered re-assess
+
+Weighted toward E2E per Jason. Harness in `e2e/` (`run.sh`), sandboxed: clone
+with a local bare origin, DB copy, server on :8766, real Chromium + unpacked
+extension, fake Anthropic API for paid paths.
+
+- Real-browser availability runs (71 listings) + independent checks of every
+  change against the live pages found and fixed four accuracy bugs:
+  CarGurus' sold page ("Looks like that one got away") was not recognised;
+  a comp was pulled back to candidate on a page with no notice either way;
+  empty and bot-block pages (CarGurus DataDome, Autotrader Akamai, Cars.com
+  Cloudflare) were recorded as "active"; Facebook's
+  `?unavailable_product=1` redirect is now a signal. Live-listing markers
+  (Facebook Message, CarGurus Check availability, Autotrader Listing Price) are
+  positive evidence; without one the result is "unclear". Each check stores the
+  page URL and first 300 characters for audit.
+- Verified correct on live pages: #247/#252 ended (bid to $32,500, same car
+  saved twice), #224 sold $30,500, #261 and #216 live, #4 and #8 sold (CarGurus),
+  #67 sold and #52 delisted (Facebook).
+- UI bugs found by E2E: ← / → used the stale pager during navigation (now
+  from the URL + board order); a 520px profile <select> made every listing page
+  1,560px wide on a phone.
+- Tiered re-assess replaces "top 15": next 15 not yet done this cycle, cycle
+  restarts after 3 days (`/api/reassess`, `/api/reassess/cycle`).
+- Auto-publish verified: pushed once after each sitting that changed data,
+  skipped an edit that changed nothing.
+- Not verifiable by automation: CarGurus/Cars.com/Autotrader through the
+  extension (sites block automated browsers) and signed-in Facebook sync; a real
+  Opus 5.5 response (paid).
+
+**System State Summary**
+- Active tools: `e2e/run.sh` (Playwright 1.58, cached Chromium 1208), pytest
+  (237 pass).
+- Modified paths: `scout/availability.py`, `scout/server.py`,
+  `extension/adapters/cargurus.js`, `docs/app.js`, `docs/styles.css`,
+  `tests/test_availability.py`, new `e2e/`, `README.md`, `.gitignore`.
+- Open dependencies: nothing committed; restart :8765 and reload the extension.
+
+## 2026-09-24 — Hoopty-Matic: availability check, top-15 re-assess, auto-publish, redesign
+
+- Renamed to **Hoopty-Matic** everywhere user-visible (viewer, extension, README,
+  handoff filenames). Kept: the `scout` package, `SCOUT_*` env vars, localStorage
+  keys, the `~/Documents/Hoopty Scout Backups` folder, the repo name.
+- Board source links; availability check (`scout/availability.py`, extension
+  `runAvailabilityCheck`, workbench bridge `extension/adapters/workbench.js`);
+  statuses `Sold` / `Ended`; policy 1.7.0 `no_longer_available` gate.
+- `POST /api/reassess` + board button (top 15 in board order, `SCOUT_MODEL_TOP`
+  = claude-opus-5-5), `GET /api/assess-cost`.
+- Auto-publish after a sitting (`scout/autopublish.py`, `/api/activity` heartbeat).
+- Bugs fixed: publish never detected "nothing changed" (generated_at);
+  re-normalize flipped ended/removed/pending listings to active and wiped `raw`;
+  a single miss from a lazy saved list marked a car removed; card-only syncs
+  overwrote full page text; a bare "sold" anywhere in page text made a live car a
+  comp (tightened, plus CarGurus adapter); a hand-set role was flipped back by
+  the next sync (`role_user_set`).
+- UX: scroll/focus kept when returning to the board; ‹ › and ←/→ between
+  listings; phone layout (no horizontal scroll at 375 px).
+- Redesign after Dribbble "Auto.Hunt" (Aksantara) and Behance dashboards: dark
+  app bar, filter rail + results head, bento stats, cobalt accent, Plus Jakarta
+  Sans; new gauge icon (`docs/icon.svg`, extension PNGs). Mobbin returned 403.
+- Found, not fixed: "pricier than X% of sold comps" pool includes non-sales
+  (`publish.py`); comp recency filter reads a nonexistent `sold_at` and falls
+  back to `last_seen` (`market.py`); the published index drops the early-bid
+  sort signal.
+
+**System State Summary**
+- Active tools: pytest (232 pass), sandbox dev server `scout-dev` on :8766 with a
+  DB copy in the session scratchpad, AI and auto-publish off.
+- Modified paths: `scout/{availability,autopublish}.py` (new), `scout/{server,
+  ingest,publish,db,config,handoff,__init__}.py`, `scout/policy/{gates,__init__}.py`,
+  `scout/policy/POLICY_CHANGES.md`, `docs/{app.js,styles.css,index.html,icon.svg}`,
+  `extension/*` (0.4.0), `tests/test_availability.py` (new), `tests/{conftest,
+  test_ingest,test_publish_ghpages}.py`, `README.md`, `.env.example`, `.claude/launch.json`.
+- Open dependencies: restart the server on :8765 and reload the unpacked
+  extension; nothing committed yet.
+
 ## 2026-09-22 — Full audit (read-only, no code changes)
 
 Opus-led audit with Sonnet sub-agents across backend, extension, viewer,

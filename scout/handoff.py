@@ -255,7 +255,7 @@ def build(n: int | None = 10, site: str | None = None, brief: str = "decision") 
     prelim_only = sum(1 for _, a, _ in ranked if not a)
 
     scope = f"all {len(ranked)} live {SITES.get(site, site)} listings" if site else f"top {len(ranked)} active candidates"
-    md = [f"# Hoopty Scout handoff — {scope}", f"Generated {today} · policy {POLICY_VERSION} · " +
+    md = [f"# Hoopty-Matic handoff — {scope}", f"Generated {today} · policy {POLICY_VERSION} · " +
           ("for independent research on each vehicle" if brief == "research" else "for an independent second analysis"), ""]
     md.append("## 0. What I want from you")
     if brief == "research":
@@ -388,7 +388,7 @@ utility_capability (SUV branch, automatic fine). **Urgency mode:** {state.get('u
     md.append("\n## Appendix C — Verdict vocabulary\n" + ", ".join(VERDICTS) + ". Never use \"pass\" as a positive verdict.\n")
     bundle = {"generated": datetime.now(timezone.utc).replace(microsecond=0).isoformat(), "policy_version": POLICY_VERSION,
               "scope": {"site": site, "brief": brief, "count": len(ranked)},
-              "state": {k: state.get(k) for k in ("urgency_mode", "budget", "home_location", "travel", "active_exclusions", "deprioritized", "fees", "transport_by_locality_band", "tax_rate", "registration_fee", "listing_age")},
+              "state": {k: state.get(k) for k in ("urgency_mode", "budget", "budgets_by_mission", "home_location", "travel", "active_exclusions", "deprioritized", "fees", "transport_by_locality_band", "tax_rate", "registration_fee", "listing_age")},
               "calibration_offset": offset, "profiles": profiles_used, "cars": export_cars}
     return "\n".join(md), bundle
 
@@ -397,11 +397,11 @@ def write(n: int | None = 10, site: str | None = None, brief: str = "decision") 
     HANDOFF_DIR.mkdir(parents=True, exist_ok=True)
     stamp = date.today().strftime("%Y%m%d")
     label = f"{site.capitalize()}_" if site else ""
-    existing = sorted(HANDOFF_DIR.glob(f"Hoopty_Scout_{label}Handoff_v*_{stamp}.md"))
+    existing = sorted(HANDOFF_DIR.glob(f"Hoopty_Matic_{label}Handoff_v*_{stamp}.md"))
     version = 1 + max((int(re.search(r"_v(\d+)_", p.name).group(1)) for p in existing), default=0)
     md, bundle = build(n, site=site, brief=brief)
-    md_path = HANDOFF_DIR / f"Hoopty_Scout_{label}Handoff_v{version}_{stamp}.md"
-    json_path = HANDOFF_DIR / f"Hoopty_Scout_{label}Handoff_v{version}_{stamp}.json"
+    md_path = HANDOFF_DIR / f"Hoopty_Matic_{label}Handoff_v{version}_{stamp}.md"
+    json_path = HANDOFF_DIR / f"Hoopty_Matic_{label}Handoff_v{version}_{stamp}.json"
     md_path.write_text(md)
     json_path.write_text(json.dumps(bundle, ensure_ascii=False, indent=1, default=str))
     return md_path, json_path

@@ -4,6 +4,58 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.8.0 (2026-09-25)
+
+Jason's instruction, 2026-09-25, after a review of 34 assessed active cars: 32
+read `Maybe / verify`, 23 scored 40-49, 32 had confidence under 50, and
+`Pursue conditionally` was unreachable. The score could not separate cars
+before the seller had been asked anything.
+
+**Walk-away per car.** `max_price` is now the lower of what the mission budget
+allows (solved backward from `acceptable_all_in`, as before) and what this car
+is worth: the top of its fair range (75th percentile of mileage-adjusted
+sales), less its known work, less the reserve for its unresolved questions
+($1,000 each, at most 2). With fewer than 3 comparable sales the budget alone
+sets it. Both figures and the one that won are stored (`max_price_budget`,
+`max_price_value`, `max_price_basis`). Offers stay under the walk-away.
+
+**Budgets per mission.** `budgets_by_mission` overrides the general `budget`
+per mission; a mission inherits any key it does not set. The mission-fit
+budget cap, the "defeats the purpose" hard gate and the sync-time "over budget"
+flag now apply to every mission against its own budget. Before, keeper and
+utility cars had no budget check at all (14 of 34 were over their maximum,
+by up to $27k, unflagged). Until Jason sets mission budgets, every mission uses
+his saved general budget.
+
+**Known merit and a next step before contact.** `merit` is the score without
+documentation (the other 75 points, scaled to 100). At the Listing and
+Questions stages the pursue-next priority is merit, less 10 per observed
+problem, 8 for an unpriced auction, 5 for a stale listing, and up to 25 for an
+ask over the walk-away (one point per percent). `next_step` says what to do:
+`Skip` for a hard/strategy/configuration gate, an ask more than 15% over the
+walk-away, or an observed problem with priority under 40; `Contact now` for
+priority 50+ within 5% of the walk-away, or a live auction closing within 72
+hours that ranks near the bar; `Watch` otherwise; `Follow up` once questions are
+sent. From the Docs stage on, the verdict governs as before.
+
+**Deviation from the guide.** The guide says "unknown is not good". Merit does
+not score missing records as good: it leaves them out of the ranking until
+they have been asked for, lists them as open questions (the to-do list), and the
+full score with documentation still decides the verdict. On Jason's data at the
+time: 5 Contact now, 9 Watch, 19 Skip (9 of them over his own $33k
+"defeats the purpose" line, now enforced for keepers and utility cars).
+
+## 1.7.0 (2026-09-24)
+
+**A car that is gone cannot be pursued.** A listing whose availability is
+`sold` or `ended` (from a sync, or from the new availability check that re-opens
+each listing page) gets a strategy gate, `no_longer_available`, so its verdict
+is `Do not pursue` and its pursue-next priority is 0. The availability check
+treats a page that says the listing is "no longer available" as sold (delisted):
+that is usually why a car disappears, and it makes the car a market comp at its
+last asking price, as sold Facebook listings already were. Jason's instruction,
+2026-09-24.
+
 ## 1.6.0 (2026-09-23)
 
 **A missing hard item is required, not yet a finding, until the PPI.** A

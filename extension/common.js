@@ -184,7 +184,12 @@
       try {
         if (msg.type === "ping") sendResponse({ ok: true, site: A.site, saved: !!A.isSavedPage(), detail: !!A.isDetailPage() });
         else if (msg.type === "collect") sendResponse({ ok: true, items: await A.collectSaved() });
-        else if (msg.type === "detail") { await S.waitForChallenge(msg.waitMs || 20000); sendResponse({ ok: true, detail: await A.scrapeDetail() }); }
+        else if (msg.type === "detail") {
+          await S.waitForChallenge(msg.waitMs || 20000);
+          const detail = await A.scrapeDetail();
+          detail.is_detail_page = !!A.isDetailPage();   // false after a redirect to search / home / login
+          sendResponse({ ok: true, detail });
+        }
         else if (msg.type === "challenge") sendResponse({ ok: true, challenge: S.isChallenge() });
       } catch (e) {
         sendResponse({ ok: false, error: String(e && e.stack || e) });

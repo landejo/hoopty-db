@@ -223,7 +223,8 @@ def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 _ADDITIVE_COLUMNS = {
     "listings": [("mission", "TEXT"), ("vehicle_id", "INTEGER"), ("provenance_json", "TEXT"), ("mission_user_set", "INTEGER DEFAULT 0"),
-                 ("verdict_override", "TEXT"), ("verdict_override_reason", "TEXT"), ("unseen_syncs", "INTEGER DEFAULT 0")],
+                 ("verdict_override", "TEXT"), ("verdict_override_reason", "TEXT"), ("unseen_syncs", "INTEGER DEFAULT 0"),
+                 ("role_user_set", "INTEGER DEFAULT 0")],
     "profiles": [("critical_evidence_json", "TEXT DEFAULT '[]'"), ("mission_default", "TEXT"),
                  ("risk_reserve", "INTEGER"), ("automatic_ok", "INTEGER DEFAULT 0"),
                  ("catchup_notes", "TEXT")],
@@ -238,6 +239,10 @@ def init_db(path: Path | None = None) -> None:
             for name, decl in cols:
                 if name not in have:
                     c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+        # Roles set by hand before role_user_set existed (or on an older server): their
+        # edits are in the event log. Idempotent; nothing ever clears the flag.
+        c.execute("UPDATE listings SET role_user_set=1 WHERE role_user_set=0 AND id IN "
+                  "(SELECT DISTINCT listing_id FROM events WHERE kind='edit' AND detail LIKE '%''role'':%')")
 
 
 def _row_to_dict(row: sqlite3.Row, json_cols: dict) -> dict[str, Any]:

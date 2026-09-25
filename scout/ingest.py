@@ -28,6 +28,9 @@ def is_blocked(detail: dict) -> bool:
 
 
 SOLD_RE = re.compile(r"\b(sold|sold for|no longer available|this listing has ended|listing ended)\b", re.I)
+# Page text is full of "sold" that isn't about this car ("similar cars sold",
+# "sold by", other auctions' results), so in page text only phrases count.
+PAGE_SOLD_RE = re.compile(r"\b(sold for|no longer available|this listing has ended|listing ended|(has been|was|is) sold)\b|^\s*sold\s*$", re.I | re.M)
 PENDING_RE = re.compile(r"\b(pending|sale pending|deposit taken|deposit received|on hold)\b", re.I)
 ENDED_RE = re.compile(r"\b(bid to|reserve not met|auction ended|ended)\b", re.I)
 PRICE_RE = re.compile(r"\$\s?(?:([\d,]{3,})|(\d+(?:\.\d+)?)\s?[kK]\b)")
@@ -39,9 +42,10 @@ def detect_availability(item: dict[str, Any], site: str) -> str:
         return "sold"
     if item.get("ended") is True:
         return "ended"
-    head = ((item.get("price_text") or "") + " " + (item.get("badge") or "") + " " +
-            (item.get("detail", {}) or {}).get("status_text", "")).strip()
-    if SOLD_RE.search(head):
+    card = ((item.get("price_text") or "") + " " + (item.get("badge") or "")).strip()
+    status_text = (item.get("detail", {}) or {}).get("status_text", "") or ""
+    head = (card + " " + status_text).strip()
+    if SOLD_RE.search(card) or PAGE_SOLD_RE.search(status_text):
         return "sold"
     if item.get("pending") is True or PENDING_RE.search(head):
         return "pending"
@@ -170,13 +174,16 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
         if not url:
             continue
         seen_urls.add(url)
-        availability = detect_availability(item, site)
-        if item.get("_vanished") and availability == "active":
-            availability = "removed"  # gone from the saved page and its page shows no result
+        availability = item.get("_keep_availability") or detect_availability(item, site)
         if availability in {"sold", "ended"} and not include_sold:
             stats["skipped_sold"] += 1
             continue
         existing = db.get_listing_by_url(url)
+        if item.get("_vanished") and availability == "active" and existing:
+            # Gone from the saved page but its page shows no result: a lazy list
+            # drops cards routinely, so removal is left to mark_unseen_removed's
+            # two-miss rule instead of happening on this single miss.
+            availability = existing["availability"]
         if item.get("_touch"):
             if existing:
                 db.update_listing(existing["id"], {"last_seen": db.now()})
@@ -186,14 +193,18 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
         if blocked:
             detail = {k: v for k, v in detail.items() if k not in {"text", "status_text", "photos"}}
             detail["blocked"] = True
-        raw_text = ("" if blocked else (detail.get("text") or ""))[:120_000] or (item.get("card_text") or "")
+        page_text = ("" if blocked else (detail.get("text") or ""))[:120_000]
+        card_text = item.get("card_text") or ""
+        old_text = (existing or {}).get("raw_text") or ""
+        # No page read this time: the short saved-list card must not replace a full page read.
+        raw_text = page_text or (old_text if len(old_text) > len(card_text) else card_text)
         role = "comp" if availability in {"sold", "ended"} else "candidate"
         if existing and existing.get("role") == "comp":
             # A comp stays a comp: a stale card claiming "active" must not resurrect a
             # sold car. The exception is a listing we never actually saw sell — the role
             # came from a misread — which returns to being a candidate while it is live.
             role = "comp"
-            if availability in {"active", "pending"} and not _ever_sold(existing["id"]):
+            if availability in {"active", "pending"} and not _ever_sold(existing["id"]) and not existing.get("role_user_set"):
                 role = "candidate"
         if existing and existing.get("role") == "ignored":
             role = "ignored"  # not a car (or manually ignored): stays out of the way
@@ -202,7 +213,9 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
             "availability": availability, "title": (item.get("title") or existing and existing.get("title") or "")[:300],
             "thumb": item.get("thumb") or (existing or {}).get("thumb"),
             "raw_text": raw_text or (existing or {}).get("raw_text"),
-            "raw": {k: v for k, v in detail.items() if k not in {"text", "photos"}},
+            # Merge: a sync that reads less (no detail page) keeps what earlier reads and checks stored.
+            "raw": {**{k: v for k, v in ((existing or {}).get("raw") or {}).items() if k != "blocked"},
+                    **{k: v for k, v in detail.items() if k not in {"text", "photos"}}},
             "photos": (detail.get("photos") or (existing or {}).get("photos") or [])[:40],
         }
         card_price = parse_price(item.get("price_text"))
@@ -371,7 +384,7 @@ def repair_roles() -> list[dict[str, Any]]:
     """Comps that are currently live and were never seen to sell become candidates again."""
     fixed = []
     for r in db.list_listings(role="comp"):
-        if r["availability"] in ("active", "pending") and not _ever_sold(r["id"]):
+        if r["availability"] in ("active", "pending") and not _ever_sold(r["id"]) and not r.get("role_user_set"):
             db.update_listing(r["id"], {"role": "candidate"})
             rescore_listing(r["id"])
             fixed.append({"id": r["id"], "title": r.get("title"), "availability": r["availability"]})

@@ -18,6 +18,7 @@ from typing import Any
 from scout import db
 from scout.config import DOCS_DIR, ROOT, SITE_DATA_DIR, SITES
 from scout.policy import POLICY_VERSION
+from scout.market import is_sale, sale_price
 from scout.scoring import market_stats, price_percentile
 
 PUBLIC_LISTING_FIELDS = [
@@ -43,7 +44,7 @@ INDEX_LISTING_DROP = {"photos", "provenance", "timeline", "last_error"}
 # chip, score badge, confidence, model tag, staleness note) — not the full
 # evidence/gates/costs payload.
 INDEX_ASSESSMENT_FIELDS = ["verdict", "model", "assessed_at", "policy_version", "shared_from", "context_changed", "confidence",
-                           "stage", "upside", "priority", "headline"]
+                           "stage", "upside", "priority", "headline", "merit", "next_step"]
 # Normalized fields the board reads (search text, red-flag/quick-gate chips,
 # price-drop total) — not the full ratings/breakdown/vin-decode blobs.
 INDEX_NORMALIZED_FIELDS = ["prelim_summary", "red_flags", "quick_gates", "price_drops"]
@@ -143,7 +144,8 @@ def build_export() -> dict[str, Any]:
         actives = [l for l in listings if l.get("profile_key") == p["key"] and l["role"] == "candidate"
                    and l["availability"] == "active"]
         stats = market_stats(comps, actives)
-        pool = [c.get("sold_price") or c.get("price") for c in comps if (c.get("sold_price") or c.get("price"))]
+        # Only real sales: a reserve-not-met high bid or a live comp's ask is not "sold".
+        pool = [sale_price(c) for c in comps if is_sale(c)]
         for l in actives:
             l["price_pct_vs_sold"] = price_percentile(l.get("price"), pool)
         markets[p["key"]] = stats
@@ -156,15 +158,15 @@ def build_export() -> dict[str, Any]:
     )
     calibration = {"samples": len(gaps), "offset": int(gaps[len(gaps) // 2]) if len(gaps) >= 3 else None,
                    "note": "median(assessed - preliminary) over assessed listings; applied to unassessed cards for sorting when samples >= 3"}
-    from scout.policy.state import load_state
+    from scout.policy.state import budget_for, load_state
     st = load_state()
-    budget_sig = _budget_signature(st.get("budget") or {}, st.get("urgency_mode"))
     for l in listings:
         a = l.get("assessment")
         if a:
             ctx = a.get("context") or {}
             a["context_changed"] = []
-            if ctx.get("budget") and _budget_signature(ctx["budget"], ctx.get("urgency_mode")) != budget_sig:
+            now_sig = _budget_signature(budget_for(st, a.get("mission")), st.get("urgency_mode"))
+            if ctx.get("budget") and _budget_signature(ctx["budget"], ctx.get("urgency_mode")) != now_sig:
                 a["context_changed"].append("budget or urgency")
             if a.get("mission") and l.get("mission") and a["mission"] != l["mission"]:
                 a["context_changed"].append(f"mission ({a['mission'].replace('_', ' ')} → {l['mission'].replace('_', ' ')})")
@@ -197,12 +199,26 @@ def _index_listing(l: dict[str, Any]) -> dict[str, Any]:
     if a:
         summary = {k: a[k] for k in INDEX_ASSESSMENT_FIELDS if k in a}
         summary["score"] = {"total": (a.get("score") or {}).get("total")}
-        summary["costs"] = {"price_basis": (a.get("costs") or {}).get("price_basis")}   # board sort: unpriced auctions
+        summary["costs"] = {k: (a.get("costs") or {}).get(k) for k in ("price_basis", "price", "max_price", "max_price_basis")}   # sort + walk-away on cards
+        summary["early_bid"] = is_early_bid_listing(l)   # board sort; the index drops the notes/gates it reads
         out["assessment"] = summary
     n = l.get("normalized")
     if n:
         out["normalized"] = {k: n[k] for k in INDEX_NORMALIZED_FIELDS if k in n}
     return out
+
+
+def is_early_bid_listing(l: dict[str, Any]) -> bool:
+    """Same rule as isEarlyBid() in docs/app.js: a live-auction price that is not final yet."""
+    a = l.get("assessment") or {}
+    c = a.get("costs") or {}
+    if c.get("price_basis") in {"unpriced", "expected_hammer"}:
+        return True
+    if c.get("price_basis") == "current_bid" and any(re.search(r"early bid", n or "", re.I) for n in c.get("notes") or []):
+        return True
+    if any(re.search(r"early bid", g or "", re.I) for g in (l.get("normalized") or {}).get("quick_gates") or []):
+        return True
+    return any(re.search(r"early bid", (g or {}).get("reason") or "", re.I) for g in a.get("gates") or [])
 
 
 def _detail_listing(l: dict[str, Any]) -> dict[str, Any]:
@@ -290,35 +306,56 @@ def git_publish(message: str | None = None) -> dict[str, Any]:
 
     index, details = split_export(export)
 
+    r = _run("git", "fetch", "origin", "gh-pages")
+    log.append(f"$ git fetch origin gh-pages\n{r.stdout}{r.stderr}")
+    r = _run("git", "rev-parse", "origin/gh-pages^{tree}")
+    remote_tree = r.stdout.strip() if r.returncode == 0 else None
+    # generated_at changes on every export, so an unchanged board would still
+    # differ from the published tree. Build the first tree with the published
+    # timestamp; if it matches, nothing but the clock moved.
+    new_generated_at = index.get("generated_at")
+    remote_generated_at = None
+    if remote_tree:
+        r = _run("git", "show", "origin/gh-pages:data/index.json")
+        if r.returncode == 0:
+            try:
+                remote_generated_at = json.loads(r.stdout).get("generated_at")
+            except (ValueError, AttributeError):
+                remote_generated_at = None
+
     with tempfile.TemporaryDirectory(prefix="hoopty-publish-") as tmp:
         tmp_path = Path(tmp)
         staging = tmp_path / "site"
         staging.mkdir()
+        if remote_generated_at:
+            index["generated_at"] = remote_generated_at
         sizes = _stage_site(staging, index, details)
         log.append(f"sizes: {sizes}")
 
         index_file = tmp_path / "index"
         env = {"GIT_INDEX_FILE": str(index_file)}
 
-        r = _run("git", f"--work-tree={staging}", "add", "-A", env=env)
-        log.append(f"$ git --work-tree={staging} add -A\n{r.stdout}{r.stderr}")
-        if r.returncode != 0:
+        def write_tree() -> str | None:
+            r = _run("git", f"--work-tree={staging}", "add", "-A", env=env)
+            log.append(f"$ git --work-tree={staging} add -A\n{r.stdout}{r.stderr}")
+            if r.returncode != 0:
+                return None
+            r = _run("git", "write-tree", env=env)
+            log.append(f"$ git write-tree\n{r.stdout}{r.stderr}")
+            return r.stdout.strip() if r.returncode == 0 else None
+
+        tree_sha = write_tree()
+        if not tree_sha:
             return {"ok": False, "changed": False, "detail": "\n".join(log)}
-
-        r = _run("git", "write-tree", env=env)
-        log.append(f"$ git write-tree\n{r.stdout}{r.stderr}")
-        if r.returncode != 0:
-            return {"ok": False, "changed": False, "detail": "\n".join(log)}
-        tree_sha = r.stdout.strip()
-
-        r = _run("git", "fetch", "origin", "gh-pages")
-        log.append(f"$ git fetch origin gh-pages\n{r.stdout}{r.stderr}")
-
-        r = _run("git", "rev-parse", "origin/gh-pages^{tree}")
-        remote_tree = r.stdout.strip() if r.returncode == 0 else None
         if remote_tree == tree_sha:
             log.append("nothing changed; not pushing")
             return {"ok": True, "changed": False, "detail": "\n".join(log)}
+        if remote_generated_at and remote_generated_at != new_generated_at:
+            index["generated_at"] = new_generated_at
+            (staging / "data" / "index.json").write_text(_dump(index))
+            tree_sha = write_tree()
+            if not tree_sha:
+                return {"ok": False, "changed": False, "detail": "\n".join(log)}
 
         commit_message = message or f"Publish scout data {datetime.now(timezone.utc).replace(microsecond=0).isoformat()}"
         r = _run("git", "commit-tree", tree_sha, "-m", commit_message)

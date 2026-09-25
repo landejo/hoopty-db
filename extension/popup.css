@@ -1,13 +1,13 @@
-:root { --cream:#F6F1E7; --ink:#1F1D1A; --teal:#2A9D8F; --mustard:#E9B44C; --orange:#D96C3F; --olive:#6B8E4E; --line:#E4DCCB; --muted:#6F675C; }
+:root { --cream:#F2F4F8; --ink:#10131A; --teal:#2F54EB; --mustard:#E0A100; --orange:#F26B1D; --olive:#1E9E5A; --line:#E3E6ED; --muted:#7C8394; }
 * { box-sizing: border-box; }
-body { width: 380px; margin: 0; font: 13px/1.45 -apple-system, "DM Sans", system-ui, sans-serif; color: var(--ink); background: var(--cream); }
+body { width: 380px; margin: 0; font: 13px/1.45 -apple-system, system-ui, sans-serif; color: var(--ink); background: var(--cream); }
 header { display:flex; gap:10px; align-items:center; padding: 12px 14px 8px; }
-.mark { width: 30px; height: 30px; border-radius: 50% 50% 50% 8px; background: linear-gradient(135deg, var(--orange), var(--mustard)); }
+.mark { width: 30px; height: 30px; border-radius: 8px; background: url("icons/icon-128.png") center / cover no-repeat; }
 .brand { font-weight: 700; font-size: 15px; letter-spacing: .2px; }
 .sub { color: var(--muted); font-size: 12px; }
 section { padding: 8px 14px; }
 .status { border-radius: 10px; padding: 8px 10px; font-size: 12px; margin: 0 14px; }
-.status.info { background: #EAE3D3; }
+.status.info { background: #E6ECFF; color: #1F3FC4; }
 .status.success { background: #DCEFE3; color: #1E5B3A; }
 .status.warning { background: #F8E8C7; color: #7A5410; }
 .status.error { background: #F6D6CC; color: #7A2E14; }

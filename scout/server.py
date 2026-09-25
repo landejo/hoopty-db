@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from scout import db
+from scout import autopublish, db
 from scout.config import CONFIG, DOCS_DIR, SITES, STATUSES
 from scout.ingest import ai_queue_depth, ingest_items
 from scout.profiles import sync_seed_profiles
@@ -23,7 +23,7 @@ from scout.policy.preferences import MISSIONS
 from scout.policy.state import load_state, reset_state, save_state
 from scout.stage import stage_for
 
-app = FastAPI(title="Hoopty Scout")
+app = FastAPI(title="Hoopty-Matic")
 
 # Only the local viewer (served by this same process) and the Chrome extension
 # are legitimate callers. No wildcard: /api/* can push to a public repo,
@@ -71,7 +71,25 @@ async def _no_cache_static(request, call_next):
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return resp
 
+# Activity for auto-publish (scout/autopublish.py): the viewer's heartbeat marks
+# presence; any successful data-changing API call marks a change to publish.
+_NOT_CHANGES = {"/api/activity", "/api/publish", "/api/export/write", "/api/handoff"}
+
+
+@app.middleware("http")
+async def _track_activity(request, call_next):
+    resp = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/") and request.method != "GET" and resp.status_code < 400:
+        if path == "/api/activity":
+            autopublish.note_activity(changed=False)
+        elif path not in _NOT_CHANGES:
+            autopublish.note_activity(changed=True)
+    return resp
+
+
 _ai_lock = asyncio.Lock()
+_publish_lock = asyncio.Lock()
 _task: dict[str, Any] = {"active": False}
 
 
@@ -80,7 +98,8 @@ def _task_start(name: str, total: int | None = None) -> str:
     one-off assessment that overlaps a batch never clobbers the batch's status."""
     import secrets
     token = secrets.token_hex(4)
-    _task.update({"active": True, "name": name, "done": 0, "total": total, "current": "", "started": db.now(), "errors": 0, "result": None, "token": token})
+    _task.update({"active": True, "name": name, "done": 0, "total": total, "current": "", "started": db.now(), "errors": 0, "result": None, "token": token,
+                  "heartbeat": None})   # only extension-driven runs set one; a stale one would "stall" this task
     return token
 
 
@@ -98,8 +117,16 @@ def _task_end(result: str = "", token: str | None = None) -> None:
     _task.update({"active": False, "result": result, "ended": db.now()})
 
 
+TASK_STALL_SECONDS = 300   # an extension-driven task with no progress this long has died
+
+
 @app.get("/api/task")
 def task_status() -> dict[str, Any]:
+    beat = _task.get("heartbeat")
+    if _task.get("active") and beat:
+        from datetime import datetime
+        if (datetime.fromisoformat(db.now()) - datetime.fromisoformat(beat)).total_seconds() > TASK_STALL_SECONDS:
+            _task_end(f"stalled after {_task.get('done')}/{_task.get('total')}: the extension stopped reporting", _task.get("token"))
     return _task
 
 
@@ -135,12 +162,63 @@ def _startup() -> None:
             backup_db("startup")
         except Exception as e:
             print(f"warning: startup backup failed: {e}")
+    autopublish.restore()
+    if os.environ.get("SCOUT_STARTUP_RESCORE", "1") != "0":
+        # Free: re-derive assessments stored under an older policy so a policy change
+        # (e.g. 1.7.0's sold/ended gate) reaches every car without pressing Recompute.
+        import threading
+
+        def _rescore_stale() -> None:
+            stale = sum(1 for a in db.latest_assessments().values() if a.get("policy_version") != POLICY_VERSION)
+            # A visible task: the board shows the banner and refreshes itself when it ends.
+            tok = _task_start(f"Updating {stale} assessment(s) to policy {POLICY_VERSION} (free)", None) if stale and not _task.get("active") else None
+            try:
+                if tok:   # E2E only: hold the update open so a page can load mid-update
+                    import time
+                    time.sleep(float(os.environ.get("SCOUT_STARTUP_RESCORE_DELAY", "0")))
+                r = rescore(assessments=True)
+                db.log_event("startup_rescore", None, str(r))
+                if tok:
+                    _task_end(f"{r.get('assessments_rederived', 0)} assessment(s) now on policy {POLICY_VERSION}", tok)
+            except Exception as e:
+                db.log_event("startup_rescore_error", None, str(e))
+                if tok:
+                    _task_end(f"failed: {e}", tok)
+        threading.Thread(target=_rescore_stale, name="scout-startup-rescore", daemon=True).start()
+    if autopublish.enabled():
+        asyncio.get_event_loop().create_task(_autopublish_loop())
+
+
+async def _autopublish_loop() -> None:
+    while True:
+        await asyncio.sleep(30)
+        reason = autopublish.due()
+        if not reason or _task.get("active") or _publish_lock.locked():
+            continue
+        async with _publish_lock:
+            covered = autopublish.set_publishing(True)
+            try:
+                result = await asyncio.to_thread(git_publish, f"Auto-publish after a workbench sitting ({reason})")
+            except Exception as e:
+                result = {"ok": False, "changed": False, "detail": str(e)}
+            finally:
+                autopublish.set_publishing(False)
+        autopublish.mark_published(result, reason, covered=covered)
+        db.log_event("autopublish", None, f"{reason}: " + ("pushed" if result.get("changed") and result.get("ok")
+                     else "nothing changed" if result.get("ok") else "failed: " + str(result.get("detail"))[-200:]))
 
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "ai": CONFIG.ai_enabled, "models": {"deep": CONFIG.model_deep, "mid": CONFIG.model_mid, "fast": CONFIG.model_fast},
-            "skip_sold": CONFIG.skip_sold, "policy_version": POLICY_VERSION, "ai_queue": ai_queue_depth()}
+    return {"ok": True, "ai": CONFIG.ai_enabled, "models": {"deep": CONFIG.model_deep, "mid": CONFIG.model_mid, "fast": CONFIG.model_fast, "top": CONFIG.model_top},
+            "skip_sold": CONFIG.skip_sold, "policy_version": POLICY_VERSION, "ai_queue": ai_queue_depth(),
+            "autopublish": autopublish.status()}
+
+
+@app.post("/api/activity")
+def activity() -> dict[str, Any]:
+    """Viewer heartbeat while you are actively using it (see autopublish.py)."""
+    return {"ok": True, "autopublish": autopublish.status()}
 
 
 @app.get("/api/ai-spend")
@@ -232,6 +310,7 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         updates["pinned"] = 1 if patch.pinned else 0
     if patch.role in {"candidate", "comp", "ignored"}:
         updates["role"] = patch.role
+        updates["role_user_set"] = 1   # syncs no longer flip it back
     if patch.profile_key is not None:
         if patch.profile_key and not db.get_profile(patch.profile_key):
             raise HTTPException(400, "unknown profile")
@@ -299,7 +378,7 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     history["vin_decode"] = decoded and {k: decoded.get(k) for k in ("year", "make", "model", "series", "trim", "engine_liters", "cylinders", "body_class")}
     history["vin_decode_contradictions"] = compare_decode(decoded, row)
     history["recalls"] = (decoded or {}).get("recalls") or []
-    model = CONFIG.model_mid if tier == "quick" else CONFIG.model_deep
+    model = {"quick": CONFIG.model_mid, "top": CONFIG.model_top}.get(tier, CONFIG.model_deep)
     nested = bool(_task.get("active"))      # a batch (or another run) is already showing; don't take over the banner
     token = None if nested else _task_start(f"{'Quick' if tier == 'quick' else 'Full'} assessment · {row.get('title') or listing_id} · {model}", 1)
     async with _ai_lock:
@@ -358,6 +437,188 @@ async def assess_all(tier: str = "quick", only_unassessed: bool = True) -> dict[
     return {"ok": True, "assessed": done, "errors": errors[:10], "tier": tier}
 
 
+class ReassessPayload(BaseModel):
+    ids: list[int]          # the board's ranking, best first (all of it for a tiered run)
+    tier: str = "top"       # model tier: top | full | quick
+    cycle: bool = True      # tiered cycle (below); False re-assesses exactly `ids`
+
+
+REASSESS_MAX = 25
+TIER_SIZE = 15
+CYCLE_DAYS = 3
+_CYCLE_KEY = "reassess_cycle"
+
+
+def _cycle_state(now: str | None = None) -> dict[str, Any]:
+    """Tiered re-assessment: each press takes the next TIER_SIZE cars in board
+    order that this cycle has not re-assessed yet. A cycle starts with tier 1
+    and restarts at tier 1 once CYCLE_DAYS have passed since tier 1 ran, or
+    once every car on the board has been done."""
+    from datetime import datetime, timedelta
+    c = db.get_setting(_CYCLE_KEY) or {}
+    started = c.get("started_at")
+    expired = not started or datetime.fromisoformat(now or db.now()) - datetime.fromisoformat(started) > timedelta(days=CYCLE_DAYS)
+    if expired:
+        return {"started_at": None, "tier": 0, "done": [], "expired_previous": bool(started)}
+    return {"started_at": started, "tier": int(c.get("tier") or 0), "done": list(c.get("done") or [])}
+
+
+@app.get("/api/reassess/cycle")
+def reassess_cycle() -> dict[str, Any]:
+    from datetime import datetime, timedelta
+    c = _cycle_state()
+    restarts = (datetime.fromisoformat(c["started_at"]) + timedelta(days=CYCLE_DAYS)).isoformat() if c["started_at"] else None
+    return {"next_tier": c["tier"] + 1, "tier_size": TIER_SIZE, "cycle_days": CYCLE_DAYS, "started_at": c["started_at"],
+            "restarts_at": restarts, "done": c["done"], "model": CONFIG.model_top}
+
+
+def _eligible(ids: list[int]) -> tuple[list[dict[str, Any]], list[int]]:
+    rows, seen_vehicles, skipped = [], set(), []
+    for lid in ids:
+        r = db.get_listing(lid)
+        if not r or r["role"] != "candidate" or r["availability"] not in ("active", "pending") or not r.get("profile_key"):
+            skipped.append(lid)
+            continue
+        if r.get("vehicle_id") and r.get("vin"):
+            if r["vehicle_id"] in seen_vehicles:
+                continue
+            seen_vehicles.add(r["vehicle_id"])
+        rows.append(r)
+    return rows, skipped
+
+
+@app.post("/api/reassess")
+async def reassess(payload: ReassessPayload) -> dict[str, Any]:
+    """Re-assess on the top-tier model, serially, one assessment per car. With
+    cycle=True (the board button) this is the next tier of the ranking."""
+    if not CONFIG.ai_enabled:
+        raise HTTPException(400, "ANTHROPIC_API_KEY not set")
+    if payload.tier not in {"top", "full", "quick"}:
+        raise HTTPException(400, "tier must be top, full or quick")
+    if _task.get("active"):
+        raise HTTPException(409, "another run is in progress; wait for it to finish")
+    eligible, skipped = _eligible(payload.ids if payload.cycle else payload.ids[:REASSESS_MAX])
+    cycle = _cycle_state() if payload.cycle else None
+    restarted = False
+    if cycle is not None:
+        pending = [r for r in eligible if r["id"] not in set(cycle["done"])]
+        if not pending and eligible:          # every car done: start a fresh cycle
+            cycle, pending, restarted = {"started_at": None, "tier": 0, "done": []}, eligible, True
+        rows = pending[:TIER_SIZE]
+        tier_no = cycle["tier"] + 1
+        if tier_no == 1:
+            cycle["started_at"] = db.now()
+    else:
+        rows, tier_no = eligible, None
+    model = {"quick": CONFIG.model_mid, "top": CONFIG.model_top}.get(payload.tier, CONFIG.model_deep)
+    label = f"tier {tier_no}" if tier_no else "top"
+    tok = _task_start(f"Re-assessing {label} · {len(rows)} car(s) · {model}", len(rows))
+    done_ids, errors = [], []
+    for i, r in enumerate(rows):
+        _task_step(r.get("title") or r["url"], i)
+        try:
+            await assess_listing(r["id"], tier=payload.tier)
+            done_ids.append(r["id"])
+        except HTTPException as e:
+            errors.append(f"{r.get('title')}: {e.detail}")
+            _task["errors"] = len(errors)
+    if cycle is not None:
+        cycle["tier"] = tier_no
+        cycle["done"] = cycle["done"] + done_ids   # failures stay pending and lead the next tier
+        db.set_setting(_CYCLE_KEY, {k: cycle[k] for k in ("started_at", "tier", "done")})
+    _task_end(f"{label}: {len(done_ids)} re-assessed on {model}" + (f", {len(errors)} failed" if errors else ""), tok)
+    return {"ok": True, "assessed": len(done_ids), "ids": [r["id"] for r in rows], "errors": errors[:10],
+            "skipped": skipped, "model": model, "tier": tier_no, "cycle_restarted": restarted or bool(cycle and cycle.get("expired_previous"))}
+
+
+@app.get("/api/assess-cost")
+def assess_cost(tier: str = "top") -> dict[str, Any]:
+    """Measured cost of one assessment on the tier's model, from ai_calls.
+    With fewer than 3 calls on that model, scales the other Opus average by the
+    per-token price ratio and says so."""
+    from scout.config import PRICES
+    model = {"quick": CONFIG.model_mid, "top": CONFIG.model_top}.get(tier, CONFIG.model_deep)
+    with db.connect() as c:
+        rows = c.execute("SELECT model, COUNT(*) n, AVG(cost_usd) avg FROM ai_calls WHERE kind='last_assess' GROUP BY model").fetchall()
+    by = {r["model"]: (r["n"], r["avg"]) for r in rows}
+    if by.get(model, (0, 0))[0] >= 3:
+        n, avg = by[model]
+        return {"model": model, "per_listing": round(avg, 3), "basis": f"average of {n} measured assessments on {model}"}
+    ref = max(((m, v) for m, v in by.items() if m.startswith("claude-opus") and v[0] >= 3), key=lambda x: x[1][0], default=None)
+    if ref and model in PRICES and ref[0] in PRICES:
+        ratio = PRICES[model][0] / PRICES[ref[0]][0]
+        return {"model": model, "per_listing": round(ref[1][1] * ratio, 3),
+                "basis": f"{ref[1][0]} measured {ref[0]} assessments averaging ${ref[1][1]:.2f}, scaled by the per-token price ratio ({ratio:.2f})"}
+    return {"model": model, "per_listing": None, "basis": "no measured assessments yet"}
+
+
+# ---------- availability check (sold / delisted / ended detection) ----------
+
+_avail_run: dict[str, Any] = {"profiles": set(), "results": [], "token": None}
+
+
+@app.post("/api/availability/start")
+def availability_start(limit: int | None = None) -> dict[str, Any]:
+    """The extension asks what to check. Starts the banner task."""
+    from scout.availability import targets
+    t = targets(limit)
+    _avail_run.update({"profiles": set(), "results": [],
+                       "token": None if _task.get("active") else _task_start(f"Checking availability of {len(t)} listing(s) in your browser", len(t))})
+    if _avail_run["token"]:
+        _task["heartbeat"] = db.now()
+    return {"ok": True, "targets": t}
+
+
+class AvailabilityResult(BaseModel):
+    id: int
+    detail: dict[str, Any] | None = None
+
+
+class AvailabilityPayload(BaseModel):
+    results: list[AvailabilityResult]
+
+
+@app.post("/api/availability/results")
+def availability_results(payload: AvailabilityPayload) -> dict[str, Any]:
+    """Classify the pages the extension read and apply sold / ended / delisted."""
+    from scout.availability import apply
+    out = []
+    for res in payload.results:
+        r = apply(res.id, res.detail)
+        out.append(r)
+        _avail_run["results"].append(r)
+        if r.get("changed"):
+            _rederive_assessment(res.id)
+            if r.get("profile_key"):
+                _avail_run["profiles"].add(r["profile_key"])
+        if _avail_run.get("token") and _task.get("token") == _avail_run["token"]:
+            _task_step(r.get("title") or str(res.id))
+            _task["heartbeat"] = db.now()
+    return {"ok": True, "results": out}
+
+
+@app.post("/api/availability/finish")
+def availability_finish() -> dict[str, Any]:
+    """Refresh what depends on the comp pool: preliminary scores and stored
+    assessments (fair value, offers) in every profile that gained a comp."""
+    from scout.availability import summarize
+    from scout.ingest import rescore_listing
+    refreshed = 0
+    state = load_state()
+    for pk in sorted(_avail_run["profiles"]):
+        for r in db.list_listings(profile_key=pk):
+            rescore_listing(r["id"], state)
+            if r["role"] == "candidate" and r["availability"] in ("active", "pending"):
+                _rederive_assessment(r["id"])
+                refreshed += 1
+    summary = summarize(_avail_run["results"])
+    db.log_event("availability_check", None, summary)
+    changed = [r for r in _avail_run["results"] if r.get("changed")]
+    _task_end(summary, _avail_run.get("token"))
+    _avail_run.update({"profiles": set(), "results": [], "token": None})
+    return {"ok": True, "summary": summary, "changed": changed, "reassessed_deterministically": refreshed}
+
+
 @app.get("/api/listings/{listing_id}/assessments")
 def assessment_history(listing_id: int) -> list[dict[str, Any]]:
     return db.list_assessments(listing_id)
@@ -390,6 +651,16 @@ async def vin_decode(vin: str) -> dict[str, Any]:
     return d
 
 
+def _availability_flags(row: dict[str, Any]) -> dict[str, Any]:
+    """A re-read of stored text must keep the listing's known availability:
+    without these flags detect_availability reads it as active."""
+    a = row["availability"]
+    flags: dict[str, Any] = {"sold": a == "sold", "ended": a == "ended", "pending": a == "pending"}
+    if a in {"removed", "withdrawn"}:
+        flags["_keep_availability"] = a   # not re-derivable from text
+    return flags
+
+
 @app.post("/api/listings/{listing_id}/renormalize")
 async def renormalize(listing_id: int) -> dict[str, Any]:
     row = db.get_listing(listing_id)
@@ -397,7 +668,7 @@ async def renormalize(listing_id: int) -> dict[str, Any]:
         raise HTTPException(404, "not found")
     db.update_listing(listing_id, {"normalized_at": None})
     item = {"url": row["url"], "title": row.get("title"), "detail": {"text": row.get("raw_text") or "",
-            "photos": row.get("photos") or []}, "sold": row["availability"] == "sold"}
+            "photos": row.get("photos") or []}, **_availability_flags(row)}
     async with _ai_lock:
         stats = await asyncio.to_thread(ingest_items, row["site"], [item], True)
     return {"ok": True, **stats}
@@ -460,6 +731,7 @@ async def provenance_complete(job_id: int) -> dict[str, Any]:
     events = db.vehicle_events(vid) if vid else []
     hits = db.provenance_hits(lid)
     interp = None
+    ptok = None
     if CONFIG.ai_enabled and hits:
         from scout.ai.provenance import interpret_hits  # lazy
         ptok = None if _task.get("active") else _task_start(f"Provenance · classifying {len(hits)} hit(s) · {row.get('title') or lid}", 1)
@@ -468,6 +740,8 @@ async def provenance_complete(job_id: int) -> dict[str, Any]:
                 interp = await asyncio.to_thread(interpret_hits, row, events, hits)
             except Exception as e:
                 db.update_provenance_job(job_id, status="failed", error=str(e)[:500])
+                if ptok:
+                    _task_end(f"failed: {e}", ptok)
                 raise HTTPException(500, f"provenance interpretation failed: {e}")
     statements: list[dict[str, Any]] = []
     if interp:
@@ -499,7 +773,8 @@ async def provenance_complete(job_id: int) -> dict[str, Any]:
         db.update_listing(lid, {"availability": "withdrawn"})
     db.update_provenance_job(job_id, status="done", result={"flags": result["flags"], "available": result["current_status"]["available"]})
     db.log_event("provenance_done", lid, ", ".join(result["flags"]) or "no flags")
-    _task_end(", ".join(result["flags"]) or "no same-car flags", locals().get("ptok"))
+    if ptok:   # never end someone else's task (token None would end whatever is showing)
+        _task_end(", ".join(result["flags"]) or "no same-car flags", ptok)
     return {"ok": True, "flags": result["flags"], "available": result["current_status"]["available"], "summary": result.get("summary", "")}
 
 
@@ -555,7 +830,7 @@ async def renormalize_all(only_missing_ratings: bool = True) -> dict[str, Any]:
             _task_step(r.get("title") or r["url"], i)
             db.update_listing(r["id"], {"normalized_at": None})
             item = {"url": r["url"], "title": r.get("title"), "price_text": f"${r['price']:,}" if r.get("price") else "",
-                    "detail": {"text": r.get("raw_text") or "", "photos": r.get("photos") or []}, "sold": r["availability"] == "sold"}
+                    "detail": {"text": r.get("raw_text") or "", "photos": r.get("photos") or []}, **_availability_flags(r)}
             try:
                 st = await asyncio.to_thread(ingest_items, r["site"], [item], True)
                 done += 1
@@ -642,7 +917,13 @@ def patch_profile(key: str, patch: ProfilePatch) -> dict[str, Any]:
 
 @app.post("/api/publish")
 async def publish() -> dict[str, Any]:
-    result = await asyncio.to_thread(git_publish)
+    async with _publish_lock:
+        covered = autopublish.set_publishing(True)
+        try:
+            result = await asyncio.to_thread(git_publish)
+        finally:
+            autopublish.set_publishing(False)
+    autopublish.mark_published(result, "manual", manual=True, covered=covered)
     if not result["ok"]:
         raise HTTPException(502, result["detail"])
     return {"ok": True, "changed": result["changed"], "git": result["detail"]}

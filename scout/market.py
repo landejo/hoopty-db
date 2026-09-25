@@ -121,7 +121,9 @@ def _recency_filter(rows: list[dict[str, Any]], now: date) -> list[dict[str, Any
     cutoff = now - timedelta(days=365 * 3)
     recent = []
     for r in rows:
-        d = r.get("sold_at") or r.get("listing_date") or (r.get("last_seen") or "")
+        # When the car sold or was listed. Never last_seen: every sync refreshes it,
+        # which made a years-old comp look recent.
+        d = r.get("auction_end") or r.get("listing_date") or ""
         d = str(d)[:10] if d else ""
         try:
             dt = date.fromisoformat(d) if d else None

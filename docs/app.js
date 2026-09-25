@@ -1,4 +1,4 @@
-/* Hoopty Scout viewer. Vanilla JS, no build. Reads data/scout.json on GitHub
+/* Hoopty-Matic viewer. Vanilla JS, no build. Reads data/scout.json on GitHub
    Pages; talks to the local FastAPI server when served from it. */
 (() => {
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -6,7 +6,8 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (n) => (n == null ? "—" : "$" + Number(n).toLocaleString());
   const num = (n) => (n == null ? "—" : Number(n).toLocaleString());
-  const STATUSES = ["New", "Pursue", "Verify", "Contacted", "PPI Scheduled", "Offer Made", "Pass", "Purchased"];
+  const STATUSES = ["New", "Pursue", "Verify", "Contacted", "PPI Scheduled", "Offer Made", "Pass", "Purchased", "Sold", "Ended"];
+  const TOP_N = 15;   // tier size for "Re-assess next tier" (server: TIER_SIZE)
 
   const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "pursue", role: "candidate", view: "cards", max_price: "", max_mileage: "", max_age: "", statuses: {} }),
                   q: "", compare: load("compare", []), theme: load("theme", null) };
@@ -46,9 +47,18 @@
   function updateModePill() {
     const m = $("#mode");
     if (!state.local) { m.textContent = "published " + ago(state.data.generated_at); m.className = "mode-pill"; return; }
-    const q = state.health?.ai_queue || 0;
-    m.textContent = "local · " + (state.health.ai ? "AI on" : "AI off") + (q > 0 ? ` · ${q} queued` : "");
-    m.className = "mode-pill local";
+    const q = state.health?.ai_queue || 0, ap = state.health?.autopublish;
+    let pub = "";
+    if (ap?.enabled) {
+      if (ap.publishing) pub = " · publishing…";
+      else if (ap.pending_changes) pub = ` · auto-publish ${ap.publish_after ? "~" + until(ap.publish_after) : "pending"}`;
+      else if (ap.last_result && !ap.last_result.ok) pub = " · auto-publish failed";
+    }
+    m.textContent = "local · " + (state.health.ai ? "AI on" : "AI off") + (q > 0 ? ` · ${q} queued` : "") + pub;
+    m.title = ap ? (ap.enabled
+      ? `Auto-publish: after ${ap.idle_minutes} min without workbench activity, or every ${ap.checkpoint_minutes} min in a long sitting, whenever data changed. ${ap.pending_changes} change(s) pending. Last publish: ${ap.last_publish ? ago(ap.last_publish) : "never"}${ap.last_result && !ap.last_result.ok ? ". Last attempt failed: " + ap.last_result.detail : ""}`
+      : "Auto-publish is off (SCOUT_AUTOPUBLISH=0)") : "";
+    m.className = "mode-pill local" + (ap?.last_result && !ap.last_result.ok ? " warn" : "");
   }
   // Lightweight AI-queue-depth poll (local mode only). Separate from the
   // task banner's poller: runs at a gentler cadence and only while visible.
@@ -59,6 +69,17 @@
       if (document.hidden) return;
       try { const r = await fetch("/api/health", { cache: "no-store" }); if (r.ok) { state.health = await r.json(); updateModePill(); } } catch (e) {}
     }, 10000);
+  }
+  // Auto-publish sittings (scout/autopublish.py): while you are actually using
+  // the workbench (input in the last 2 minutes, tab visible), say so once a minute.
+  let lastInput = Date.now();
+  ["pointerdown", "keydown", "wheel", "touchstart"].forEach((ev) => addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true }));
+  function startHeartbeat() {
+    if (!state.local) return;
+    setInterval(() => {
+      if (document.hidden || Date.now() - lastInput > 120000) return;
+      fetch("/api/activity", { method: "POST" }).catch(() => {});
+    }, 60000);
   }
   // Static mode only: the index carries a summary; fetch the full listing
   // (evidence, photos, provenance, timeline, ...) the first time its detail
@@ -81,7 +102,7 @@
     return j;
   }
   // ---------- running-task banner (local mode) ----------
-  let taskTimer = null, taskDoneAt = 0;
+  let taskTimer = null, taskDoneAt = 0, taskSeenActive = false;
   function fmtElapsed(iso) { const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000)); return s < 60 ? s + "s" : Math.floor(s / 60) + "m " + (s % 60) + "s"; }
   function renderTask(t) {
     const bar = $("#taskbar");
@@ -98,20 +119,37 @@
     try {
       const t = await (await fetch("/api/task", { cache: "no-store" })).json();
       renderTask(t);
-      const wasActive = !!taskTimer;
-      if (t.active) { if (!taskTimer) taskTimer = setInterval(() => pollTask(), 2000); }
-      else if (taskTimer) { clearInterval(taskTimer); taskTimer = null; await loadData(); route(); setTimeout(() => renderTask(null), 8000); }
+      if (t.active) { taskSeenActive = true; if (!taskTimer) taskTimer = setInterval(() => pollTask(), 2000); }
+      else if (taskTimer) {
+        clearInterval(taskTimer); taskTimer = null;
+        // Only a run this page saw running has new data to show. Refreshing on the
+        // first idle poll re-rendered the board on every page load (found by E2E).
+        if (taskSeenActive) { taskSeenActive = false; await refreshAfterTask(); }
+        setTimeout(() => renderTask(null), 8000);
+      }
     } catch (e) {}
+  }
+  // A run finishing must not wipe what you are doing: re-render the board (it keeps
+  // its scroll), but on a listing, Settings or anywhere else only refresh the data.
+  async function refreshAfterTask() {
+    await loadData();
+    if (lastRoute === "board") route();
+    else toast("Run finished: go back to the board, or reload this page, to see the new data", 5000);
   }
   function watchTask() { pollTask(); if (!taskTimer) taskTimer = setInterval(() => pollTask(), 2000); }
 
   function toast(msg, ms = 2600) { const t = h(`<div class="toast">${esc(msg)}</div>`); document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
 
   // ---------- helpers ----------
+  function until(iso) {
+    const m = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+    return m <= 0 ? "now" : m < 60 ? `in ${m}m` : `in ${Math.round(m / 60)}h`;
+  }
   function ago(iso) {
     if (!iso) return "—";
     const d = (Date.now() - new Date(iso).getTime()) / 864e5;
-    if (d < 1) return Math.max(1, Math.round(d * 24)) + "h ago";
+    if (d < 1 / 24) return d * 1440 < 1 ? "just now" : Math.round(d * 1440) + "m ago";
+    if (d < 1) return Math.round(d * 24) + "h ago";
     if (d < 45) return Math.round(d) + "d ago";
     return Math.round(d / 30) + "mo ago";
   }
@@ -127,6 +165,15 @@
   function scoreOf(l) { return l.assessment?.score?.total ?? null; }
   function verdictOf(l) { return l.verdict_override || l.assessment?.verdict || null; }
   function computedVerdictOf(l) { return l.assessment?.verdict || null; }
+  const NEXT_TONE = { "Contact now": "olive", "Watch": "mustard", "Skip": "rose", "Follow up": "teal" };
+  function nextStepOf(l) { return l.assessment?.next_step || null; }
+  function nextChip(l) { const n = nextStepOf(l); return n ? `<span class="chip ${NEXT_TONE[n.action] || ""} next" title="${esc(n.reason)}">${esc(n.action)}</span>` : ""; }
+  // Walk-away (policy 1.8.0): the lower of the mission budget and what this car is worth.
+  function walkaway(l) {
+    const c = l.assessment?.costs; if (!c?.max_price || !c.price || c.price_basis === "unpriced") return "";
+    const over = c.price / c.max_price - 1;
+    return `<span class="walk ${over > 0.05 ? "over" : over > 0 ? "near" : ""}" title="Walk-away price, set by ${c.max_price_basis === "value" ? "what this car is worth (top of its fair range, less known work and open questions)" : "your budget for this mission"}">walk-away ${money(c.max_price)}${over > 0 ? ` · ${Math.round(over * 100)}% over` : ""}</span>`;
+  }
   function verdictTone(v) { return { "Pursue": "olive", "Pursue conditionally": "olive", "Maybe / verify": "mustard", "Reject": "rose", "Do not pursue": "rose" }[v] || ""; }
   const MISSIONS = ["enthusiast_bridge", "pragmatic_bridge", "future_keeper", "utility_capability"];
   const missionLabel = (m) => ({ enthusiast_bridge: "enthusiast bridge", pragmatic_bridge: "pragmatic bridge", future_keeper: "future keeper", utility_capability: "utility / capability" }[m] || m || "—");
@@ -137,6 +184,7 @@
   // An early bid (live-auction current-bid, not yet a real price) shouldn't
   // outrank a priced listing with the same assessed score. Sort-only penalty.
   function isEarlyBid(l) {
+    if (l.assessment?.early_bid != null) return l.assessment.early_bid;   // server-computed (published index has no notes/gates)
     const c = l.assessment?.costs;
     if (c?.price_basis === "unpriced" || c?.price_basis === "expected_hammer") return true;   // live auction: price not final
     if (c?.price_basis === "current_bid" && (c.notes || []).some((n) => /early bid/i.test(n))) return true;
@@ -167,6 +215,8 @@
   function upsideTag(l) { const a = l.assessment, s = scoreOf(l); if (!a || a.upside == null || s == null || a.upside <= s) return ""; return `<b class="score-tag upside" title="Could reach ${a.upside}/100 if the open questions check out">↑${a.upside}</b>`; }
   function title(l) { return l.title || [l.year, l.make, l.model, l.trim].filter(Boolean).join(" ") || "Untitled listing"; }
   function safeUrl(u) { return u && /^https?:\/\//i.test(u) ? u : null; }
+  // Opens the original listing in a new tab without opening the card.
+  function sourceLink(l, cls = "src") { const u = safeUrl(l.url); return u ? `<a class="${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="Open the listing on ${esc(siteName(l.site))} (new tab)" onclick="event.stopPropagation()">${esc(siteName(l.site))} <span aria-hidden="true">↗</span></a>` : ""; }
   function photo(l) { return (l.photos && l.photos[0]) || l.thumb || null; }
   function profileLabel(k) { return state.profiles.get(k)?.label || k || "unprofiled"; }
   // offset = average(assessed - prelim). Negative: prelim over-read (runs high).
@@ -174,22 +224,46 @@
   function offsetPhrase(off) { return off === 0 ? "matches" : off < 0 ? `runs ${-off} high` : `runs ${off} low`; }
 
   // ---------- routing ----------
+  // Returning from a listing puts you back where you were on the board.
+  let lastRoute = "", boardScroll = 0, lastOpened = null;
   function route() {
     const hash = location.hash || "#/";
+    const wasBoard = lastRoute === "board";
+    if (wasBoard) boardScroll = window.scrollY;
+    lastRoute = (hash.slice(1).split("?")[0].split("/").filter(Boolean)[0]) || "board";
     const [path, qs] = hash.slice(1).split("?");
     const params = new URLSearchParams(qs || "");
     const parts = path.split("/").filter(Boolean);
     document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.route === (parts[0] || "board")));
     const app = $("#app"); app.innerHTML = "";
     if (!state.data) return;
-    if (parts[0] === "l" && parts[1]) return renderDetail(app, Number(parts[1]));
+    if (parts[0] === "l" && parts[1]) { lastOpened = Number(parts[1]); window.scrollTo(0, 0); return renderDetail(app, Number(parts[1])); }
     if (parts[0] === "market") return renderMarket(app, params.get("p"));
     if (parts[0] === "profiles") return renderProfiles(app);
     if (parts[0] === "settings") return renderSettings(app);
     if (parts[0] === "compare") return renderCompare(app);
-    return renderBoard(app);
+    renderBoard(app);
+    if (wasBoard) window.scrollTo(0, boardScroll);   // a re-render (filter, finished task) keeps your place
+    else if (lastOpened != null) {
+      window.scrollTo(0, boardScroll);
+      const el = document.querySelector(`.card[data-id="${lastOpened}"], tr[data-id="${lastOpened}"]`);
+      if (el) {
+        el.focus({ preventScroll: true }); el.classList.add("was-open");
+        const r = el.getBoundingClientRect();   // stepped past the old viewport with ← / →: bring it into view
+        if (r.top < 60 || r.bottom > innerHeight) el.scrollIntoView({ block: "center" });
+      }
+    } else if (!wasBoard) window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", () => (state.local ? loadData().then(route) : route()));
+  // ← / → step through the board's current order on a listing page.
+  window.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+    if (!/^#\/l\//.test(location.hash) || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    // From the URL, not the rendered pager: right after a step the old page's pager is still on screen.
+    const order = state.boardOrder || [], pos = order.indexOf(Number(location.hash.split("/")[2]));
+    const next = pos < 0 ? null : order[pos + (e.key === "ArrowLeft" ? -1 : 1)];
+    if (next != null) { e.preventDefault(); location.hash = `#/l/${next}`; }
+  });
 
   // ---------- board ----------
   function filtered() {
@@ -204,6 +278,7 @@
       if (inc.length && !inc.includes(st)) return false;
       if ((f.statuses || {})[st] === "exclude") return false;
       if (f.analyzed && !l.assessment) return false;
+      if (f.next && nextStepOf(l)?.action !== f.next) return false;
       const px = l.sold_price || l.price;
       if (f.max_price && px && px > Number(f.max_price)) return false;
       if (f.max_mileage && l.mileage && l.mileage > Number(f.max_mileage)) return false;
@@ -263,45 +338,65 @@
     return out;
   }
 
+  const SORTS = [["pursue", "Pursue next"], ["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]];
   function renderBoard(app) {
     const L = state.data.listings;
     const cands = L.filter((l) => l.role === "candidate" && l.availability === "active");
     const analyzed = cands.filter((l) => l.assessment).length;
     const comps = L.filter((l) => l.role === "comp").length;
     const pursue = cands.filter((l) => l.status === "Pursue" || /^Pursue/.test(verdictOf(l) || "")).length;
+    const contact = cands.filter((l) => nextStepOf(l)?.action === "Contact now").length;
     const ignored = L.filter((l) => l.role === "ignored").length;
     app.appendChild(h(`
       <div class="hero">
         <div><h1>The board</h1><p>Everything you've saved, normalized and scored. Sold and ended listings feed the <a href="#/market">market view</a>.</p></div>
-        <div class="tiles" style="margin:0;min-width:520px">
-          <div class="tile"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} assessed${state.data.calibration?.offset != null ? ` · prelim ${offsetPhrase(state.data.calibration.offset)}` : ""}</div></div>
-          <div class="tile"><div class="k">Pursue</div><div class="v">${pursue}</div><div class="s">by verdict or status</div></div>
+        <div class="tiles bento">
+          <div class="tile lead"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} assessed${state.data.calibration?.offset != null ? ` · prelim ${offsetPhrase(state.data.calibration.offset)}` : ""}</div></div>
+          <div class="tile"><div class="k">Contact now</div><div class="v">${contact}</div><div class="s">${pursue} marked Pursue</div></div>
           <div class="tile"><div class="k">Market comps</div><div class="v">${comps}</div><div class="s">sold + ended${ignored ? ` · ${ignored} ignored` : ""}</div></div>
           <div class="tile"><div class="k">Profiles</div><div class="v">${state.data.profiles.length}</div><div class="s">${state.data.profiles.filter((p) => !p.verified).length} unverified</div></div>
         </div>
       </div>`));
     const f = state.filters;
     const sites = Object.entries(state.data.sites);
-    const bar = h(`
-      <div class="filters">
-        <span class="seg" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span>
-        <span class="chips" id="f-profiles" title="Click to toggle · Option-click for only this one"><button data-k="" class="${f.profiles.length ? "" : "on"}">All</button>${profileChips(f)}</span>
-        <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
-        <select id="f-avail"><option value="">Any availability</option>${["active", "pending", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
-        <span class="chips" id="f-statuses" title="Click: show only · click again: hide · third click: clear"></span>
-        <select id="f-sort">${[["pursue", "Pursue next"], ["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]].map(([k, v]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${v}</option>`).join("")}</select>
-        <label><input type="checkbox" id="f-analyzed" ${f.analyzed ? "checked" : ""}> analyzed only</label>
-        <label title="Hide listings priced above this">≤ $<input type="number" class="num" id="f-max-price" min="0" step="500" placeholder="max price" value="${esc(f.max_price)}"></label>
-        <label title="Hide listings with more miles than this">≤ <input type="number" class="num" id="f-max-mileage" min="0" step="5000" placeholder="max miles" value="${esc(f.max_mileage)}"> mi</label>
-        <label title="Hide listings older than this many days (live auctions are never hidden)">≤ <input type="number" class="num" id="f-max-age" min="0" step="7" placeholder="max age" value="${esc(f.max_age)}" style="width:90px"> days</label>
-        ${f.max_price || f.max_mileage || f.max_age ? `<button class="btn sm ghost" id="f-clear-limits">clear limits</button>` : ""}
-        <span class="spacer"></span>
-        <span class="seg" id="view"><button data-v="cards" class="${f.view === "cards" ? "on" : ""}">Cards</button><button data-v="table" class="${f.view === "table" ? "on" : ""}">Table</button></span>
-      </div>`);
-    app.appendChild(bar);
+    const nLimits = [f.max_price, f.max_mileage, f.max_age].filter(Boolean).length;
+    const body = h(`<div class="board-body">
+      <details class="rail" ${matchMedia("(max-width: 900px)").matches ? "" : "open"}>
+        <summary>Filters</summary>
+        <div class="rail-sec"><h4>Show</h4>
+          <span class="seg wide" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span></div>
+        <div class="rail-sec"><h4>Model <span class="muted small">⌥-click: only this</span></h4><span class="chips stack" id="f-profiles"></span></div>
+        <div class="rail-sec"><h4>Next step</h4><span class="seg wide" id="f-next">${["", "Contact now", "Watch", "Skip"].map((k) => `<button data-v="${k}" class="${(f.next || "") === k ? "on" : ""}">${k ? k.replace(" now", "") : "Any"}</button>`).join("")}</span></div>
+        <div class="rail-sec"><h4>Status <span class="muted small">click: only · again: hide</span></h4><span class="chips" id="f-statuses"></span></div>
+        <div class="rail-sec"><h4>Where</h4>
+          <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
+          <select id="f-avail"><option value="">Any availability</option>${["active", "pending", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select></div>
+        <div class="rail-sec"><h4>Limits</h4>
+          <label title="Hide listings priced above this">Max price <input type="number" class="num" id="f-max-price" min="0" step="500" placeholder="$" value="${esc(f.max_price)}"></label>
+          <label title="Hide listings with more miles than this">Max miles <input type="number" class="num" id="f-max-mileage" min="0" step="5000" placeholder="mi" value="${esc(f.max_mileage)}"></label>
+          <label title="Hide listings older than this many days (live auctions are never hidden)">Max age <input type="number" class="num" id="f-max-age" min="0" step="7" placeholder="days" value="${esc(f.max_age)}"></label>
+          <label class="check"><input type="checkbox" id="f-analyzed" ${f.analyzed ? "checked" : ""}> Assessed only</label>
+          ${nLimits ? `<button class="btn sm ghost" id="f-clear-limits">Clear limits</button>` : ""}</div>
+      </details>
+      <section class="results">
+        <div class="results-head">
+          <div><h2 id="count"></h2><div class="muted small" id="count-note"></div></div>
+          <div class="row">
+            <label class="sortby">Sort <select id="f-sort">${SORTS.map(([k, v]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+            <span class="seg" id="view"><button data-v="cards" class="${f.view === "cards" ? "on" : ""}">Cards</button><button data-v="table" class="${f.view === "table" ? "on" : ""}">Table</button></span>
+          </div>
+        </div>
+        ${state.local ? `<div class="board-actions">
+          <button class="btn sm" id="check-avail">Check availability</button>
+          <button class="btn sm primary" id="reassess-top">Re-assess next tier <span class="opt">${esc(modelName(state.health?.models?.top))}</span></button>
+          <span class="muted small" id="actions-note"></span></div>` : ""}
+        <div id="list"></div>
+      </section></div>`);
+    app.appendChild(body);
+    const bar = body;
     const bindChips = () => {
       const box = $("#f-profiles", bar);
-      box.innerHTML = `<button data-k="" class="${f.profiles.length ? "" : "on"}">All</button>` + profileChips(f);
+      box.innerHTML = `<button data-k="" class="${f.profiles.length ? "" : "on"}">All models</button>` + profileChips(f);
       box.querySelectorAll("button").forEach((b) => (b.onclick = (e) => {
         const k = b.dataset.k;
         if (!k) f.profiles = [];
@@ -311,9 +406,9 @@
       }));
     };
     const rerender = () => { save("filters", f); bindChips(); bindStatusChips(); renderList(); };
-    bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp" || f.role === "ignored") f.avail = ""; if (f.role === "candidate") f.avail = f.avail || "active"; route(); }));
-    bar.querySelectorAll("#view button").forEach((b) => (b.onclick = () => { f.view = b.dataset.v; route(); }));
-    bindChips();
+    bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp" || f.role === "ignored") f.avail = ""; if (f.role === "candidate") f.avail = f.avail || "active"; save("filters", f); route(); }));
+    bar.querySelectorAll("#view button").forEach((b) => (b.onclick = () => { f.view = b.dataset.v; save("filters", f); route(); }));
+    bar.querySelectorAll("#f-next button").forEach((b) => (b.onclick = () => { f.next = b.dataset.v; bar.querySelectorAll("#f-next button").forEach((x) => x.classList.toggle("on", x === b)); rerender(); }));
     $("#f-site", bar).onchange = (e) => { f.site = e.target.value; rerender(); };
     $("#f-avail", bar).onchange = (e) => { f.avail = e.target.value; rerender(); };
     const bindStatusChips = () => {
@@ -330,6 +425,7 @@
         rerender();
       }));
     };
+    bindChips();
     bindStatusChips();
     $("#f-sort", bar).onchange = (e) => { f.sort = e.target.value; rerender(); };
     $("#f-analyzed", bar).onchange = (e) => { f.analyzed = e.target.checked; rerender(); };
@@ -340,9 +436,13 @@
     $("#f-max-age", bar).oninput = onLimit("max_age");
     const clearBtn = $("#f-clear-limits", bar);
     if (clearBtn) clearBtn.onclick = () => { f.max_price = ""; f.max_mileage = ""; f.max_age = ""; save("filters", f); route(); };
-    const list = h(`<div id="list"></div>`); app.appendChild(list);
+    if (state.local) bindBoardActions(bar);
+    const list = $("#list", bar);
     function renderList() {
       const rows = filtered();
+      state.boardOrder = rows.map((l) => l.id);   // prev / next on the detail page follow this
+      $("#count", bar).textContent = `${rows.length} ${f.role === "comp" ? "comp" : f.role === "ignored" ? "ignored listing" : f.role === "candidate" ? "car" : "listing"}${rows.length === 1 ? "" : "s"}`;
+      $("#count-note", bar).textContent = `sorted by ${(SORTS.find(([k]) => k === f.sort) || SORTS[0])[1].toLowerCase()}${f.avail ? " · " + f.avail : ""}`;
       list.innerHTML = "";
       if (f.max_price || f.max_mileage || f.max_age) {
         const saved = { p: f.max_price, m: f.max_mileage, a: f.max_age }; f.max_price = ""; f.max_mileage = ""; f.max_age = "";
@@ -359,6 +459,72 @@
     renderList();
     renderTray(app);
   }
+
+  function modelName(m) { return !m ? "Opus" : m.replace(/^claude-/, "").replace(/-(\d)-(\d)$/, " $1.$2").replace(/-(\d)$/, " $1").replace(/^./, (c) => c.toUpperCase()); }
+
+  // ---------- board actions (local mode) ----------
+  function extensionVersion() { return document.documentElement.dataset.scoutExtension || ""; }
+  function bindBoardActions(bar) {
+    const note = $("#actions-note", bar), chk = $("#check-avail", bar), top = $("#reassess-top", bar);
+    const ext = extensionVersion();
+    chk.title = ext ? "Re-open every live listing (and ones that vanished from a saved list) in background tabs of your browser. Sold, delisted and ended cars become market comps; their status turns Sold / Ended and the verdict Do not pursue."
+                    : "Needs the Hoopty-Matic extension 0.4+: reload it in chrome://extensions, then reload this page. The extension popup has the same button.";
+    if (!ext) chk.classList.add("ghost");
+    chk.onclick = () => {
+      if (!extensionVersion()) return toast("Reload the Hoopty-Matic extension (0.4+) and this page, or use Check availability in the extension popup.", 6000);
+      chk.disabled = true; note.textContent = "Checking in background tabs — you can keep working.";
+      window.postMessage({ source: "hoopty-page", type: "check_availability" }, location.origin);
+      setTimeout(watchTask, 1500);
+    };
+    // Tiered re-assessment: the whole board in Pursue-next order (filters ignored),
+    // 15 at a time; the server remembers which cars this cycle has done.
+    const ranking = () => {
+      const saved = state.filters;
+      state.filters = { ...saved, role: "candidate", avail: "active", profiles: [], site: "", statuses: {}, analyzed: false, max_price: "", max_mileage: "", max_age: "", sort: "pursue" };
+      const q = state.q; state.q = "";
+      try { return filtered().filter((l) => l.profile_key); } finally { state.filters = saved; state.q = q; }
+    };
+    let cycle = null;
+    const refreshLabel = async () => {
+      try { cycle = await api("/api/reassess/cycle"); } catch (e) { return; }
+      const all = ranking(), done = new Set(cycle.done), left = all.filter((l) => !done.has(l.id)).length;
+      const tier = left ? cycle.next_tier : 1;
+      top.innerHTML = `Re-assess tier ${tier} <span class="opt">${esc(modelName(cycle.model))}</span>`;
+      top.title = cycle.started_at
+        ? `Cycle started ${ago(cycle.started_at)}: ${done.size} of ${all.length} cars re-assessed. Next press takes the next ${cycle.tier_size} not yet done, in board order. Restarts at tier 1 ${until(cycle.restarts_at)} (${cycle.cycle_days} days after tier 1).`
+        : `Starts a new cycle with the board's top ${cycle.tier_size}; each later press takes the next ${cycle.tier_size}. Restarts at tier 1 after ${cycle.cycle_days} days.`;
+    };
+    refreshLabel();
+    top.onclick = async () => {
+      const all = ranking();
+      if (!all.length) return toast("No active candidates");
+      if (!cycle) await refreshLabel();
+      const done = new Set(cycle?.done || []);
+      let pending = all.filter((l) => !done.has(l.id)), tier = cycle?.next_tier || 1;
+      if (!pending.length) { pending = all; tier = 1; }
+      const batch = pending.slice(0, TOP_N);
+      let cost = null;
+      try { cost = await api("/api/assess-cost?tier=top"); } catch (e) {}
+      const each = cost?.per_listing;
+      const msg = `Re-assess tier ${tier} on ${modelName(cost?.model || cycle?.model)}: the next ${batch.length} on the board not yet re-assessed this cycle?\n\n` +
+        batch.map((l) => `${all.indexOf(l) + 1}. ${title(l)}`).join("\n") +
+        `\n\n${each ? `About $${(each * batch.length).toFixed(2)} total (~$${each.toFixed(2)} each: ${cost.basis}).` : "Cost: no measured assessments yet."} Runs one at a time, roughly ${Math.ceil(batch.length * 1.2)}–${batch.length * 2} minutes.` +
+        (tier === 1 ? `\n\nThis starts a new cycle; it restarts at tier 1 after ${cycle?.cycle_days || 3} days.` : "");
+      if (!confirm(msg)) return;
+      top.disabled = true; note.textContent = `Re-assessing tier ${tier}… progress is in the banner.`;
+      setTimeout(watchTask, 500);
+      try { const r = await api("/api/reassess", "POST", { ids: all.map((l) => l.id), tier: "top", cycle: true }); toast(`Tier ${r.tier}: ${r.assessed} re-assessed on ${modelName(r.model)}${r.errors.length ? `, ${r.errors.length} failed` : ""}`, 5000); }
+      catch (err) { toast("Re-assess failed: " + err.message, 6000); }
+      top.disabled = false; note.textContent = "";
+      await loadData(); route();
+    };
+  }
+  window.addEventListener("message", async (e) => {
+    if (e.source !== window || e.data?.source !== "hoopty-extension" || e.data.type !== "check_availability:done") return;
+    const r = e.data.resp || {};
+    toast(r.ok ? `Availability: ${r.summary}` : `Availability check failed: ${r.error || "no response"}`, 6000);
+    if (state.local) await refreshAfterTask();
+  });
 
   function profileChips(f) {
     // Counts respect every other filter (role, site, availability, status, limits) so a chip never promises cards it cannot show.
@@ -391,15 +557,16 @@
     const el = h(`
       <article class="card ${l.role}" data-id="${l.id}" tabindex="0" role="link" aria-label="${esc(title(l))}">
         <div class="photo">${p ? `<img loading="lazy" referrerpolicy="no-referrer" src="${esc(p)}" alt="">` : `<div class="nophoto">⌁</div>`}
-          <span class="score">${badge(l)}${scoreOf(l) == null && prelimOf(l) != null ? `<b class="score-tag">prelim</b>` : ""}${upsideTag(l)}</span><span class="site">${siteChip(l.site)}</span></div>
+          <span class="score">${badge(l)}${scoreOf(l) == null && prelimOf(l) != null ? `<b class="score-tag">prelim</b>` : ""}${upsideTag(l)}</span><span class="site">${sourceLink(l, "src on-photo") || siteChip(l.site)}</span></div>
         <div class="body">
           <div class="title">${esc(title(l))}${(() => { const r = rankOf(l); return r ? ` <span class="chip" title="rank among active candidates in this profile">#${r.rank} of ${r.of}</span>` : ""; })()}</div>
           <div class="price">${l.role === "comp" && (l.sold_price || l.price) ? money(l.sold_price || l.price) + `<small>${l.availability === "sold" ? "sold" : esc(l.price_kind || "")}</small>` : money(l.price) + (l.price_kind && l.price_kind !== "asking" ? `<small>${esc(l.price_kind.replace("_", " "))}</small>` : "")}</div>
+          ${l.role === "candidate" ? walkaway(l) : ""}
           <div class="meta"><span class="mono">${l.mileage ? num(l.mileage) + " mi" : "— mi"}</span><span>${esc(l.location || "—")}</span><span>${listedAge(l)}</span>${l.transmission ? `<span>${esc(l.transmission)}</span>` : ""}</div>
           ${l.assessment?.headline ? `<div class="headline" title="${esc(l.assessment.headline)}">${esc(l.assessment.headline)}</div>` : ""}
           ${(l.documents || []).length ? `<span class="chip olive" title="${esc((l.documents || []).map((d) => d.kind).join(", "))}">📄 ${l.documents.length}</span>` : ""}${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
           <div class="foot">
-            <div class="row" style="gap:6px">${stageChip(l)}${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${v ? `<span class="chip ${verdictTone(v)}" title="${l.verdict_override ? "Your override (computed: " + esc(computedVerdictOf(l) || "none") + ")" : "computed"}">${l.verdict_override ? "★ " : ""}${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
+            <div class="row" style="gap:6px">${stageChip(l)}${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${nextStepOf(l) && !l.verdict_override ? nextChip(l) : v ? `<span class="chip ${verdictTone(v)}" title="${l.verdict_override ? "Your override (computed: " + esc(computedVerdictOf(l) || "none") + ")" : "computed"}">${l.verdict_override ? "★ " : ""}${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
             <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label><span class="pill-status">${esc(l.status || "New")}</span></span>
           </div>
         </div>
@@ -411,11 +578,11 @@
   }
 
   function tableView(rows) {
-    const cols = [["", (l) => badge(l)], ["Listing", (l) => `<a href="#/l/${l.id}">${esc(title(l))}</a>`], ["Price", (l) => `<span class="mono">${money(l.sold_price || l.price)}</span>`],
+    const cols = [["", (l) => badge(l)], ["Listing", (l) => `<a href="#/l/${l.id}">${esc(title(l))}</a>`], ["Source", (l) => sourceLink(l) || "—"], ["Price", (l) => `<span class="mono">${money(l.sold_price || l.price)}</span>`],
       ["Miles", (l) => `<span class="mono">${num(l.mileage)}</span>`], ["Year", (l) => l.year ?? "—"], ["Trans.", (l) => esc(l.transmission || "—")], ["Location", (l) => esc(l.location || "—")],
-      ["Site", (l) => siteChip(l.site)], ["Listed", (l) => listedAge(l)], ["Assessed", (l) => l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}">✓ ${esc(modelTag(l.assessment))} · ${ago(l.assessment.assessed_at)}</span>` : `<span class="muted small">preliminary</span>`], ["Verdict", (l) => esc(verdictOf(l) || "—")], ["Next", (l) => l.assessment?.priority != null ? `<span class="mono">${l.assessment.priority}</span>` : "—"], ["Mission", (l) => esc(missionLabel(l.mission))], ["Status", (l) => esc(l.status || "New")]];
+      ["Listed", (l) => listedAge(l)], ["Assessed", (l) => l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}">✓ ${esc(modelTag(l.assessment))} · ${ago(l.assessment.assessed_at)}</span>` : `<span class="muted small">preliminary</span>`], ["Next", (l) => nextChip(l) || "—"], ["Verdict", (l) => esc(verdictOf(l) || "—")], ["Rank", (l) => l.assessment?.priority != null ? `<span class="mono">${l.assessment.priority}</span>` : "—"], ["Mission", (l) => esc(missionLabel(l.mission))], ["Status", (l) => esc(l.status || "New")]];
     return h(`<div class="tablewrap"><table class="data"><thead><tr>${cols.map(([c]) => `<th>${c}</th>`).join("")}</tr></thead>
-      <tbody>${rows.map((l) => `<tr>${cols.map(([, f]) => `<td>${f(l)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+      <tbody>${rows.map((l) => `<tr data-id="${l.id}" tabindex="-1">${cols.map(([, f]) => `<td>${f(l)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
   }
 
   // ---------- compare tray ----------
@@ -511,9 +678,11 @@
     const factChip = (f) => `<span class="chip ${f.status === "verified" ? "olive" : f.status === "claimed" ? "mustard" : f.status === "inferred" ? "teal" : ""}" title="${esc(f.source)}${f.note ? " · " + esc(f.note) : ""}">${esc(f.status)}</span>`;
     const list = (arr) => `<ul class="list">${(arr || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
 
+    const order = state.boardOrder || [], pos = order.indexOf(id);
+    const prevId = pos > 0 ? order[pos - 1] : null, nextId = pos >= 0 && pos < order.length - 1 ? order[pos + 1] : null;
     app.appendChild(h(`<div>
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
-        <a href="#/" class="btn sm ghost">← Board</a>
+        <div class="row" style="gap:6px"><a href="#/" class="btn sm ghost">← Board</a>${pos >= 0 ? `<span class="pager"><a class="btn sm ghost ${prevId == null ? "disabled" : ""}" ${prevId != null ? `href="#/l/${prevId}"` : ""} title="Previous on the board (← key)" aria-label="Previous listing">‹</a><span class="muted small mono">${pos + 1} / ${order.length}</span><a class="btn sm ghost ${nextId == null ? "disabled" : ""}" ${nextId != null ? `href="#/l/${nextId}"` : ""} title="Next on the board (→ key)" aria-label="Next listing">›</a></span>` : ""}</div>
         <div class="row">${siteChip(l.site)}${availChip(l.availability)}${l.role === "comp" ? `<span class="chip dark">market comp</span>` : ""}<span class="chip" title="mission">${esc(missionLabel(l.mission))}</span>${siblings.map((o) => `<a href="#/l/${o.id}" class="chip teal" title="same VIN, other venue">also on ${esc(siteName(o.site))} · ${money(o.sold_price || o.price)}</a>`).join("")}${safeUrl(l.url) ? `<a class="btn sm" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">Open listing ↗</a>` : l.url ? `<span class="btn sm ghost" title="not a valid http(s) URL">${esc(l.url)}</span>` : ""}</div>
       </div>
       <div class="headline">
@@ -556,6 +725,13 @@
       main.appendChild(h(`<div class="panel accent-teal"><h3>Vehicle timeline <span class="muted small">from tracked listings; no investigation run yet</span></h3><table class="checks">${l.timeline.map((e) => `<tr><td class="mono small">${esc(e.event_date || "undated")}</td><td>${esc(e.venue || "")} · <b>${esc(e.status)}</b>${e.price ? ` · ${money(e.price)} <span class="muted small">${esc((e.price_type || "").replace(/_/g, " "))}</span>` : ""}${e.mileage ? ` · ${num(e.mileage)} mi` : ""}${e.url ? ` <a href="${esc(e.url)}" target="_blank" rel="noopener">↗</a>` : ""}</td></tr>`).join("")}</table></div>`));
     }
 
+    if (A?.next_step) {
+      const n = A.next_step, c = A.costs;
+      main.appendChild(h(`<div class="panel next-panel accent-${NEXT_TONE[n.action] || "teal"}"><div class="row" style="justify-content:space-between">
+        <div><div class="muted small">Next step</div><div class="next-action">${esc(n.action)}</div><div>${esc(n.reason)}</div></div>
+        <div class="kv small">${A.merit != null ? `<span class="k" title="Score without the documentation you have not asked for yet">Known merit</span><span class="mono">${A.merit}/100</span>` : ""}<span class="k">Pursue-next rank</span><span class="mono">${A.priority ?? "—"}</span>${c?.max_price ? `<span class="k">Walk-away</span><span class="mono">${money(c.max_price)}</span>` : ""}<span class="k">Open questions</span><span class="mono">${(A.open_questions?.document?.length || 0) + (A.open_questions?.inspection?.length || 0)}</span></div>
+      </div><p class="muted small" style="margin:8px 0 0">Before the seller answers, the ranking uses what can be judged now; the open questions below are the to-do list, not a score. The verdict takes over once documents or a PPI are in.</p></div>`));
+    }
     if (A) {
       const hard = A.gates.filter((g) => g.kind === "hard" || g.kind === "strategy" || g.kind === "configuration");
       const cond = A.gates.filter((g) => g.kind === "conditional");
@@ -603,7 +779,7 @@
     // ----- side -----
     if (state.local) {
       const act = h(`<div class="panel"><h3>Actions</h3>
-        <div class="row"><button class="btn primary" id="analyze">${A ? "Re-assess" : "Assess"} <span class="muted small" style="color:inherit;opacity:.8">Opus · ~$1</span></button><button class="btn" id="analyze-quick" title="Same prompt and photos on Sonnet: triage tier">Quick assess <span class="muted small">Sonnet · ~30¢</span></button><button class="btn sm ghost" id="renorm" title="Re-run sync-time normalization">Re-normalize</button></div>
+        <div class="row"><button class="btn primary" id="analyze">${A ? "Re-assess" : "Assess"} <span class="muted small" style="color:inherit;opacity:.8">Opus · ~35¢</span></button><button class="btn" id="analyze-quick" title="Same prompt and photos on Sonnet: triage tier">Quick assess <span class="muted small">Sonnet · ~30¢</span></button><button class="btn sm ghost" id="renorm" title="Re-run sync-time normalization">Re-normalize</button></div>
         <div class="row" style="margin-top:8px"><button class="btn sm" id="adddoc" title="Paste a Carfax, AutoCheck, invoice or service record: gold-tier evidence in the next assessment">+ Attach document</button></div>
         <div id="doclist" class="small muted" style="margin-top:6px"></div>
         <div class="row" style="margin-top:8px"><button class="btn sm warm" id="investigate" title="Queue a same-car search; the extension runs it in your browser">${P ? "Re-investigate provenance" : "Investigate provenance"}</button><span class="muted small" id="inv-status"></span></div>
@@ -627,7 +803,7 @@
       $("#analyze-quick", act).onclick = runAssess("quick");
       $("#investigate", act).onclick = async (e) => {
         e.target.disabled = true;
-        try { await api(`/api/listings/${l.id}/provenance/queue`, "POST"); $("#inv-status", act).textContent = "Queued. Open the Hoopty Scout extension popup and click Run."; toast("Investigation queued"); }
+        try { await api(`/api/listings/${l.id}/provenance/queue`, "POST"); $("#inv-status", act).textContent = "Queued. Open the Hoopty-Matic extension popup and click Run."; toast("Investigation queued"); }
         catch (err) { toast(err.message, 4000); e.target.disabled = false; }
       };
       api(`/api/listings/${l.id}/provenance`).then((r) => { const j = (r.jobs || [])[0]; if (j && j.status !== "done") $("#inv-status", act).textContent = `Investigation ${j.status}${j.hits ? ` · ${j.hits} hits` : ""}${j.error ? ` · ${j.error}` : ""}`; }).catch(() => {});
@@ -694,7 +870,9 @@
         ${C.with_catchup_high ? `<span class="k muted">If all of that lands</span><span class="mono muted">${money(C.with_catchup_low)}–${money(C.with_catchup_high)}</span>` : ""}
         ${C.fair_mid ? `<span class="k">Market fair value</span><span class="mono">${money(C.fair_low)}–${money(C.fair_high)} <span class="muted">mid ${money(C.fair_mid)}</span></span>` : ""}
         <span class="k">Recommended offer</span><span class="mono">${money(C.offer_low)}–${money(C.offer_high)}</span>
-        <span class="k"><b>Maximum price / hammer</b></span><span class="mono"><b>${money(C.max_price)}</b></span></div>
+        <span class="k"><b>Walk-away (max price / hammer)</b></span><span class="mono"><b>${money(C.max_price)}</b>${C.max_price_basis ? ` <span class="muted">set by ${C.max_price_basis === "value" ? "value" : "budget"}</span>` : ""}</span>
+        ${C.max_price_budget ? `<span class="k muted">Budget allows</span><span class="mono muted">${money(C.max_price_budget)}</span>` : ""}
+        ${C.max_price_value != null ? `<span class="k muted">Car is worth up to</span><span class="mono muted">${money(C.max_price_value)}</span>` : ""}</div>
         ${C.notes?.length ? `<ul class="list small" style="margin-top:8px">${C.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}</div>`));
     }
     if (S) {
@@ -732,7 +910,7 @@
     $("#mp", app).onchange = (e) => (location.hash = "#/market?p=" + e.target.value);
     if (!prof) return app.appendChild(h(`<div class="empty"><h2>No profiles</h2></div>`));
     const rows = state.data.listings.filter((l) => l.profile_key === key);
-    const comps = rows.filter((l) => l.role === "comp"), actives = rows.filter((l) => l.role === "candidate" && l.availability === "active");
+    const comps = rows.filter((l) => l.role === "comp" && l.availability !== "active" && l.availability !== "pending"), actives = rows.filter((l) => l.role === "candidate" && l.availability === "active");
     const m = state.data.markets?.[key] || {};
     app.appendChild(h(`<div class="tiles">
       <div class="tile"><div class="k">Sold comps</div><div class="v">${m.sold_count ?? 0}</div><div class="s">${m.comp_count ?? 0} incl. ended</div></div>
@@ -742,7 +920,7 @@
       <div class="tile"><div class="k">Ask vs sold</div><div class="v">${m.sold_median && m.asking_median ? (100 * (m.asking_median / m.sold_median - 1)).toFixed(0) + "%" : "—"}</div><div class="s">median asking over median sold</div></div>
     </div>`));
     if (prof.market_notes) app.appendChild(h(`<div class="panel accent-walnut"><h3>What moves price</h3><p style="margin:0">${esc(prof.market_notes)}</p></div>`));
-    const pts = rows.filter((l) => l.mileage && (l.sold_price || l.price)).map((l) => ({ x: l.mileage, y: l.sold_price || l.price, l, sold: l.role === "comp" }));
+    const pts = rows.filter((l) => l.mileage && (l.sold_price || l.price) && (comps.includes(l) || actives.includes(l))).map((l) => ({ x: l.mileage, y: l.sold_price || l.price, l, sold: comps.includes(l) }));
     const ch = h(`<div class="panel"><h3>Price vs mileage</h3><div class="legend"><span><i style="background:var(--data-a)"></i>Sold / ended</span><span><i style="background:var(--data-b)"></i>Active</span></div><div class="chart" id="scatter"></div></div>`);
     app.appendChild(ch);
     if (pts.length) scatter($("#scatter", ch), pts); else $("#scatter", ch).innerHTML = `<p class="muted">Nothing to plot yet.</p>`;
@@ -798,7 +976,8 @@
     $("#renorm-missing", tools).onclick = () => run("/api/renormalize-all", "Re-normalizing (this can take a few minutes)");
     $("#renorm-all", tools).onclick = () => { if (confirm("Re-run the fast model on every listing?")) run("/api/renormalize-all", "Re-normalizing everything", "?only_missing_ratings=false"); };
     const panel = h(`<div class="panel"><div class="row" style="justify-content:space-between"><h3>Policy ${esc(cfg.policy_version)}</h3><div class="row"><button class="btn sm" id="save">Save</button><button class="btn sm ghost" id="reset">Reset to defaults</button></div></div>
-      <p class="muted small">JSON. Unknown keys are kept; nested objects merge. Urgency mode must be one of accelerated_bridge, emergency, casual_search.</p>
+      <p class="muted small">JSON. Unknown keys are kept; nested objects merge. Urgency mode must be one of accelerated_bridge, emergency, casual_search.
+        <b>budgets_by_mission</b> sets a budget per mission (enthusiast_bridge, pragmatic_bridge, future_keeper, utility_capability); a mission uses <b>budget</b> for any key it does not set, e.g. <code>{"future_keeper": {"max_price": 35000, "acceptable_all_in": 38000, "defeats_purpose_all_in": 42000}}</code>.</p>
       <textarea class="notes mono" id="json" style="min-height:420px">${esc(JSON.stringify(cfg.state, null, 2))}</textarea></div>`);
     const bc = h(`<div class="panel"><div class="row" style="justify-content:space-between"><h3>Buyer context</h3><button class="btn sm" id="bc-save">Save</button></div>
       <p class="muted small">Sent to the model with every assessment: who you are, what you already own, what you want and rule out. Keep it current; re-assess to apply.</p>
@@ -880,5 +1059,5 @@
   };
   $("#publish").onclick = async (e) => { e.target.disabled = true; e.target.textContent = "Publishing…"; try { const r = await api("/api/publish", "POST"); toast(r.changed ? "Published" : "Nothing new to publish"); } catch (err) { toast("Publish failed: " + err.message, 5000); } e.target.disabled = false; e.target.textContent = "Publish"; };
 
-  loadData().then(() => { route(); if (state.local) { watchTask(); startHealthPoll(); } }).catch((e) => { $("#app").innerHTML = `<div class="empty"><h2>Could not load data</h2><p>${esc(e.message)}</p></div>`; });
+  loadData().then(() => { route(); if (state.local) { watchTask(); startHealthPoll(); startHeartbeat(); } }).catch((e) => { $("#app").innerHTML = `<div class="empty"><h2>Could not load data</h2><p>${esc(e.message)}</p></div>`; });
 })();

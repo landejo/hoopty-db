@@ -105,7 +105,7 @@ def test_publish_creates_orphan_gh_pages_commit(git_repo):
     lst = {l["id"]: l for l in index["listings"]}
     assert "photos" not in lst[ids[0]]
     assert "evidence" not in lst[ids[0]]["assessment"]
-    assert set(lst[ids[0]]["assessment"].get("costs", {})) <= {"price_basis"}   # only the sort key, no cost detail
+    assert set(lst[ids[0]]["assessment"].get("costs", {})) <= {"price_basis", "price", "max_price", "max_price_basis"}   # sort key + walk-away on cards, no cost detail
     assert lst[ids[0]]["assessment"]["verdict"] == "Pursue"
 
     detail = json.loads(_git_bare(bare, "show", f"{sha}:data/l/{ids[0]}.json").stdout)
@@ -177,3 +177,17 @@ def test_publish_endpoint_still_returns_502_on_failure(monkeypatch):
     with TestClient(server.app) as c:
         r = c.post("/api/publish")
         assert r.status_code == 502 and "leak" in r.json()["detail"]
+
+
+def test_republish_with_only_a_new_timestamp_pushes_nothing(git_repo):
+    """generated_at changes on every export; that alone is not a change."""
+    _seed_two_listings()
+    first = publish.git_publish()
+    assert first["ok"] and first["changed"]
+    import time
+    time.sleep(1.1)   # generated_at has one-second resolution
+    second = publish.git_publish()
+    assert second["ok"] and not second["changed"], second["detail"]
+    db.update_listing(db.list_listings()[0]["id"], {"notes": "new note"})
+    third = publish.git_publish()
+    assert third["ok"] and third["changed"]

@@ -63,7 +63,8 @@
           reject: notVehicle,
         }),
       });
-      if (/no longer available|this listing has been sold|\bsold\b/i.test(d.text.slice(0, 1500))) d.status_text = "Sold\n" + d.status_text;
+      // Not a bare "sold": CarGurus pages carry "similar cars sold" and dealer copy.
+      if (/no longer available|this listing has been sold|looks like that one got away|^\s*sold\s*$/im.test(d.text.slice(0, 1500))) d.status_text = "Sold\n" + d.status_text;
       return d;
     },
   };

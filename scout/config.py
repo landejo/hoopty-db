@@ -24,6 +24,7 @@ class Config:
     model_deep: str = "claude-opus-5"     # full assessment, provenance, new profiles
     model_mid: str = "claude-sonnet-5"    # quick assessment (same prompt, triage tier)
     model_fast: str = "claude-sonnet-5"   # sync-time read; Haiku 4.5 is the cheaper option
+    model_top: str = "claude-opus-5-5"    # on-demand re-assessment of the board's top entries
     home_location: str = "Carmel, CA"
     port: int = 8765
     skip_sold: bool = False  # sold/ended listings become market comps by default
@@ -35,6 +36,7 @@ class Config:
             model_deep=os.environ.get("SCOUT_MODEL_DEEP", "claude-opus-5"),
             model_mid=os.environ.get("SCOUT_MODEL_MID", "claude-sonnet-5"),
             model_fast=os.environ.get("SCOUT_MODEL_FAST", "claude-sonnet-5"),
+            model_top=os.environ.get("SCOUT_MODEL_TOP", "claude-opus-5-5"),
             home_location=os.environ.get("SCOUT_HOME_LOCATION", "Carmel, CA"),
             port=int(os.environ.get("SCOUT_PORT", "8765")),
             skip_sold=os.environ.get("SCOUT_SKIP_SOLD", "0") == "1",
@@ -91,7 +93,7 @@ ROLES = ["candidate", "comp"]
 
 STATUSES = [
     "New", "Pursue", "Verify", "Contacted", "PPI Scheduled",
-    "Offer Made", "Pass", "Purchased",
+    "Offer Made", "Pass", "Purchased", "Sold", "Ended",
 ]
 
 # Fixed score-axis vocabulary. Every profile assigns weights over a subset of

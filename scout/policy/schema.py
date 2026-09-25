@@ -377,7 +377,10 @@ class CostBreakdown(BaseModel):
     all_in_high: int
     with_catchup_low: int = 0            # informational: all-in + likely catch-up + overdue + reserve
     with_catchup_high: int = 0
-    max_price: int                       # max hammer / walk-away, solved backward
+    max_price: int                       # max hammer / walk-away: min(budget, value) since 1.8.0
+    max_price_budget: int | None = None  # what the mission budget allows (solved backward from acceptable all-in)
+    max_price_value: int | None = None   # what this car is worth: fair high - known work - unresolved reserve
+    max_price_basis: str = "budget"      # which of the two set max_price
     offer_low: int
     offer_high: int
     notes: list[str] = Field(default_factory=list)
@@ -420,6 +423,9 @@ class Assessment(BaseModel):
     priority: int | None = None    # 0-100 "pursue next" rank
     open_questions: dict = Field(default_factory=dict)   # {"document": [...], "inspection": [...], "observed": [...]}
     next_steps: list[str] = Field(default_factory=list, max_length=3)
+    # 1.8.0: before the seller has answered, rank on what is known and say what to do.
+    merit: int | None = None       # 0-100: the score without documentation not yet asked for
+    next_step: dict | None = None  # {"action": "Contact now" | "Watch" | "Skip" | "Follow up", "reason": str}
 
 
 assert set(MISSIONS) == set(Assessment.model_fields["mission"].annotation.__args__)

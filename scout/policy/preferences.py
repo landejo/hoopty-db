@@ -32,6 +32,13 @@ SCORE_BANDS = [(85, "Pursue"), (75, "Pursue conditionally"), (45, "Maybe / verif
 # 1.5.0: below 45 is Reject only with an observed problem or under this floor; otherwise a low-priority Maybe.
 REJECT_FLOOR_NOTHING_OBSERVED = 35
 
+# 1.8.0 next step before contact (Contact now / Watch / Skip), on the pursue-next priority.
+NEXT_STEP_CONTACT_PRIORITY = 50      # at or above: worth a message now
+NEXT_STEP_SKIP_OVER_WALKAWAY = 0.15  # asking more than 15% over the walk-away: negotiation will not get there
+NEXT_STEP_CONTACT_OVER_WALKAWAY = 0.05
+NEXT_STEP_SKIP_OBSERVED_PRIORITY = 40  # an observed problem and a low rank: skip
+NEXT_STEP_AUCTION_HOURS = 72         # a live auction closing this soon is contacted now if it ranks near the bar
+
 # §9 confidence: below this, verdict should rarely exceed Maybe / verify.
 CONFIDENCE_PROVISIONAL = 50
 

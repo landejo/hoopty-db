@@ -313,7 +313,7 @@ class TestComputeScoreWithCosts:
         # all_in_mid (18500) < defeats_purpose_all_in (21000), so cap is 9
         # rating is 10, capped to 9
         assert score.mission_fit == 9
-        assert any("price above the bridge budget" in cap for cap in score.caps_applied)
+        assert any("price above the" in cap and "budget" in cap for cap in score.caps_applied)
 
     def test_compute_score_with_costs_all_in_midpoint_vs_defeats_purpose(self):
         """When all-in midpoint exceeds defeats_purpose_all_in, cap mission_fit at 6."""
@@ -335,7 +335,7 @@ class TestComputeScoreWithCosts:
         # 17500 > max_price (15000) AND midpoint (24500) > defeats_purpose (21000)
         # So cap is 6, not 9
         assert score.mission_fit <= 6
-        assert any("price above the bridge budget" in cap for cap in score.caps_applied)
+        assert any("price above the" in cap and "budget" in cap for cap in score.caps_applied)
 
     def test_compute_score_with_unpriced_auction(self):
         """When costs.price_basis is "unpriced", cap mission_fit at 9."""
@@ -352,20 +352,18 @@ class TestComputeScoreWithCosts:
         assert score.mission_fit == 9
         assert any("auction price unknown" in cap for cap in score.caps_applied)
 
-    def test_compute_score_with_costs_not_a_bridge_mission(self):
-        """For non-bridge missions, costs don't affect mission-fit caps."""
+    def test_compute_score_with_costs_keeper_uses_its_own_budget(self):
+        """1.8.0: every mission is held to its budget; a keeper with its own higher budget is not capped."""
         ev = _ev(fit=8)
         listing = _listing(price=50000)  # Very high price
-        gates = []
-        state = DEFAULT_STATE
-        vin_history = {}
-
         costs = _costs(price=50000, all_in_low=55000, all_in_high=60000)
-
-        score = compute_score(ev, gates, listing, "future_keeper", state, vin_history, costs=costs)
-        # future_keeper is not a bridge mission, so no budget cap
-        # Mission fit should be based on rating and not capped by price
-        # 15 * 8 / 10 = 12
+        # General budget only: a $50k keeper is over it, so mission fit is capped.
+        score = compute_score(ev, [], listing, "future_keeper", DEFAULT_STATE, {}, costs=costs)
+        assert score.mission_fit <= 9
+        assert any("future keeper budget" in c for c in score.caps_applied)
+        # A keeper budget that covers it: 15 * 8 / 10 = 12, uncapped.
+        state = {**DEFAULT_STATE, "budgets_by_mission": {"future_keeper": {"max_price": 60000, "defeats_purpose_all_in": 70000}}}
+        score = compute_score(ev, [], listing, "future_keeper", state, {}, costs=costs)
         assert score.mission_fit == 12
 
 

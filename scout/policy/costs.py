@@ -7,6 +7,8 @@ from typing import Any
 from scout.policy.schema import CostBreakdown, EvidenceInterpretation, Gate
 from scout.scoring import is_early_bid, locality_hint
 
+VALUE_CEILING_MIN_COMPS = 3   # fewer comparable sales than this: the budget alone sets the walk-away
+
 
 def buyer_fee(site: str, price: int, state: dict[str, Any]) -> int:
     f = (state.get("fees") or {}).get(site) or {"pct": 0, "min": 0, "max": 0}
@@ -79,7 +81,8 @@ def price_basis(listing: dict[str, Any], evidence: EvidenceInterpretation, fair:
 
 
 def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceInterpretation,
-                  gates: list[Gate], state: dict[str, Any], fair: dict[str, Any] | None) -> CostBreakdown:
+                  gates: list[Gate], state: dict[str, Any], fair: dict[str, Any] | None,
+                  mission: str | None = None) -> CostBreakdown:
     basis, price, notes = price_basis(listing, evidence, fair, state)
     site = listing.get("site") or ""
     fee = buyer_fee(site, price, state)
@@ -99,7 +102,8 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
     catch_hi = all_in_hi + imm_hi + overdue + reserve
 
     # maximum hammer = acceptable all-in - fee - transport - tax - known work (high)
-    acceptable = int((state.get("budget") or {}).get("acceptable_all_in") or 0)
+    from scout.policy.state import budget_for
+    acceptable = int(budget_for(state, mission or listing.get("mission")).get("acceptable_all_in") or 0)
     max_price = 0
     if acceptable:
         fixed = transport + kw_hi
@@ -112,6 +116,27 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
         max_price = max(0, int(h))
     kw_mid = (kw_lo + kw_hi) // 2
     fair_mid = fair.get("mid") if fair else None
+
+    # 1.8.0 walk-away: the lower of what the budget allows and what THIS car is worth:
+    # the top of its fair range (75th percentile of mileage-adjusted sales), less its
+    # known work, less the reserve for its still-unresolved questions.
+    max_budget = max_price
+    max_value = None
+    unresolved_part = reserve - int(profile.get("risk_reserve") or state.get("default_risk_reserve", 1500))
+    if fair and (fair.get("n") or 0) >= VALUE_CEILING_MIN_COMPS and (fair.get("high") or fair_mid):
+        top = int(fair.get("high") or fair_mid)
+        max_value = max(0, top - kw_mid - max(0, unresolved_part))
+        basis_word = "sales" if fair.get("basis") == "sold" else "asking prices"
+        notes.append(f"Walk-away from value: top of the fair range ${top:,} ({fair.get('n')} {basis_word})"
+                     + (f" less known work ${kw_mid:,}" if kw_mid else "")
+                     + (f" less ${unresolved_part:,} for unresolved questions" if unresolved_part > 0 else "")
+                     + f" = ${max_value:,}.")
+    elif fair:
+        notes.append(f"Only {fair.get('n')} comparable sale(s): walk-away set by the budget alone.")
+    if max_value is not None and (not max_budget or max_value < max_budget):
+        max_price, max_basis = max_value, "value"
+    else:
+        max_basis = "budget"
     if fair_mid is not None and price:
         # Never above the ask or the max price; the opening offer sits at least 5% under the top.
         offer_hi = max(0, int(min(v for v in (price, max_price or None, fair_mid - kw_mid) if v is not None)))
@@ -136,5 +161,6 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
                          overdue_allowance=overdue, risk_reserve=reserve, tax_and_registration=tax,
                          all_in_low=all_in_lo, all_in_high=all_in_hi, with_catchup_low=catch_lo, with_catchup_high=catch_hi,
                          max_price=max_price, offer_low=offer_lo, offer_high=offer_hi, notes=notes,
+                         max_price_budget=max_budget or None, max_price_value=max_value, max_price_basis=max_basis,
                          fair_mid=fair_mid, fair_low=fair.get("low") if fair else None,
-                         fair_high=fair.get("high") if fair else None, fair_note=(fair.get("note") if fair else ""))
+                         fair_high=fair.get("high") if fair else None, fair_note=((fair.get("note") or "") if fair else ""))

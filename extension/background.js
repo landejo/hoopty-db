@@ -40,9 +40,12 @@ async function closeTabs(tabIds) {
 // worker died without reaching the `finally`) is recovered: any tabs it left
 // open are closed before the new run proceeds.
 async function acquireRunLock(kind) {
+  // This worker is running one right now: never "recover" a live run.
+  if (running) return { ok: false, error: `A ${runningInfo.kind || "sync"} is already running.` };
   const state = await getSyncState();
   if (state && state.running) {
-    if (Date.now() - (state.startedAt || 0) < RUN_STALE_MS) {
+    // Stale = no activity for RUN_STALE_MS (a long availability check keeps beating), not merely old.
+    if (Date.now() - (state.beat || state.startedAt || 0) < RUN_STALE_MS) {
       return { ok: false, error: `A ${state.kind || "sync"} is already running.` };
     }
     log(`Recovered a stale ${state.kind || "sync"} lock; closing ${((state.tabIds || []).length)} orphaned tab(s).`);
@@ -65,6 +68,7 @@ async function trackTab(tabId) {
   const state = await getSyncState();
   if (!state) return;
   state.tabIds = (state.tabIds || []).concat([tabId]);
+  state.beat = Date.now();   // every page opened proves the run is alive
   await chrome.storage.session.set({ syncState: state });
 }
 
@@ -166,7 +170,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
   try {
     await setProgress({ state: "collecting", done: 0, total: 0, message: "Scrolling the saved list…" });
     const ping = await sendToTab(tabId, { type: "ping" });
-    if (!ping.ok) throw new Error("This tab has no Hoopty Scout adapter. Open a supported saved-listings page and reload it.");
+    if (!ping.ok) throw new Error("This tab has no Hoopty-Matic adapter. Open a supported saved-listings page and reload it.");
     const site = ping.site;
     runningInfo.site = site;
     const col = await sendToTab(tabId, { type: "collect" });
@@ -264,7 +268,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "cancel") { cancel = true; sendResponse({ ok: true }); return false; }
   if (msg.type === "status") {
     getSyncState().then((state) => {
-      const stillRunning = running || !!(state && state.running && Date.now() - (state.startedAt || 0) < RUN_STALE_MS);
+      const stillRunning = running || !!(state && state.running && Date.now() - (state.beat || state.startedAt || 0) < RUN_STALE_MS);
       sendResponse({ running: stillRunning, site: runningInfo.site, kind: runningInfo.kind || (state && state.kind) || "" });
     });
     return true;
@@ -364,5 +368,56 @@ async function runQueuedInvestigations() {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "investigate") { runQueuedInvestigations().then(sendResponse); return true; }
+  if (msg.type === "check_availability") { runAvailabilityCheck(msg).then(sendResponse); return true; }
   return false;
 });
+
+// ---------------- Availability check ----------------
+// Re-open every tracked live listing (plus ones that vanished from a saved
+// list) in a background tab of this browser, and let the server decide from
+// the page whether it sold, was delisted or ended. Started from the popup or
+// from the workbench's "Check availability" button (via adapters/workbench.js).
+const AVAIL_BATCH = 1;   // report every page: keeps the server's progress and stall timer honest
+
+async function runAvailabilityCheck({ limit } = {}) {
+  const lock = await acquireRunLock("availability check");
+  if (!lock.ok) return lock;
+  await chrome.storage.session.set({ log: [] });
+  let checked = 0;
+  try {
+    const start = await post("/api/availability/start" + (limit ? `?limit=${limit}` : ""), {});
+    const targets = start.targets || [];
+    log(`Checking ${targets.length} listing(s) for sold / delisted / ended.`);
+    await setProgress({ state: "scraping", done: 0, total: targets.length, message: `Checking ${targets.length} listing(s)…` });
+    let batch = [];
+    const flush = async () => {
+      if (!batch.length) return;
+      const res = await post("/api/availability/results", { results: batch });
+      for (const r of res.results || []) if (r.changed) log(`${r.title || r.id}: ${r.result} — ${r.evidence || ""}`);
+      batch = [];
+    };
+    for (let i = 0; i < targets.length; i++) {
+      if (cancel) { log("Cancelled."); break; }
+      const t = targets[i];
+      let detail;
+      try { detail = await scrapeUrl(t.url); } catch (e) { detail = { error: e.message }; }
+      batch.push({ id: t.id, detail: detail && !detail.error ? detail : { error: (detail && detail.error) || "no response" } });
+      checked++;
+      await setProgress({ done: i + 1, message: `${i + 1}/${targets.length} · ${t.title || t.url}` });
+      if (batch.length >= AVAIL_BATCH) await flush();
+      await sleep(jitter());
+    }
+    await flush();
+    const fin = await post("/api/availability/finish", {});
+    await setProgress({ state: "done", message: fin.summary });
+    log(`Done. ${fin.summary}.`);
+    return { ok: true, checked, summary: fin.summary };
+  } catch (e) {
+    try { await post("/api/availability/finish", {}); } catch (e2) {}
+    await setProgress({ state: "error", message: e.message });
+    log("Error: " + e.message);
+    return { ok: false, error: e.message };
+  } finally {
+    await releaseRunLock();
+  }
+}

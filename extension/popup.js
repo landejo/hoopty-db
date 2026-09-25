@@ -65,6 +65,8 @@ async function refreshJobs(health) {
   try {
     const jobs = await (await fetch(apiBase + "/api/provenance/jobs?status=queued")).json();
     $("inv-row").hidden = false;
+    $("avail-row").hidden = false;
+    $("check-avail").disabled = busy;
     $("doc-row").hidden = !/carfax|autocheck/i.test(tab.url || "");
     queuedJobs = jobs.length;
     $("investigate").textContent = jobs.length ? `Run ${jobs.length} queued investigation${jobs.length > 1 ? "s" : ""}` : "No investigations queued";
@@ -109,6 +111,11 @@ $("investigate").addEventListener("click", () => {
   $("investigate").disabled = true; $("cancel").hidden = false; $("progress").hidden = false;
   setStatus("Investigating… searches run in background tabs; you can close this popup.", "info");
   chrome.runtime.sendMessage({ type: "investigate" }, (r) => { setStatus(r && r.ok ? `Finished ${r.done}/${r.total} investigation(s).` : "Investigation failed: " + (r ? r.error : "no response"), r && r.ok ? "success" : "error"); refreshJobs(true); });
+});
+$("check-avail").addEventListener("click", () => {
+  $("check-avail").disabled = true; $("cancel").hidden = false; $("progress").hidden = false;
+  setStatus("Checking availability… listings open in background tabs; you can close this popup.", "info");
+  chrome.runtime.sendMessage({ type: "check_availability" }, (r) => { setStatus(r && r.ok ? `Availability: ${r.summary}.` : "Check failed: " + (r ? r.error : "no response"), r && r.ok ? "success" : "error"); $("check-avail").disabled = false; });
 });
 $("queue-current").addEventListener("click", async () => {
   if (!currentListing) return;

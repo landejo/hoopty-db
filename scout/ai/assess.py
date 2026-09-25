@@ -212,7 +212,8 @@ SYSTEM = STATIC_SYSTEM
 
 def _mission_guidance(mission: str, state: dict[str, Any]) -> str:
     """Budget figures come from the live policy state, never hardcoded."""
-    b = state.get("budget") or {}
+    from scout.policy.state import budget_for
+    b = budget_for(state, mission)
     band = f"ideally ${b.get('ideal_low', 0):,}-${b.get('ideal_high', 0):,}, ceiling ${b.get('max_price', 0):,}, acceptable all-in ${b.get('acceptable_all_in', 0):,}"
     return MISSION_GUIDANCE.get(mission, "").replace("{band}", band)
 
@@ -287,7 +288,9 @@ def interpret_listing(listing: dict[str, Any], profile: dict[str, Any], mission:
                       fair: dict[str, Any] | None = None) -> EvidenceInterpretation:
     critical = "\n".join(f"  - {c['key']}: {c.get('label', c['key'])} [{c.get('severity', 'conditional')}]"
                          for c in profile.get("critical_evidence") or []) or "  (none defined for this model)"
-    state_view = {k: state.get(k) for k in ("urgency_mode", "budget", "current_vehicles", "active_exclusions", "deprioritized", "home_location", "travel", "capability_intent", "high_mileage_rule")}
+    from scout.policy.state import budget_for
+    state_view = {k: state.get(k) for k in ("urgency_mode", "current_vehicles", "active_exclusions", "deprioritized", "home_location", "travel", "capability_intent", "high_mileage_rule")}
+    state_view["budget"] = budget_for(state, mission)   # this mission's budget (1.8.0)
     context = state.get("buyer_context") or COMPACT_CONTEXT
     dynamic = _DYNAMIC_TEMPLATE.format(
         context=context, state=json.dumps(state_view, indent=1), mission=mission,

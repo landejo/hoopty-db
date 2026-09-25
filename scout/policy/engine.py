@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from scout.policy import POLICY_VERSION
+from scout.policy.preferences import CATEGORY_POINTS
 from scout.policy.costs import compute_costs
 from scout.policy.gates import evaluate_gates
 from scout.policy.schema import Assessment, CostBreakdown, EvidenceInterpretation, Gate
@@ -17,12 +18,35 @@ def default_mission(profile: dict[str, Any] | None) -> str:
     return (profile or {}).get("mission_default") or "enthusiast_bridge"
 
 
-def compute_priority(score, upside: int, gates: list[Gate], classified: dict[str, list], costs: CostBreakdown) -> int:
+def compute_merit(score) -> int:
+    """1.8.0: the score over what can be judged before the seller is asked for
+    anything: every category except documentation, scaled to 0-100. Missing
+    records are not scored as good; they are the to-do list (open_questions)."""
+    doc_max = CATEGORY_POINTS["documentation"]
+    return round(100 * (score.total - score.documentation) / (100 - doc_max))
+
+
+def over_walkaway(costs: CostBreakdown) -> float | None:
+    """How far the price is over the walk-away (0.12 = 12% over); None when unknown."""
+    if not costs.max_price or not costs.price or costs.price_basis == "unpriced":
+        return None
+    return costs.price / costs.max_price - 1
+
+
+def compute_priority(score, upside: int, gates: list[Gate], classified: dict[str, list], costs: CostBreakdown,
+                     stage: str = "listing", merit: int | None = None) -> int:
     """0-100 "pursue next" rank: worth investing the next step in this car
-    right now, relative to the others (policy 1.4.0)."""
+    right now, relative to the others (policy 1.4.0; 1.8.0: known merit and the
+    walk-away price drive it until the seller has sent documents)."""
     if any(g.kind in {"hard", "strategy", "configuration"} for g in gates):
         return 0
-    p = 0.6 * score.total + 0.4 * upside   # proven evidence outweighs hoped-for evidence
+    if stage in {"listing", "questions"} and merit is not None:
+        p = float(merit)
+        over = over_walkaway(costs)
+        if over and over > 0:
+            p -= min(25, round(100 * over))
+    else:
+        p = 0.6 * score.total + 0.4 * upside   # proven evidence outweighs hoped-for evidence
     p -= 10 * len(classified["observed"])
     if costs.price_basis in {"unpriced", "expected_hammer"}:
         p -= 8
@@ -86,6 +110,37 @@ def compute_headline(verdict: str, reason: str, score: Score, gates: list[Gate],
     return _clip(f"{verdict} — {reason}")
 
 
+def compute_next_step(listing: dict[str, Any], stage: str, gates: list[Gate], classified: dict[str, list],
+                      costs: CostBreakdown, priority: int) -> dict | None:
+    """1.8.0: one action before and just after contact. Later stages go by the verdict."""
+    from scout.policy.preferences import (NEXT_STEP_AUCTION_HOURS, NEXT_STEP_CONTACT_OVER_WALKAWAY, NEXT_STEP_CONTACT_PRIORITY,
+                                          NEXT_STEP_SKIP_OBSERVED_PRIORITY, NEXT_STEP_SKIP_OVER_WALKAWAY)
+    from scout.scoring import auction_hours_left
+    if stage not in {"listing", "questions"}:
+        return None
+    block = next((g for g in gates if g.kind in {"hard", "strategy", "configuration"}), None)
+    if block:
+        return {"action": "Skip", "reason": _clip(block.reason, 140)}
+    over = over_walkaway(costs)
+    if over is not None and over > NEXT_STEP_SKIP_OVER_WALKAWAY:
+        return {"action": "Skip", "reason": f"${costs.price:,} is {round(100 * over)}% over your walk-away ${costs.max_price:,}"}
+    observed = classified.get("observed") or []
+    if observed and priority < NEXT_STEP_SKIP_OBSERVED_PRIORITY:
+        return {"action": "Skip", "reason": _clip("Observed: " + observed[0], 140)}
+    open_items = (classified.get("document") or []) + (classified.get("inspection") or [])
+    ask = _short_label(open_items[0]["label"]) if open_items else ""
+    if stage == "questions":
+        return {"action": "Follow up", "reason": f"Waiting on the seller{': ' + ask if ask else ''}"}
+    hrs = auction_hours_left(listing)
+    if hrs is not None and 0 < hrs <= NEXT_STEP_AUCTION_HOURS and priority >= NEXT_STEP_CONTACT_PRIORITY - 5:
+        return {"action": "Contact now", "reason": f"Auction closes in about {round(hrs)}h; ask before bidding" + (f": {ask}" if ask else "")}
+    if priority >= NEXT_STEP_CONTACT_PRIORITY and (over is None or over <= NEXT_STEP_CONTACT_OVER_WALKAWAY):
+        return {"action": "Contact now", "reason": "Ranks near the top" + (f"; ask for: {ask}" if ask else "")}
+    why = (f"${costs.price:,} is {round(100 * over)}% over your walk-away ${costs.max_price:,}" if over and over > 0
+           else f"observed: {observed[0]}" if observed else f"ranks {priority}; others come first")
+    return {"action": "Watch", "reason": _clip(why, 140)}
+
+
 def compute_next_steps(listing: dict[str, Any], classified: dict[str, list], stage: str,
                        evidence: EvidenceInterpretation, gates: list[Gate] | None = None) -> list[str]:
     """Up to 3 concrete actions, in priority order."""
@@ -123,13 +178,15 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
     # First pass without the cost gate, then costs, then the cost gate.
     prov = vin_history.get("provenance") or {}
     gates = evaluate_gates(listing, profile, evidence, mission, state, provenance=prov)
-    costs = compute_costs(listing, profile, evidence, gates, state, fair)
+    costs = compute_costs(listing, profile, evidence, gates, state, fair, mission)
     gates = evaluate_gates(listing, profile, evidence, mission, state, all_in_high=costs.all_in_high, provenance=prov,
                            all_in_mid=(costs.all_in_low + costs.all_in_high) // 2)
-    costs = compute_costs(listing, profile, evidence, gates, state, fair)
-    cap = (state.get("budget") or {}).get("defeats_purpose_all_in")
-    if cap and mission in {"enthusiast_bridge", "pragmatic_bridge"} and costs.all_in_high > cap >= (costs.all_in_low + costs.all_in_high) // 2:
-        costs.notes.append(f"High end of the all-in range (${costs.all_in_high:,}, with known work) is above the bridge ceiling ${cap:,}; the midpoint is under it.")
+    costs = compute_costs(listing, profile, evidence, gates, state, fair, mission)
+    from scout.policy.state import budget_for
+    budget = budget_for(state, mission)
+    cap = budget.get("defeats_purpose_all_in")
+    if cap and costs.all_in_high > cap >= (costs.all_in_low + costs.all_in_high) // 2:
+        costs.notes.append(f"High end of the all-in range (${costs.all_in_high:,}, with known work) is above the {mission.replace('_', ' ')} ceiling ${cap:,}; the midpoint is under it.")
     # Price ceiling anchors to the last documented price when the car was
     # recently resold/relisted at a markup (guide: transaction costs are not
     # improvements; only documented post-sale work moves the ceiling).
@@ -158,16 +215,19 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
     verdict, reason = verdict_from(score, confidence, gates, stage)
     classified = classify_conditionals(gates, stage)
     upside = compute_upside(score, classified)
-    priority = compute_priority(score, upside, gates, classified, costs)
+    merit = compute_merit(score)
+    priority = compute_priority(score, upside, gates, classified, costs, stage, merit)
+    next_step = compute_next_step(listing, stage, gates, classified, costs, priority)
     next_steps = compute_next_steps(listing, classified, stage, evidence, gates)
     headline = compute_headline(verdict, reason, score, gates, classified, upside)
     return Assessment(
         policy_version=POLICY_VERSION, mission=mission, urgency_mode=state.get("urgency_mode", "accelerated_bridge"),
         gates=gates, score=score, confidence=confidence, verdict=verdict, verdict_reason=reason, headline=headline,
         costs=costs, evidence=evidence, vin_history=vin_history,
-        context={"budget": dict(state.get("budget") or {}), "urgency_mode": state.get("urgency_mode")},
+        context={"budget": budget, "urgency_mode": state.get("urgency_mode")},
         assessed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(), model=model,
         stage=stage, upside=upside, priority=priority, open_questions=classified, next_steps=next_steps,
+        merit=merit, next_step=next_step,
     )
 
 

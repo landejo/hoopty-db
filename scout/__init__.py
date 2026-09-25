@@ -1,1 +1,1 @@
-"""Hoopty Scout — saved-listing ingestion, AI analysis, and market comps."""
+"""Hoopty-Matic — saved-listing ingestion, AI analysis, and market comps."""

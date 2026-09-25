@@ -1,4 +1,4 @@
-"""Start the local Hoopty Scout server:  .venv/bin/python run.py"""
+"""Start the local Hoopty-Matic server:  .venv/bin/python run.py"""
 from __future__ import annotations
 
 import uvicorn

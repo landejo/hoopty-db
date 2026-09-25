@@ -90,7 +90,7 @@ def test_single_add_never_marks_others_removed():
     assert rows == {"1": "active", "2": "removed", "3": "active"}
 
 
-def test_vanished_listing_takes_result_from_its_page_or_becomes_removed():
+def test_vanished_listing_takes_result_from_its_page_or_waits_for_two_misses():
     ingest_items("bat", [_item("https://bringatrailer.com/listing/x/", price="$30,000")], run_ai=False, full_sync=True)
     ingest_items("bat", [_item("https://bringatrailer.com/listing/y/", price="$10,000")], run_ai=False)
     # Sync: x is gone from the watchlist but its page says Sold for; y's page shows nothing useful.
@@ -103,7 +103,12 @@ def test_vanished_listing_takes_result_from_its_page_or_becomes_removed():
     x = db.get_listing_by_url("https://bringatrailer.com/listing/x/")
     y = db.get_listing_by_url("https://bringatrailer.com/listing/y/")
     assert x["availability"] == "sold" and x["role"] == "comp"
-    assert y["availability"] == "removed" and y["role"] == "candidate"
+    # One miss from a lazy list is not a removal: the full-sync pass counts misses.
+    assert y["availability"] == "active" and y["role"] == "candidate"
+    ingest_items("bat", [{"url": "https://bringatrailer.com/listing/z/", "_touch": True}], run_ai=False, full_sync=True)
+    assert db.get_listing_by_url("https://bringatrailer.com/listing/y/")["availability"] == "active"
+    ingest_items("bat", [{"url": "https://bringatrailer.com/listing/z/", "_touch": True}], run_ai=False, full_sync=True)
+    assert db.get_listing_by_url("https://bringatrailer.com/listing/y/")["availability"] == "removed"
 
 
 def test_bot_wall_page_is_never_stored_as_listing_text():

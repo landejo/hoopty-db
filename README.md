@@ -1,4 +1,4 @@
-# Hoopty Scout
+# Hoopty-Matic
 
 Point it at your **saved** vehicle listings on Facebook Marketplace, CarGurus, Cars.com,
 Autotrader, Cars & Bids, and Bring a Trailer. It pulls every listing into a local database, normalizes
@@ -33,7 +33,7 @@ Load the extension: `chrome://extensions` → Developer mode → **Load unpacked
    - Autotrader: https://www.autotrader.com/account/cars
    - Cars & Bids: https://carsandbids.com/watch-list/ (live auctions; ended ones are re-checked on the next sync)
    - Bring a Trailer: https://bringatrailer.com/watchlist/ (live auctions; ended ones re-checked on the next sync)
-3. Click the Hoopty Scout toolbar icon → **Sync saved listings**. Leave *Include sold / ended* on
+3. Click the Hoopty-Matic toolbar icon → **Sync saved listings**. Leave *Include sold / ended* on
    so those rows become comps. The popup can be closed; progress continues.
 4. Open the workbench (http://127.0.0.1:8765). Cards show a preliminary Haiku score. Open a
    card → **Analyze with Opus** for the deep read (about $0.35 per listing, measured 2026-09-23).
@@ -42,7 +42,54 @@ Load the extension: `chrome://extensions` → Developer mode → **Load unpacked
 
 On a listing page (not the saved list) the popup offers **Add this listing** for one-offs.
 
+### Board tools (local workbench)
+
+- **Source link**: every card (top-right of the photo) and table row links to the
+  original listing; it opens in a new tab.
+- **Check availability**: re-opens every live listing, plus ones that vanished
+  from a saved list, in background tabs of your own browser (extension 0.4+;
+  the popup has the same button). The page decides: "Sold for $X" / a Sold
+  status line → sold; "no longer available" / removed → sold (delisted); "Bid
+  to" / reserve not met → ended. Pages with no clear signal go to the fast model,
+  and its answer counts only if it quotes the page word for word. A page that
+  did not load, a bot wall or a login page changes nothing. A sold/ended car
+  becomes a market comp (it feeds fair value from then on), its status becomes
+  **Sold** / **Ended** (never over **Purchased**), and policy 1.7.0 gates its
+  verdict to **Do not pursue**. Every stored assessment in an affected model is
+  then re-derived for free so offers and fair values use the new comp.
+- **Re-assess tier N**: re-assesses on `SCOUT_MODEL_TOP` (Opus 5.5 by default)
+  in tiers of 15, down the whole board in Pursue-next order (your filters are
+  ignored). Each press takes the next 15 cars this cycle has not re-assessed yet;
+  a car whose assessment failed stays pending and leads the next tier. The cycle
+  restarts at tier 1 once 3 days have passed since tier 1 ran, or once every car
+  has been done. Nothing runs unless you press the button. The confirm dialog
+  lists the cars with their board rank and a cost estimate from measured calls.
+- On a listing page, **‹ ›** (or the ← / → keys) step through the board's order;
+  going back to the board returns to where you were.
+
+### Auto-publish
+
+A *sitting* is a run of workbench activity with no gap longer than 15 minutes.
+Activity is the viewer's heartbeat (sent once a minute only while you are
+actually using it: input in the last 2 minutes, tab visible) or any
+data-changing API call (edits, assessments, syncs, availability checks).
+When a sitting that changed data ends, the server publishes; a long sitting
+also publishes a checkpoint every 45 minutes. Publish skips the push when the
+site is unchanged (a new timestamp alone is not a change). Pending changes
+survive a server restart. The header pill shows what is pending; set
+`SCOUT_AUTOPUBLISH=0` to turn it off, or tune `SCOUT_AUTOPUBLISH_IDLE_MIN` /
+`SCOUT_AUTOPUBLISH_CHECKPOINT_MIN`.
+
 ## Assessment policy
+
+**What the board tells you (policy 1.8.0).** Before you have contacted a
+seller, each car gets a **next step**: *Contact now*, *Watch* or *Skip*, with
+the reason. It ranks on **known merit** (everything except the records you
+have not asked for yet; those are the open-questions to-do list) and on the
+**walk-away** price: the lower of your budget for that car's mission and what
+this car is worth (top of its fair range, less known work and open questions).
+Set a budget per mission on the Policy page with `budgets_by_mission`. After
+questions are sent it says *Follow up*; from documents on, the verdict governs.
 
 `scout/policy/Jason_Car_Assessment_Guide.md` is the authoritative, human-readable
 description of how listings are judged. The code encodes it:
@@ -159,6 +206,38 @@ Symptoms: "found 0 saved listing(s)" or empty descriptions. Fix in `extension/ad
 `common.js` has the shared collectors.
 
 ## Tests
+
+End-to-end first: `e2e/run.sh` builds a throwaway sandbox (a clone whose git
+origin is a local bare repo, a copy of `data/scout.db`, the server on :8766)
+and drives the real viewer in Chromium with Playwright. Your data, your server
+on :8765 and GitHub are never touched, and no paid AI call is made.
+
+```bash
+e2e/run.sh                   # startup, ux, replay, reassess, published (about 3 minutes)
+```
+
+```bash
+e2e/run.sh availability      # the real extension against the live sites (~10 minutes)
+```
+
+- `startup`: a fresh server re-derives every assessment made under an older
+  policy (free, in the background); sold/ended cars then read Do not pursue.
+- `published`: publishes to the sandbox origin, serves exactly what was pushed,
+  and checks it against the local board: same cars in the same order, listing
+  pages load, no local-only controls, no VIN/phone/email in any file.
+- `ux`: board source links, scroll/focus on return, ‹ › and ← / →, re-normalize,
+  hand-set roles, the re-assess confirm and its no-key error, phone layout.
+- `replay`: real listing pages captured from a normal browser (signed-in
+  Facebook, CarGurus, Autotrader; sold, delisted and live), sent through the
+  server's availability endpoints and scored against what the page showed.
+- `reassess`: the tier button through the real Anthropic SDK against
+  `e2e/fake_anthropic.py`: tier 1, tier 2, the 3-day restart, what was stored,
+  and the auto-publish push to the sandbox origin.
+- `availability`: the extension opens every tracked listing. Sites that block
+  automated browsers (Cars.com, CarGurus, Autotrader, signed-out Facebook) must
+  come back "unclear" and change nothing.
+
+Unit tests cover the rules underneath:
 
 ```bash
 .venv/bin/python -m pytest -q

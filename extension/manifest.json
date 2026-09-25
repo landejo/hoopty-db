@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Hoopty Scout",
-  "version": "0.3.3",
-  "description": "Sync saved vehicle listings (Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, Bring a Trailer) to the local Hoopty Scout workbench.",
+  "name": "Hoopty-Matic",
+  "version": "0.4.1",
+  "description": "Sync saved vehicle listings (Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, Bring a Trailer) to the local Hoopty-Matic workbench.",
   "permissions": [
     "activeTab",
     "tabs",
@@ -119,11 +119,21 @@
         "adapters/document.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://127.0.0.1:8765/*",
+        "http://localhost:8765/*"
+      ],
+      "js": [
+        "adapters/workbench.js"
+      ],
+      "run_at": "document_start"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Hoopty Scout",
+    "default_title": "Hoopty-Matic",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
