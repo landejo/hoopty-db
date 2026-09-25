@@ -51,6 +51,17 @@ const api = async (page, p, method = "GET", body) => {
   await page.click('#f-next button[data-v=""]');
   await page.waitForTimeout(300);
 
+  // "Best score" is exactly the badge number, highest first; preliminary cards come after a divider.
+  await page.selectOption("#f-sort", "score");
+  await page.waitForTimeout(400);
+  const seq = await page.$$eval("#list .grid > *", (els) => els.map((e) => e.classList.contains("grid-divider") ? "|" : (e.querySelector(".badge:not(.prelim)") ? Number(e.querySelector(".badge").textContent) : "p")));
+  const assessedSeq = seq.slice(0, seq.indexOf("p") < 0 ? seq.length : seq.indexOf("p")).filter((x) => typeof x === "number");
+  const desc = assessedSeq.every((v, i) => i === 0 || assessedSeq[i - 1] >= v);
+  check("Best score sorts by the badge number, highest first", desc && assessedSeq.length > 5, assessedSeq.slice(0, 12).join(" "));
+  check("a divider separates assessed from preliminary cards", !seq.includes("p") || seq[seq.indexOf("p") - 1] === "|", seq.slice(Math.max(0, seq.indexOf("p") - 2), seq.indexOf("p") + 1).join(" "));
+  await page.selectOption("#f-sort", "pursue");
+  await page.waitForTimeout(300);
+
   // Scroll memory + focus when returning from a listing.
   await page.evaluate(() => window.scrollTo(0, 1600));
   await page.waitForTimeout(300);
@@ -121,6 +132,27 @@ const api = async (page, p, method = "GET", body) => {
   check("card-only sync kept the full page text (bug 3)", (c2.raw_text || "").length > 600, `${(c2.raw_text || "").length} chars`);
   await page.selectOption("#role", "candidate");   // put it back
   await page.waitForTimeout(500);
+
+  // Mark sold / gone from the listing page: off the candidates board, into the comps (Jason 2026-09-25).
+  const ex2 = await api(page, "/api/export");
+  const victim = ex2.listings.find((l) => l.role === "candidate" && l.availability === "active" && l.assessment && !l.verdict_override && l.id !== cand.id);
+  await page.goto(BASE + "/");
+  await page.waitForSelector(`.card[data-id="${victim.id}"]`);
+  await page.evaluate((id) => { location.hash = "#/l/" + id; }, victim.id);
+  await page.waitForFunction((id) => location.hash === `#/l/${id}` && document.querySelector("#mark-gone"), victim.id, { polling: 250 });
+  await page.waitForTimeout(600);
+  await page.click("#mark-gone");
+  await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /Marked sold/.test(t.textContent)), null, { timeout: 15000, polling: 250 });
+  const v2 = await api(page, `/api/listings/${victim.id}`);
+  check("Mark sold / gone makes it a sold comp with verdict Do not pursue", v2.availability === "sold" && v2.role === "comp" && v2.status === "Sold" && v2.assessment?.verdict === "Do not pursue", `#${victim.id} ${v2.availability}/${v2.role}/${v2.status}/${v2.assessment?.verdict}`);
+  await page.goto(BASE + "/");
+  await page.waitForSelector(".card");
+  check("…and it is gone from the candidates board", !(await page.$(`.card[data-id="${victim.id}"]`)));
+  await page.click('#role button[data-v="comp"]');
+  await page.waitForSelector(".card");
+  check("…and listed under Comps", !!(await page.$(`.card[data-id="${victim.id}"]`)));
+  await page.click('#role button[data-v="candidate"]');
+  await page.waitForSelector(".card");
 
   // Re-assess top 15 with no API key: clear failure, nothing half-done.
   await page.goto(BASE + "/");

@@ -315,3 +315,5 @@ html[data-theme="dark"] .stepper li.done { color: #C2D6A6; }
 .chip.next { font-weight: 700; }
 .next-panel .next-action { font-size: 22px; font-weight: 800; letter-spacing: -.02em; }
 .panel.accent-olive.next-panel { border-left-width: 6px; }
+.grid-divider { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 10px; padding: 14px 4px 2px; border-top: 1px dashed var(--line-2); color: var(--muted); font-size: 13px; }
+.grid-divider span { font-weight: 800; color: var(--ink); font-size: 15px; }

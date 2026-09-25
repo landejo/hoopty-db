@@ -33,7 +33,8 @@ UNAVAILABLE_RE = re.compile(
     r"\b(no longer available|(isn't|is not|isn’t) available (anymore|any more|right now)"
     r"|this listing (has been|was) (removed|deleted)|listing (is )?unavailable"
     r"|vehicle (is )?no longer (listed|for sale)"
-    r"|looks like (that|this) one got away)\b", re.I)   # CarGurus' sold page (seen 2026-09-24)
+    r"|looks like (that|this) one got away"   # CarGurus' sold page (seen 2026-09-24)
+    r"|(this|the) car has already found a new home)\b", re.I)   # Autotrader's (seen 2026-09-25)
 PENDING_RE = re.compile(r"\b(sale pending|deposit (taken|received))\b|^\s*pending\s*$", re.I | re.M)
 LIVE_AUCTION_RE = re.compile(r"\b(current bid|high bid|time left|ends in|place (a )?bid)\b", re.I)
 # What a live listing shows and a sold/removed one does not (read off real pages 2026-09-24).
@@ -189,6 +190,43 @@ def targets(limit: int | None = None) -> list[dict[str, Any]]:
     rows.sort(key=lambda r: ((r.get("raw") or {}).get("availability_check") or {}).get("checked_at") or "")
     out = [{"id": r["id"], "url": r["url"], "site": r["site"], "title": r.get("title")} for r in rows]
     return out[:limit] if limit else out
+
+
+OFF_MARKET_STATUSES = {"Sold": "sold", "Ended": "ended"}
+# Your own "Do not pursue" whose reason says the car is gone (not "too expensive").
+OFF_MARKET_REASON_RE = re.compile(r"no longer (available|for sale|listed)|\bunavailable\b|\bsold\b|\bgone\b|delisted|"
+                                  r"\bremoved\b|auction ended|reserve not met", re.I)
+
+
+def user_says_off_market(row: dict[str, Any]) -> str | None:
+    """"sold" / "ended" when you have said the car is off the market, else None."""
+    if row.get("status") in OFF_MARKET_STATUSES:
+        return OFF_MARKET_STATUSES[row["status"]]
+    reason = row.get("verdict_override_reason") or ""
+    if row.get("verdict_override") == "Do not pursue" and OFF_MARKET_REASON_RE.search(reason):
+        return "ended" if re.search(r"auction ended|reserve not met", reason, re.I) and not re.search(r"\bsold\b", reason, re.I) else "sold"
+    return None
+
+
+def mark_off_market_by_user(listing_id: int) -> bool:
+    """You marked the car Sold / Ended, or gave it your own "Do not pursue" because it
+    is gone: same outcome as the availability check finding it (a comp, off the
+    candidates board, gated to Do not pursue). The role counts as yours, so a later
+    sync or a live-looking page never puts it back."""
+    row = db.get_listing(listing_id)
+    want = user_says_off_market(row or {})
+    if not want or (row["availability"] in ("sold", "ended") and row["role"] in ("comp", "ignored")):
+        return False
+    updates: dict[str, Any] = {"availability": want, "role_user_set": 1}
+    if row["role"] != "ignored":
+        updates["role"] = "comp"
+    db.update_listing(listing_id, updates)
+    db.add_snapshot(listing_id, row.get("sold_price") or row.get("price"), row.get("price_kind"), want, None)
+    db.log_event("availability_changed", listing_id,
+                 f"{row['availability']}/{row['role']} -> {want}/{updates.get('role', row['role'])}: "
+                 + (f"status set to {row['status']} by hand" if row.get("status") in OFF_MARKET_STATUSES
+                    else f"your verdict: {row.get('verdict_override_reason')}"))
+    return True
 
 
 def apply(listing_id: int, detail: dict[str, Any] | None) -> dict[str, Any]:

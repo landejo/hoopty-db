@@ -32,6 +32,7 @@ def test_deterministic_signals():
     assert c("cargurus", {"text": "This listing is no longer available.\nSimilar cars"})["availability"] == "unavailable"
     assert c("facebook", {"text": "This listing isn't available anymore"})["availability"] == "unavailable"
     # CarGurus' real sold page, captured in the 2026-09-24 E2E run
+    assert c("autotrader", {"text": "It looks like this car has already found a new home.\nSimilar vehicles"})["availability"] == "unavailable"
     assert c("cargurus", {"text": "All results\nLooks like that one got away\nSimilar cars to consider\n2023 MINI Cooper"})["availability"] == "unavailable"
     assert c("bat", {"text": "Current Bid: $20,000\nTime Left 2 days"})["availability"] == "active"
 
@@ -423,3 +424,41 @@ def test_next_step_contact_watch_skip():
     assert compute_next_step({}, "listing", hard, none, _costs18(20000, 21000), 0)["action"] == "Skip"
     assert compute_next_step({}, "questions", [], none, _costs18(20000, 21000), 55)["action"] == "Follow up"
     assert compute_next_step({}, "docs", [], none, _costs18(20000, 21000), 55) is None
+
+
+def test_setting_status_sold_by_hand_takes_the_car_off_the_board():
+    from scout.server import app
+    row = _add("https://www.autotrader.com/cars-for-sale/vehicle/220", site="autotrader", profile_key="gx460")
+    with TestClient(app) as c:
+        r = c.patch(f"/api/listings/{row['id']}", json={"status": "Sold"}).json()
+    after = db.get_listing(row["id"])
+    assert (after["availability"], after["role"], after["role_user_set"]) == ("sold", "comp", 1)
+    assert r["role"] == "comp" and r["availability"] == "sold"
+    # a later sync showing the card as live does not bring it back
+    ingest_items("autotrader", [{"url": row["url"], "price_text": "$25,040", "card_text": "x"}], run_ai=False)
+    assert db.get_listing(row["id"])["role"] == "comp"
+
+
+def test_your_verdict_that_it_is_gone_takes_it_off_the_board_but_too_expensive_does_not():
+    from scout.server import app
+    gone = _add("https://www.cargurus.com/details/4444", site="cargurus")
+    pricey = _add("https://www.cargurus.com/details/5555", site="cargurus")
+    with TestClient(app) as c:
+        c.patch(f"/api/listings/{gone['id']}", json={"verdict_override": "Do not pursue", "verdict_override_reason": "No longer available"})
+        c.patch(f"/api/listings/{pricey['id']}", json={"verdict_override": "Do not pursue", "verdict_override_reason": "too expensive for me"})
+    assert (db.get_listing(gone["id"])["availability"], db.get_listing(gone["id"])["role"]) == ("sold", "comp")
+    assert (db.get_listing(pricey["id"])["availability"], db.get_listing(pricey["id"])["role"]) == ("active", "candidate")
+
+
+def test_startup_reconciles_cars_you_already_said_are_gone(monkeypatch):
+    from scout.server import app
+    row = _add("https://www.autotrader.com/cars-for-sale/vehicle/9220", site="autotrader")
+    db.update_listing(row["id"], {"status": "Sold", "verdict_override": "Do not pursue", "verdict_override_reason": "no longer available"})
+    monkeypatch.setenv("SCOUT_STARTUP_RESCORE", "1")
+    with TestClient(app):
+        import time
+        for _ in range(50):
+            if db.get_listing(row["id"])["role"] == "comp":
+                break
+            time.sleep(0.1)
+    assert (db.get_listing(row["id"])["availability"], db.get_listing(row["id"])["role"]) == ("sold", "comp")

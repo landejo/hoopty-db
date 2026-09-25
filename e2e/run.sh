@@ -48,15 +48,17 @@ fresh_db() { rm -f "$SB/scout.db"; sqlite3 "$ROOT/data/scout.db" ".backup '$SB/s
 start_server() {   # $1 = "ai" to use the fake Anthropic API
   local extra=(ANTHROPIC_API_KEY= SCOUT_STARTUP_RESCORE_DELAY=${RESCORE_DELAY:-0})
   if [ "${1:-}" = ai ]; then extra=(SCOUT_STARTUP_RESCORE_DELAY=0 ANTHROPIC_API_KEY=fake-e2e-key ANTHROPIC_BASE_URL=http://127.0.0.1:$FAKE_PORT); fi
+  export SERVER_STARTED=$(date -u +%Y-%m-%dT%H:%M:%S)
   (cd "$SB/repo" && exec env SCOUT_PORT=$PORT SCOUT_DB_PATH="$SB/scout.db" SCOUT_BACKUP_DIR=off \
      SCOUT_AUTOPUBLISH=1 SCOUT_AUTOPUBLISH_IDLE_MIN=1 SCOUT_AUTOPUBLISH_CHECKPOINT_MIN=30 "${extra[@]}" \
      "$PY" run.py >"$SB/out/server.log" 2>&1) &
   SERVER=$!; PIDS+=("$SERVER")
   until curl -sf "http://127.0.0.1:$PORT/api/health" >/dev/null; do sleep 0.5; done
 }
-wait_startup_rescore() {
+wait_startup_rescore() {   # this server's own update, not events copied in with the DB
   for _ in $(seq 1 240); do
-    curl -sf -H "Origin: http://127.0.0.1:$PORT" "http://127.0.0.1:$PORT/api/events" | grep -q '"startup_rescore' && return 0
+    curl -sf -H "Origin: http://127.0.0.1:$PORT" "http://127.0.0.1:$PORT/api/events" | \
+      "$PY" -c "import json,sys,os; sys.exit(0 if any(e['kind'].startswith('startup_rescore') and e['ts'][:19] >= os.environ['SERVER_STARTED'] for e in json.load(sys.stdin)) else 1)" && return 0
     sleep 0.5
   done
 }
@@ -73,7 +75,9 @@ for suite in $SUITES; do
                   (cd "$SB" && exec "$PY" "$E2E/fake_anthropic.py" $FAKE_PORT "$SB/scout.db") & PIDS+=("$!")
                   start_server ai; (cd "$E2E" && node e2e_reassess.js) || FAILED=1 ;;
     availability) start_server; (cd "$E2E" && node e2e_availability.js) || FAILED=1 ;;
-    startup)      RESCORE_DELAY=8 start_server; (cd "$E2E" && node e2e_startup_board.js) || FAILED=1
+    startup)      # Pretend the copy predates the current policy, so the boot-time update always runs.
+                  sqlite3 "$SB/scout.db" "UPDATE assessments SET assessment_json=json_remove(json_set(assessment_json,'\$.policy_version','0.0-e2e'),'\$.next_step','\$.merit')"
+                  RESCORE_DELAY=8 start_server; (cd "$E2E" && node e2e_startup_board.js) || FAILED=1
                   (cd "$E2E" && "$PY" e2e_startup.py "$SB/out/results-startup.json") || FAILED=1 ;;
     published)    start_server
                   wait_startup_rescore   # publish what the board will show, not a half-re-derived state

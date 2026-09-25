@@ -294,9 +294,11 @@
       // ones — the two rubrics only correlate r=0.20, so mixing them by raw
       // number is misleading. Within assessed, an early/unpriced bid sorts
       // after a priced listing with the same score (sort-only -10 penalty).
+      // Exactly the number on the badge, highest first (an early bid only breaks a
+      // tie; its -10 belongs to "Pursue next", not here: Jason 2026-09-25).
       score: (a, b) => {
         const as = scoreOf(a), bs = scoreOf(b);
-        if (as != null && bs != null) return (bs - (isEarlyBid(b) ? 10 : 0)) - (as - (isEarlyBid(a) ? 10 : 0));
+        if (as != null && bs != null) return (bs - as) || ((isEarlyBid(a) ? 1 : 0) - (isEarlyBid(b) ? 1 : 0));
         if (as != null) return -1;
         if (bs != null) return 1;
         return (calibrated(b) ?? -1) - (calibrated(a) ?? -1);
@@ -453,7 +455,16 @@
       if (!rows.length) return list.appendChild(h(`<div class="empty"><h2>Nothing matches</h2><p>Loosen the filters or sync more listings.</p></div>`));
       if (f.view === "table") return list.appendChild(tableView(rows));
       const grid = h(`<div class="grid"></div>`);
-      rows.forEach((l) => grid.appendChild(card(l)));
+      const ranked = f.sort === "score" || f.sort === "pursue";
+      let dividerDone = false;
+      rows.forEach((l, i) => {
+        // Assessed cars always rank above preliminary estimates (different rubrics); say so where the switch happens.
+        if (ranked && !dividerDone && i > 0 && scoreOf(l) == null && scoreOf(rows[i - 1]) != null) {
+          grid.appendChild(h(`<div class="grid-divider"><span>Not yet assessed</span> preliminary estimates (≈), ranked after every assessed car because the two scores are not comparable</div>`));
+          dividerDone = true;
+        }
+        grid.appendChild(card(l));
+      });
       list.appendChild(grid);
     }
     renderList();
@@ -791,7 +802,7 @@
         <label>Role <select id="role"><option value="candidate" ${l.role === "candidate" ? "selected" : ""}>candidate</option><option value="comp" ${l.role === "comp" ? "selected" : ""}>comp</option><option value="ignored" ${l.role === "ignored" ? "selected" : ""}>ignored (not a car / not for me)</option></select></label></div>
         <label style="display:block;margin-top:10px">Profile <select id="prof"><option value="">— none —</option>${state.data.profiles.map((p) => `<option value="${p.key}" ${l.profile_key === p.key ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select></label>
         <textarea class="notes" id="notes" placeholder="Your notes (saved on blur)">${esc(l.notes || "")}</textarea>
-        <div class="row" style="margin-top:10px;justify-content:flex-end"><button class="btn sm ghost" id="delete" title="Remove this listing and its history from the workbench">Delete listing</button></div></div>`);
+        <div class="row" style="margin-top:10px;justify-content:space-between">${l.availability === "sold" || l.availability === "ended" ? `<span class="muted small">Off the market: ${esc(l.availability)}</span>` : `<button class="btn sm" id="mark-gone" title="Sold or no longer available: becomes a market comp, leaves the candidates board, verdict Do not pursue">Mark sold / gone</button>`}<button class="btn sm ghost" id="delete" title="Remove this listing and its history from the workbench">Delete listing</button></div></div>`);
       side.appendChild(act);
       if (l.last_error) side.appendChild(h(`<div class="panel accent-rose"><h3>Last run failed <span class="muted small">${ago(l.last_error.ts)}</span></h3><p class="small" style="margin:0">${esc(l.last_error.kind.replace("_", " "))}: ${esc(l.last_error.detail)}</p><p class="muted small" style="margin:6px 0 0">The paid call completed but its answer was rejected. This class of failure is now retried and trimmed automatically; run it again.</p></div>`));
       const runAssess = (tier) => async (e) => {
@@ -809,6 +820,12 @@
       api(`/api/listings/${l.id}/provenance`).then((r) => { const j = (r.jobs || [])[0]; if (j && j.status !== "done") $("#inv-status", act).textContent = `Investigation ${j.status}${j.hits ? ` · ${j.hits} hits` : ""}${j.error ? ` · ${j.error}` : ""}`; }).catch(() => {});
       $("#renorm", act).onclick = async (e) => { e.target.disabled = true; setTimeout(watchTask, 300); try { await api(`/api/listings/${l.id}/renormalize`, "POST"); await loadData(); route(); toast("Re-normalized"); } catch (err) { toast(err.message, 4000); e.target.disabled = false; } };
       const patch = async (body) => { try { await api(`/api/listings/${l.id}`, "PATCH", body); Object.assign(l, body); toast("Saved"); } catch (err) { toast(err.message, 4000); } };
+      const goneBtn = $("#mark-gone", act);
+      if (goneBtn) goneBtn.onclick = async () => {
+        goneBtn.disabled = true;
+        try { const r = await api(`/api/listings/${l.id}`, "PATCH", { status: "Sold" }); await loadData(); route(); toast(r.role === "comp" ? "Marked sold: now a market comp, off the candidates board" : "Marked sold"); }
+        catch (err) { toast(err.message, 4000); goneBtn.disabled = false; }
+      };
       $("#delete", act).onclick = async () => {
         if (!confirm(`Delete "${title(l)}" and its snapshots, assessments and provenance? A future sync will re-add it as new if it is still saved on the site.`)) return;
         try { await api(`/api/listings/${l.id}`, "DELETE"); await loadData(); location.hash = "#/"; toast("Deleted"); } catch (err) { toast(err.message, 4000); }

@@ -169,6 +169,11 @@ def _startup() -> None:
         import threading
 
         def _rescore_stale() -> None:
+            # Cars you marked sold / gone before that moved them off the board.
+            from scout.availability import mark_off_market_by_user
+            for r in db.list_listings():
+                if r["availability"] in ("active", "pending", "removed") and mark_off_market_by_user(r["id"]):
+                    _rederive_assessment(r["id"])
             stale = sum(1 for a in db.latest_assessments().values() if a.get("policy_version") != POLICY_VERSION)
             # A visible task: the board shows the banner and refreshes itself when it ends.
             tok = _task_start(f"Updating {stale} assessment(s) to policy {POLICY_VERSION} (free)", None) if stale and not _task.get("active") else None
@@ -329,7 +334,13 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         updates["mission_user_set"] = 1
     db.update_listing(listing_id, updates)
     db.log_event("edit", listing_id, str(updates))
-    if "status" in updates:
+    if {"status", "verdict_override", "verdict_override_reason"} & set(updates):
+        from scout.availability import mark_off_market_by_user
+        if mark_off_market_by_user(listing_id):   # you said it is sold / gone: off the board, into the comps
+            row = db.get_listing(listing_id)
+            updates.update({"availability": row["availability"], "role": row["role"]})
+            _rederive_assessment(listing_id)
+    if "status" in updates and "availability" not in updates:
         _rederive_assessment(listing_id)
     return {"ok": True, **updates}
 

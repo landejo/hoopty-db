@@ -3,6 +3,22 @@
 Running log of high-effort work sessions. Newest entry first. Each entry ends
 with a System State Summary per the Claude environment rules.
 
+## 2026-09-25 — Sold/gone by hand, Best score order, Autotrader sold wording
+
+- Status Sold/Ended, or your own "Do not pursue" whose reason says the car is
+  gone ("no longer available", "sold", ...), now makes it a sold/ended comp off
+  the candidates board (role counts as yours); reconciled at startup. New
+  "Mark sold / gone" button on the listing page. Fixed #220 and #4.
+- "Best score" sorts by the badge number only (the early-bid -10 stays in
+  Pursue next); a divider introduces the not-yet-assessed (≈) cards.
+- Autotrader's sold page ("this car has already found a new home") is a
+  deterministic signal.
+- Harness: waits for this server's own startup update (the DB copy carries old
+  events); the startup suite forces a stale copy so the self-refresh path runs.
+- Added #272 (2006 Cayman S 3.8, Built for Backroads, $57,500) by hand.
+- Tests: 252 unit; E2E startup 5/5, ux 28/28, replay 12/12, reassess 12/12,
+  published 12/12.
+
 ## 2026-09-25 — Policy 1.8.0: walk-away, budgets per mission, merit, next step
 
 - Built items 1-4 of the scoring review (see POLICY_CHANGES 1.8.0). Viewer:

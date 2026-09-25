@@ -2,6 +2,7 @@
 assessment made under an older policy, in the background, for free. Sold and
 ended cars then read Do not pursue; nothing is left on an old policy version."""
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -16,7 +17,8 @@ def get(path):
 policy = get("/api/health")["policy_version"]
 deadline = time.time() + 180
 while time.time() < deadline:
-    ev = [e for e in get("/api/events") if e["kind"] in {"startup_rescore", "startup_rescore_error"}]
+    ev = [e for e in get("/api/events") if e["kind"] in {"startup_rescore", "startup_rescore_error"}
+          and e["ts"][:19] >= os.environ.get("SERVER_STARTED", "")]   # not the events copied in with the DB
     if ev:
         break
     time.sleep(2)
