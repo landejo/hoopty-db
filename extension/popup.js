@@ -1,5 +1,14 @@
 const $ = (id) => document.getElementById(id);
 const DEFAULT_API = "http://127.0.0.1:8765";
+const SITE_NAMES = { facebook: "Facebook Marketplace", cargurus: "CarGurus", carscom: "Cars.com", autotrader: "Autotrader",
+                     carsandbids: "Cars & Bids", bat: "Bring a Trailer" };
+const siteName = (k) => SITE_NAMES[k] || k || "";
+// "Bring a Trailer sync", "Availability check", "Investigation"
+function runLabel(st) {
+  const kind = st.kind || "sync";
+  const label = kind === "sync" && st.site ? `${siteName(st.site)} sync` : kind;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
 let tab = null, page = null, apiBase = DEFAULT_API;
 
 function setStatus(msg, kind = "info") { $("status").className = "status " + kind; $("status").textContent = msg; }
@@ -17,7 +26,7 @@ async function refreshProgress() {
   $("sync").disabled = busy || !(page && page.saved);
   $("add").disabled = busy || !(page && page.detail);
   $("investigate").disabled = busy || queuedJobs === 0;
-  if (busy) setStatus(`A ${st.site || ""} ${st.kind || "sync"} is still running (${progress && progress.message ? progress.message : "working"}). Wait for "Done." in the log, or press Stop.`, "warning");
+  if (busy) setStatus(`${runLabel(st)} under way · ${progress && progress.message ? progress.message : "starting…"} You can close this popup; press Stop to cancel.`, "info");
   if (!progress) return;
   $("progress").hidden = false;
   const pct = progress.total ? Math.round(100 * progress.done / progress.total) : (progress.state === "done" ? 100 : 5);
@@ -46,7 +55,7 @@ async function init() {
     $("site-label").textContent = "Unsupported page";
     if (health) setStatus("Open a saved-listings page on Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, or Bring a Trailer (reload it if you just installed the extension).", "warning");
   } else {
-    $("site-label").textContent = `${page.site} · ${page.saved ? "saved list" : page.detail ? "listing page" : "other page"}`;
+    $("site-label").textContent = `${siteName(page.site)} · ${page.saved ? "saved list" : page.detail ? "listing page" : "other page"}`;
     if (health) {
       if (page.saved) setStatus(health.ai ? "Ready to sync this saved list." : "Ready to sync (AI disabled: no API key on the server).", health.ai ? "success" : "warning");
       else if (page.detail) setStatus("On a listing page. You can add just this one.", "info");

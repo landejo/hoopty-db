@@ -41,12 +41,12 @@ async function closeTabs(tabIds) {
 // open are closed before the new run proceeds.
 async function acquireRunLock(kind) {
   // This worker is running one right now: never "recover" a live run.
-  if (running) return { ok: false, error: `A ${runningInfo.kind || "sync"} is already running.` };
+  if (running) return { ok: false, error: `A ${runningInfo.kind || "sync"} is already under way; wait for it to finish or press Stop.` };
   const state = await getSyncState();
   if (state && state.running) {
     // Stale = no activity for RUN_STALE_MS (a long availability check keeps beating), not merely old.
     if (Date.now() - (state.beat || state.startedAt || 0) < RUN_STALE_MS) {
-      return { ok: false, error: `A ${state.kind || "sync"} is already running.` };
+      return { ok: false, error: `A ${state.kind || "sync"} is already under way; wait for it to finish or press Stop.` };
     }
     log(`Recovered a stale ${state.kind || "sync"} lock; closing ${((state.tabIds || []).length)} orphaned tab(s).`);
     await closeTabs(state.tabIds);
