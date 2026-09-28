@@ -94,8 +94,11 @@ h3 { font-size: 16px; }
 .board-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
 .board-actions .opt { font-weight: 500; opacity: .8; font-size: 12px; }
 .seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--bg-2); border-radius: 999px; }
-.seg.wide { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
-.seg.wide button { padding: 5px 2px; font-size: 12px; }
+/* Rail toggles: natural-width buttons that wrap instead of overlapping (5 roles don't fit one row). */
+.seg.wide { display: flex; flex-wrap: wrap; gap: 3px; border-radius: 14px; }
+.seg.wide button { flex: 1 1 auto; padding: 5px 9px; font-size: 12.5px; white-space: nowrap; }
+.hidden-note { margin: 0 0 10px; }
+.hidden-note a { font-weight: 700; }
 .seg button { border: 0; background: transparent; border-radius: 999px; padding: 5px 11px; cursor: pointer; color: var(--ink-2); font-weight: 600; font-size: 13px; }
 .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(16,19,26,.15); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }

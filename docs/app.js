@@ -450,7 +450,14 @@
       if (f.max_price || f.max_mileage || f.max_age) {
         const saved = { p: f.max_price, m: f.max_mileage, a: f.max_age }; f.max_price = ""; f.max_mileage = ""; f.max_age = "";
         const without = filtered().length; f.max_price = saved.p; f.max_mileage = saved.m; f.max_age = saved.a;
-        if (without > rows.length) list.appendChild(h(`<p class="muted small" style="margin:0 0 10px">${without - rows.length} listing${without - rows.length === 1 ? "" : "s"} hidden by your price / mileage / age limits.</p>`));
+        if (without > rows.length) {
+          const n = without - rows.length;
+          const which = [f.max_price && `price over ${money(Number(f.max_price))}`, f.max_mileage && `over ${num(Number(f.max_mileage))} mi`,
+                         f.max_age && `listed over ${f.max_age} days ago`].filter(Boolean).join(", ");
+          const note = h(`<p class="muted small hidden-note">${n} listing${n === 1 ? "" : "s"} hidden by your limits (${esc(which)}). <a href="#" id="show-hidden">Show them</a></p>`);
+          $("#show-hidden", note).onclick = (e) => { e.preventDefault(); f.max_price = ""; f.max_mileage = ""; f.max_age = ""; save("filters", f); route(); toast("Limits cleared"); };
+          list.appendChild(note);
+        }
       }
       if (!state.data.listings.length) return list.appendChild(emptyState());
       if (!rows.length) return list.appendChild(h(`<div class="empty"><h2>Nothing matches</h2><p>Loosen the filters or sync more listings.</p></div>`));

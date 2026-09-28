@@ -76,6 +76,29 @@ const api = async (page, p, method = "GET", body) => {
   await page.click('#role button[data-v="candidate"]');
   await page.waitForSelector(".card");
 
+  // Rail toggles: every button fully visible, none overlapping (Jason's screenshot, 2026-09-28).
+  const railCheck = async (pg) => pg.$$eval(".rail .seg button", (bs) => {
+    const boxes = bs.map((b) => ({ t: b.textContent.trim(), r: b.getBoundingClientRect(), clipped: b.scrollWidth > b.clientWidth + 1 }));
+    const overlaps = [];
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i].r, b = boxes[j].r;
+      if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) overlaps.push(boxes[i].t + "/" + boxes[j].t);
+    }
+    return { n: boxes.length, clipped: boxes.filter((x) => x.clipped).map((x) => x.t), overlaps };
+  });
+  const rc = await railCheck(page);
+  check("rail toggles: no overlap, no clipped labels", rc.n >= 9 && !rc.clipped.length && !rc.overlaps.length, JSON.stringify(rc));
+
+  // Limits hide cars; the note names the limit and "Show them" brings them back.
+  const before = await page.$$eval(".card", (cs) => cs.length);
+  await page.fill("#f-max-price", "15000");
+  await page.waitForSelector(".hidden-note", { timeout: 5000 });
+  const note = await page.textContent(".hidden-note");
+  check("limit note names the limit", /hidden by your limits \(price over \$15,000\)/.test(note), note.trim());
+  await page.click("#show-hidden");
+  await page.waitForFunction((n) => document.querySelectorAll(".card").length === n && !document.querySelector(".hidden-note"), before, { timeout: 5000, polling: 200 });
+  check("Show them clears the limits and brings the cars back", (await page.inputValue("#f-max-price")) === "", `${before} cards again`);
+
   // Scroll memory + focus when returning from a listing.
   await page.evaluate(() => window.scrollTo(0, 1600));
   await page.waitForTimeout(300);
@@ -198,6 +221,9 @@ const api = async (page, p, method = "GET", body) => {
   const w = await mp.evaluate(() => ({ doc: document.documentElement.scrollWidth, win: innerWidth, railOpen: document.querySelector(".rail").open }));
   check("phone: no horizontal scroll", w.doc <= w.win, JSON.stringify(w));
   check("phone: filters start folded", w.railOpen === false);
+  await mp.click(".rail > summary");
+  const rcPhone = await railCheck(mp);
+  check("phone: rail toggles fit too", !rcPhone.clipped.length && !rcPhone.overlaps.length, JSON.stringify(rcPhone));
   await mp.screenshot({ path: path.join(OUT, "phone-board.png"), fullPage: false });
   await mp.click(".card .title");
   await mp.waitForSelector(".pager");
