@@ -140,6 +140,17 @@ const api = async (page, p, method = "GET", body) => {
   await page.keyboard.press("ArrowLeft");
   await page.waitForTimeout(400);
   check("arrow keys inside a text box do not navigate", page.url().endsWith(`#/l/${order[3]}`));
+  // VIN near the top of the listing page, local workbench only.
+  const exV = await api(page, "/api/export");
+  const withVin = exV.listings.find((l) => l.vin && l.role === "candidate");
+  if (withVin) {
+    await page.evaluate((id) => { location.hash = "#/l/" + id; }, withVin.id);
+    await page.waitForFunction((id) => location.hash === `#/l/${id}` && document.querySelector("h1"), withVin.id, { polling: 250 });
+    await page.waitForTimeout(600);
+    const vinText = await page.$eval(".vin-line .vin", (e) => e.textContent).catch(() => "");
+    const top = await page.$eval(".vin-line", (e) => e.getBoundingClientRect().top).catch(() => 9999);
+    check("VIN shown near the top of the listing page", vinText === withVin.vin && top < 300, `#${withVin.id} ${vinText} at y=${Math.round(top)}`);
+  }
   const openListing = await page.$eval("a.btn[target=_blank]", (a) => a.href);
   check("detail page still has Open listing ↗", /^https?:/.test(openListing), openListing);
 

@@ -324,3 +324,5 @@ html[data-theme="dark"] .stepper li.done { color: #C2D6A6; }
 .chip.curiosity { background: var(--chip-slate); color: var(--ink-2); font-weight: 700; font-style: italic; }
 .card.curiosity { opacity: .92; }
 .card.curiosity .photo { filter: saturate(.75); }
+.vin-line { display: flex; align-items: center; gap: 8px; margin: 4px 0 2px; flex-wrap: wrap; }
+.vin-line .vin { font-size: 15px; font-weight: 700; letter-spacing: .06em; user-select: all; }

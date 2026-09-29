@@ -225,7 +225,7 @@ _ADDITIVE_COLUMNS = {
     "ai_calls": [("effort", "TEXT")],
     "listings": [("mission", "TEXT"), ("vehicle_id", "INTEGER"), ("provenance_json", "TEXT"), ("mission_user_set", "INTEGER DEFAULT 0"),
                  ("verdict_override", "TEXT"), ("verdict_override_reason", "TEXT"), ("unseen_syncs", "INTEGER DEFAULT 0"),
-                 ("role_user_set", "INTEGER DEFAULT 0")],
+                 ("role_user_set", "INTEGER DEFAULT 0"), ("in_saved_list", "INTEGER DEFAULT 0")],
     "profiles": [("critical_evidence_json", "TEXT DEFAULT '[]'"), ("mission_default", "TEXT"),
                  ("risk_reserve", "INTEGER"), ("automatic_ok", "INTEGER DEFAULT 0"),
                  ("catchup_notes", "TEXT")],
@@ -388,12 +388,16 @@ def mark_unseen_removed(site: str, seen_urls: set[str], path: Path | None = None
     removed = 0
     with connect(path) as c:
         rows = c.execute(
-            "SELECT id, url, unseen_syncs FROM listings WHERE site=? AND availability IN ('active','pending')", (site,)
+            "SELECT id, url, unseen_syncs, in_saved_list FROM listings WHERE site=? AND availability IN ('active','pending')", (site,)
         ).fetchall()
         for r in rows:
             if r["url"] in seen_urls:
-                if r["unseen_syncs"]:
-                    c.execute("UPDATE listings SET unseen_syncs=0 WHERE id=?", (r["id"],))
+                if r["unseen_syncs"] or not r["in_saved_list"]:
+                    c.execute("UPDATE listings SET unseen_syncs=0, in_saved_list=1 WHERE id=?", (r["id"],))
+                continue
+            if not r["in_saved_list"]:
+                # Added by hand (a group post, a one-off "Add this listing"): never in a
+                # saved list, so missing from one says nothing about it.
                 continue
             misses = (r["unseen_syncs"] or 0) + 1
             if misses < MISSES_BEFORE_REMOVED:

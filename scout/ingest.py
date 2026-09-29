@@ -12,6 +12,30 @@ from scout.config import AUCTION_SITES, CONFIG
 from scout.profiles import match_profile, suggest_key
 from scout.scoring import locality_hint
 
+# Facebook image types that are never the car: profile pictures, reel/video
+# thumbnails, Instagram-sourced feed images, ad creatives (2026-09-28).
+FB_JUNK_PHOTO_RE = re.compile(r"/v/t(?:39\.30808-1|15\.5256-10|51\.82787-15|45\.1600-4)/")
+
+
+def clean_photos(urls: list[str] | None) -> list[str]:
+    return [u for u in (urls or []) if not FB_JUNK_PHOTO_RE.search(u or "")]
+
+
+def clean_all_photos() -> int:
+    """Drop junk images already stored on listings. Returns listings changed."""
+    n = 0
+    for r in db.list_listings():
+        photos = r.get("photos") or []
+        kept = clean_photos(photos)
+        if len(kept) != len(photos):
+            updates: dict[str, Any] = {"photos": kept}
+            if r.get("thumb") and FB_JUNK_PHOTO_RE.search(r["thumb"]):
+                updates["thumb"] = kept[0] if kept else None
+            db.update_listing(r["id"], updates)
+            n += 1
+    return n
+
+
 MIN_CARD_TEXT = 600        # below this we only ever saw the saved-list card
 MIN_GOOD_TEXT = 1500       # a real detail page
 MIN_GOOD_PHOTOS = 4        # a real gallery
@@ -195,7 +219,10 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
         if blocked:
             detail = {k: v for k, v in detail.items() if k not in {"text", "status_text", "photos"}}
             detail["blocked"] = True
-        page_text = ("" if blocked else (detail.get("text") or ""))[:120_000]
+        # A re-read that landed somewhere other than the listing (a group feed, a
+        # redirect) reads that page, not the car: keep what the listing had.
+        off_page = bool(existing) and detail.get("is_detail_page") is False
+        page_text = ("" if blocked or off_page else (detail.get("text") or ""))[:120_000]
         card_text = item.get("card_text") or ""
         old_text = (existing or {}).get("raw_text") or ""
         # No page read this time: the short saved-list card must not replace a full page read.
@@ -220,7 +247,7 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
             # Merge: a sync that reads less (no detail page) keeps what earlier reads and checks stored.
             "raw": {**{k: v for k, v in ((existing or {}).get("raw") or {}).items() if k != "blocked"},
                     **{k: v for k, v in detail.items() if k not in {"text", "photos"}}},
-            "photos": (detail.get("photos") or (existing or {}).get("photos") or [])[:40],
+            "photos": clean_photos(((existing or {}).get("photos") if off_page else None) or detail.get("photos") or (existing or {}).get("photos") or [])[:40],
         }
         card_price = parse_price(item.get("price_text"))
         # A live card's price is always current (the bid moved, the asking price

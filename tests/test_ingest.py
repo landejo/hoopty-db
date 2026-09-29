@@ -51,8 +51,9 @@ def test_skip_sold_toggle():
 
 
 def test_resync_records_price_change_and_marks_removed():
+    # First sync: both are in the saved list.
     ingest_items("carscom", [_item("https://www.cars.com/vehicledetail/a/", price="$20,000"),
-                             _item("https://www.cars.com/vehicledetail/b/", price="$21,000")], run_ai=False)
+                             _item("https://www.cars.com/vehicledetail/b/", price="$21,000")], run_ai=False, full_sync=True)
     ingest_items("carscom", [_item("https://www.cars.com/vehicledetail/a/", price="$19,000")], run_ai=False, full_sync=True)
     a = db.get_listing_by_url("https://www.cars.com/vehicledetail/a/")
     b = db.get_listing_by_url("https://www.cars.com/vehicledetail/b/")
@@ -91,8 +92,8 @@ def test_single_add_never_marks_others_removed():
 
 
 def test_vanished_listing_takes_result_from_its_page_or_waits_for_two_misses():
-    ingest_items("bat", [_item("https://bringatrailer.com/listing/x/", price="$30,000")], run_ai=False, full_sync=True)
-    ingest_items("bat", [_item("https://bringatrailer.com/listing/y/", price="$10,000")], run_ai=False)
+    ingest_items("bat", [_item("https://bringatrailer.com/listing/x/", price="$30,000"),
+                         _item("https://bringatrailer.com/listing/y/", price="$10,000")], run_ai=False, full_sync=True)
     # Sync: x is gone from the watchlist but its page says Sold for; y's page shows nothing useful.
     sold = _item("https://bringatrailer.com/listing/x/", price="")
     sold["_vanished"] = True
@@ -303,3 +304,38 @@ def test_capture_quality_is_recorded(monkeypatch):
     assert "capture incomplete" in db.get_listing_by_url(thin)["normalized"]["quick_gates"]
     from scout.ai.assess import _capture_warning
     assert "CAPTURE WARNING" in _capture_warning(db.get_listing_by_url(thin))
+
+
+def test_a_listing_added_by_hand_is_never_removed_for_missing_from_a_saved_list():
+    """#276, a Facebook group post, was marked removed by two Marketplace syncs (2026-09-28)."""
+    post = "https://www.facebook.com/groups/1/permalink/2/"
+    ingest_items("facebook", [_item(post, price="$10,000")], run_ai=False)      # "Add this listing"
+    for _ in range(3):
+        ingest_items("facebook", [{"url": "https://www.facebook.com/marketplace/item/9/", "_touch": True}], run_ai=False, full_sync=True)
+    assert db.get_listing_by_url(post)["availability"] == "active"
+
+
+def test_a_reread_that_lands_off_the_listing_keeps_its_photos_and_text():
+    """The vanished re-check of #276 read the group feed: 19 photos of ads and avatars replaced the car's."""
+    post = "https://www.facebook.com/groups/1/permalink/3/"
+    good = ["https://scontent.x/v/t39.30808-6/car%d.jpg" % i for i in range(5)]
+    ingest_items("facebook", [{**_item(post, price="$10,000", text="2000 BMW Z3 M Roadster 93k miles " * 40),
+                               "detail": {"text": "2000 BMW Z3 M Roadster 93k miles " * 40, "photos": good}}], run_ai=False)
+    junk = {"text": "Home feed " * 200, "photos": ["https://scontent.x/v/t45.1600-4/ad.jpg"], "is_detail_page": False}
+    ingest_items("facebook", [{"url": post, "_vanished": True, "detail": junk}], run_ai=False)
+    row = db.get_listing_by_url(post)
+    assert row["photos"] == good and "Z3 M Roadster" in row["raw_text"]
+
+
+def test_facebook_junk_images_are_never_stored():
+    from scout.ingest import clean_all_photos
+    car = "https://scontent.x/v/t39.84726-6/car.jpg"
+    junk = ["https://scontent.x/v/t39.30808-1/avatar.jpg", "https://scontent.x/v/t15.5256-10/reel.jpg",
+            "https://scontent.x/v/t51.82787-15/ig.jpg", "https://scontent.x/v/t45.1600-4/ad.jpg"]
+    url = "https://www.facebook.com/marketplace/item/42/"
+    ingest_items("facebook", [{**_item(url), "detail": {"text": "2001 BMW Z3 " * 60, "photos": junk + [car]}}], run_ai=False)
+    assert db.get_listing_by_url(url)["photos"] == [car]
+    db.update_listing(db.get_listing_by_url(url)["id"], {"photos": junk + [car], "thumb": junk[0]})   # stored before the fix
+    assert clean_all_photos() == 1
+    row = db.get_listing_by_url(url)
+    assert row["photos"] == [car] and row["thumb"] == car

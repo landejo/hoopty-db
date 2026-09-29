@@ -712,7 +712,7 @@
         <div class="row">${siteChip(l.site)}${availChip(l.availability)}${l.role === "comp" ? `<span class="chip dark">market comp</span>` : ""}<span class="chip" title="mission">${esc(missionLabel(l.mission))}</span>${siblings.map((o) => `<a href="#/l/${o.id}" class="chip teal" title="same VIN, other venue">also on ${esc(siteName(o.site))} · ${money(o.sold_price || o.price)}</a>`).join("")}${safeUrl(l.url) ? `<a class="btn sm" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">Open listing ↗</a>` : l.url ? `<span class="btn sm ghost" title="not a valid http(s) URL">${esc(l.url)}</span>` : ""}</div>
       </div>
       <div class="headline">
-        <div><h1>${esc(title(l))}</h1><div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>
+        <div><h1>${esc(title(l))}</h1>${l.vin ? `<div class="vin-line"><span class="muted small">VIN</span> <span class="mono vin">${esc(l.vin)}</span> <button class="btn sm ghost" id="copy-vin" title="Copy the VIN">Copy</button> <span class="muted small">local only, never published</span></div>` : ""}<div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>
         <div class="row" style="gap:18px">
           <div><div class="price">${money(l.sold_price || l.price)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
           ${S ? `<div class="dial" style="--pct:${S.total}"><span>${S.total}</span><small>/100</small></div>`
@@ -723,6 +723,8 @@
       </div>
       ${(S || N.prelim_breakdown) ? `<div class="catstrip">${CATS.map(([k, label, max]) => { const pts = S ? S[k] : (N.prelim_breakdown[k] || {}).points; const why = S ? (E.ratings?.[k]?.rationale || "") : (N.prelim_breakdown[k] || {}).why || ""; return `<span class="cat" title="${esc(why)}"><b>${label.split(" ")[0].replace("&", "")}</b> <span class="mono">${pts ?? "—"}/${max}</span><i style="width:${Math.round(((pts || 0) / max) * 100)}%"></i></span>`; }).join("")}${S?.caps_applied?.length ? `<span class="muted small">caps: ${S.caps_applied.length}</span>` : ""}</div>` : ""}</div>`));
 
+    const vinBtn = $("#copy-vin", app);
+    if (vinBtn) vinBtn.onclick = () => { navigator.clipboard?.writeText(l.vin).then(() => toast("VIN copied")).catch(() => toast(l.vin, 6000)); };
     const main = h(`<div></div>`), side = h(`<div></div>`);
     const grid = h(`<div class="detail"></div>`); grid.append(main, side); app.appendChild(grid);
 

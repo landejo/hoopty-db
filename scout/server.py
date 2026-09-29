@@ -169,6 +169,10 @@ def _startup() -> None:
         import threading
 
         def _rescore_stale() -> None:
+            from scout.ingest import clean_all_photos
+            cleaned = clean_all_photos()
+            if cleaned:
+                db.log_event("photos_cleaned", None, f"removed profile/reel/ad images from {cleaned} listing(s)")
             # Cars over the curiosity line (or back under it) take their role first.
             from scout.curiosity import sync_all
             moved = sync_all()
@@ -263,7 +267,14 @@ async def ingest(payload: IngestPayload) -> dict[str, Any]:
 
 @app.get("/api/export")
 def export() -> JSONResponse:
-    return JSONResponse(build_export())
+    """The local workbench's data: the published export plus each listing's VIN,
+    which is local-only (Publish strips VINs and refuses to push one)."""
+    data = build_export()
+    vins = {r["id"]: r["vin"] for r in db.list_listings() if r.get("vin")}
+    for l in data["listings"]:
+        if l["id"] in vins:
+            l["vin"] = vins[l["id"]]
+    return JSONResponse(data)
 
 
 @app.get("/api/listings/by-url")
