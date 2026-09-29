@@ -442,6 +442,8 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
 @app.post("/api/assess-all")
 async def assess_all(tier: str = "quick", only_unassessed: bool = True) -> dict[str, Any]:
     """Assess every active candidate (quick tier by default). Serial, so it can take a while."""
+    if tier not in {"full", "quick"}:
+        raise HTTPException(400, "tier must be full or quick")
     rows = [r for r in db.list_listings(role="candidate") if r["availability"] in ("active", "pending") and r.get("profile_key")]
     shared = db.latest_assessments_by_vehicle()
     if only_unassessed:
@@ -458,7 +460,7 @@ async def assess_all(tier: str = "quick", only_unassessed: bool = True) -> dict[
         deduped.append(r)
     rows = deduped
     done, errors = 0, []
-    tok = _task_start(f"Quick-assessing {len(rows)} listing(s) · {CONFIG.model_mid if tier == 'quick' else CONFIG.model_deep}", len(rows))
+    tok = _task_start(f"{'Quick' if tier == 'quick' else 'Full'}-assessing {len(rows)} listing(s) · {CONFIG.model_mid if tier == 'quick' else CONFIG.model_deep}", len(rows))
     for i, r in enumerate(rows):
         _task_step(r.get("title") or r["url"], i)
         try:

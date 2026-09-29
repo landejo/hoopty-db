@@ -265,3 +265,41 @@ background, cooldown suppressed re-reads on a second sync.
   service worker still has no explicit keepalive (unneeded now that ingest
   returns in milliseconds, but worth one if any long await returns to the
   sync path).
+
+## 2026-09-28 — Facebook saved-list collector missed most saves
+
+**Cause:** Facebook's Marketplace › Saved grid keeps only ~26 cards mounted and unmounts
+the rest as you scroll. `collectSaved` scrolled to the bottom and then read the page, so it
+only ever saw the oldest ~32 of 76 saves. Result: 22 saved cars never added (incl. the
+newest), and 17 still-saved cars marked `removed` by the two-miss rule.
+
+**Fix:** `S.collectScrolling` (extension/common.js) steps down the page and collects at every
+step; the Facebook adapter uses it. Extension 0.4.4. A re-sync restores the wrongly removed
+cars (their pages read active) and adds the missing ones.
+
+**Test:** `e2e/e2e_saved_list.js` (suite `saved`, in the default run): real adapter code on a
+virtualized, paged grid. Old code: 15/76, newest missing. New: 76/76.
+
+### System State Summary
+- Modified: extension/common.js, extension/adapters/facebook.js, extension/manifest.json,
+  e2e/run.sh, e2e/e2e_saved_list.js (new), PROJECT_LOG.md.
+- Open: other adapters still use `autoScroll` then collect once; the same failure would hit
+  any site that virtualizes its saved list (not observed yet).
+
+## 2026-09-28 — Collapsible filter rail; override-aware next step; Full-assess button
+
+- Board: the Filters rail collapses to a 44px tab (‹ / ›); the cards take the width
+  (3 → 4 columns at 1440px). Remembered in localStorage (`scout.railOpen`); phones unchanged.
+- Bug: a car you overrode (e.g. #285 set to Reject) still counted in the "Contact now" tile,
+  the Next-step filter and the table's Next column, while its card hid the chip.
+  `nextStepOf` now returns nothing when `verdict_override` is set.
+- Policy page: "Full-assess unassessed active candidates" (Opus 5.5 medium) beside Quick;
+  `/api/assess-all` validates the tier and its task label says Full or Quick correctly.
+- E2E: `e2e_ux.js` waits for the listing that was opened to render (`openDetail`) instead of
+  any heading/pager (flaky once the export grew); new rail-collapse checks. ux 40/40.
+
+### System State Summary
+- Modified: docs/app.js, docs/styles.css, scout/server.py, e2e/e2e_ux.js, PROJECT_LOG.md.
+- Open: every listing navigation reloads /api/export (now 6.3 MB, ~0.9 s) — opening a
+  listing feels slower as the board grows. Server label fix needs a restart after the
+  running Full assessment finishes.

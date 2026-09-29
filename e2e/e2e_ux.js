@@ -12,6 +12,12 @@ const api = async (page, p, method = "GET", body) => {
   const r = await page.request.fetch(BASE + p, { method, data: body, headers: { Origin: BASE } });
   return r.json();
 };
+// Open a listing page and wait until THAT listing has rendered (its Open listing link points at it):
+// the previous page's heading or pager is still in the DOM while the board data reloads.
+const openDetail = async (page, l) => {
+  await page.evaluate((id) => { location.hash = "#/l/" + id; }, l.id);
+  await page.waitForFunction((u) => { const a = document.querySelector("a.btn[target=_blank]"); return a && a.href === new URL(u).href; }, l.url, { timeout: 15000, polling: 100 });
+};
 
 (async () => {
   const browser = await chromium.launch({ channel: "chromium", headless: true });
@@ -89,6 +95,21 @@ const api = async (page, p, method = "GET", body) => {
   const rc = await railCheck(page);
   check("rail toggles: no overlap, no clipped labels", rc.n >= 9 && !rc.clipped.length && !rc.overlaps.length, JSON.stringify(rc));
 
+  // Collapsing the filter rail gives the cards another column, and it stays collapsed on reload.
+  const cols = () => page.$eval(".grid", (g) => getComputedStyle(g).gridTemplateColumns.split(" ").length);
+  const colsOpen = await cols();
+  await page.click(".rail > summary");
+  await page.waitForTimeout(300);
+  const colsShut = await cols();
+  const railW = await page.$eval(".rail", (r) => r.getBoundingClientRect().width);
+  check("collapsing the filters adds a column of cars", colsShut === colsOpen + 1 && railW < 60, `${colsOpen} → ${colsShut} columns; rail ${Math.round(railW)}px`);
+  await page.reload();
+  await page.waitForSelector(".card");
+  check("the filters stay collapsed after a reload", !(await page.$eval(".rail", (r) => r.open)) && (await cols()) === colsShut);
+  await page.click(".rail > summary");
+  await page.waitForTimeout(300);
+  check("reopening brings the filters back", (await page.$eval(".rail", (r) => r.open)) && (await cols()) === colsOpen);
+
   // Limits hide cars; the note names the limit and "Show them" brings them back.
   const before = await page.$$eval(".card", (cs) => cs.length);
   await page.fill("#f-max-price", "15000");
@@ -144,9 +165,7 @@ const api = async (page, p, method = "GET", body) => {
   const exV = await api(page, "/api/export");
   const withVin = exV.listings.find((l) => l.vin && l.role === "candidate");
   if (withVin) {
-    await page.evaluate((id) => { location.hash = "#/l/" + id; }, withVin.id);
-    await page.waitForFunction((id) => location.hash === `#/l/${id}` && document.querySelector("h1"), withVin.id, { polling: 250 });
-    await page.waitForTimeout(600);
+    await openDetail(page, withVin);
     const vinText = await page.$eval(".vin-line .vin", (e) => e.textContent).catch(() => "");
     const top = await page.$eval(".vin-line", (e) => e.getBoundingClientRect().top).catch(() => 9999);
     check("VIN shown near the top of the listing page", vinText === withVin.vin && top < 300, `#${withVin.id} ${vinText} at y=${Math.round(top)}`);
@@ -157,9 +176,7 @@ const api = async (page, p, method = "GET", body) => {
   // Re-normalize from the UI keeps an ended auction ended (bug 1).
   const ex = await api(page, "/api/export");
   const ended = ex.listings.find((l) => l.availability === "ended" && l.role === "comp");
-  await page.goto(BASE + `/#/l/${ended.id}`);
-  await page.waitForFunction((id) => location.hash === `#/l/${id}` && document.querySelector(".pager"), ended.id, { polling: 250 });
-  await page.waitForTimeout(600);   // hash navigation re-renders after a data reload
+  await openDetail(page, ended);
   await page.waitForSelector("#renorm");
   await page.click("#renorm");
   await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /Re-normalized|failed|error/i.test(t.textContent)), null, { timeout: 60000, polling: 500 });
@@ -168,9 +185,7 @@ const api = async (page, p, method = "GET", body) => {
 
   // Role set by hand survives the ingest path a sync uses (bug 5).
   const cand = ex.listings.find((l) => l.role === "candidate" && l.availability === "active" && l.site === "cargurus");
-  await page.goto(BASE + `/#/l/${cand.id}`);
-  await page.waitForFunction((id) => location.hash === `#/l/${id}` && document.querySelector(".pager"), cand.id, { polling: 250 });
-  await page.waitForTimeout(600);   // hash navigation re-renders after a data reload
+  await openDetail(page, cand);
   await page.waitForSelector("#role");
   await page.selectOption("#role", "comp");
   await page.waitForTimeout(800);
@@ -186,9 +201,7 @@ const api = async (page, p, method = "GET", body) => {
   const victim = ex2.listings.find((l) => l.role === "candidate" && l.availability === "active" && l.assessment && !l.verdict_override && l.id !== cand.id);
   await page.goto(BASE + "/");
   await page.waitForSelector(`.card[data-id="${victim.id}"]`);
-  await page.evaluate((id) => { location.hash = "#/l/" + id; }, victim.id);
-  await page.waitForFunction((id) => location.hash === `#/l/${id}` && document.querySelector("#mark-gone"), victim.id, { polling: 250 });
-  await page.waitForTimeout(600);
+  await openDetail(page, victim);
   await page.click("#mark-gone");
   await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /Marked sold/.test(t.textContent)), null, { timeout: 15000, polling: 250 });
   const v2 = await api(page, `/api/listings/${victim.id}`);

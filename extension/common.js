@@ -141,6 +141,27 @@
     return Array.from(items.values());
   };
 
+  // Saved lists that unmount rows scrolled out of view (Facebook): collect at
+  // every step down the page, not once at the end, or the top of the list is lost.
+  S.collectScrolling = async function (collect, maxSteps = 200, stepMs = 700, bottomMs = 2000) {
+    const items = new Map();
+    const merge = () => { for (const it of collect()) { const had = items.get(it.url); if (!had || had.card_text.length < it.card_text.length) items.set(it.url, it); } };
+    window.scrollTo(0, 0);
+    await S.sleep(stepMs);
+    let stuck = 0;
+    for (let i = 0; i < maxSteps && stuck < 3; i++) {
+      merge();
+      const atBottom = window.scrollY + window.innerHeight >= document.body.scrollHeight - 50;
+      const h = document.body.scrollHeight;
+      window.scrollBy(0, Math.round(window.innerHeight * 0.7));
+      await S.sleep(atBottom ? bottomMs : stepMs);
+      stuck = atBottom && document.body.scrollHeight === h ? stuck + 1 : 0;   // at the end and nothing more loaded
+    }
+    merge();
+    window.scrollTo(0, 0);
+    return Array.from(items.values());
+  };
+
   // Bot walls (Cloudflare "Just a moment", "Verify you are human", PerimeterX, etc.).
   S.CHALLENGE_RE = /just a moment|verify you are human|verifying you are human|checking your browser|security verification|press and hold|access denied|cf-chl|attention required|enable javascript and cookies to continue/i;
   S.isChallenge = function () {

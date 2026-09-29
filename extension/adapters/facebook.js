@@ -65,8 +65,8 @@
     isSavedPage: () => /\/marketplace\/you\/saved|\/saved\/?(\?|$)|\/marketplace\/saved/i.test(location.href),
     isDetailPage: () => ITEM.test(location.href) || GROUP_POST.test(location.href),
     async collectSaved() {
-      await S.autoScroll(30, 1500);
-      const items = S.collectByPattern("facebook", ITEM, (h) => (h.match(ITEM) || [])[1]);
+      // The saved grid unmounts cards scrolled out of view: collect while scrolling.
+      const items = await S.collectScrolling(() => S.collectByPattern("facebook", ITEM, (h) => (h.match(ITEM) || [])[1]));
       for (const it of items) { it.url = `https://www.facebook.com/marketplace/item/${it.site_id}/`; it.pending = /^\s*pending\b/im.test(it.card_text) || /\bpending\b/i.test(it.card_text.split("\n")[0] || ""); }
       return items;
     },

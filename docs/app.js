@@ -166,7 +166,8 @@
   function verdictOf(l) { return l.verdict_override || l.assessment?.verdict || null; }
   function computedVerdictOf(l) { return l.assessment?.verdict || null; }
   const NEXT_TONE = { "Contact now": "olive", "Watch": "mustard", "Skip": "rose", "Follow up": "teal" };
-  function nextStepOf(l) { return l.assessment?.next_step || null; }
+  // Your own verdict wins: an overridden car has no computed next step anywhere (card, tile, filter, table).
+  function nextStepOf(l) { return l.verdict_override ? null : l.assessment?.next_step || null; }
   function nextChip(l) { const n = nextStepOf(l); return n ? `<span class="chip ${NEXT_TONE[n.action] || ""} next" title="${esc(n.reason)}">${esc(n.action)}</span>` : ""; }
   // Walk-away (policy 1.8.0): the lower of the mission budget and what this car is worth.
   function walkaway(l) {
@@ -364,8 +365,8 @@
     const sites = Object.entries(state.data.sites);
     const nLimits = [f.max_price, f.max_mileage, f.max_age].filter(Boolean).length;
     const body = h(`<div class="board-body">
-      <details class="rail" ${matchMedia("(max-width: 900px)").matches ? "" : "open"}>
-        <summary>Filters</summary>
+      <details class="rail" ${matchMedia("(max-width: 900px)").matches || !load("railOpen", true) ? "" : "open"}>
+        <summary title="Show or hide the filters"><span class="rail-title">Filters</span><span class="rail-toggle" aria-hidden="true"></span></summary>
         <div class="rail-sec"><h4>Show</h4>
           <span class="seg wide" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="curiosity" class="${f.role === "curiosity" ? "on" : ""}" title="Followed out of interest, not a serious candidate (over your curiosity line, or set by hand)">Curious</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span></div>
         <div class="rail-sec"><h4>Model <span class="muted small">⌥-click: only this</span></h4><span class="chips stack" id="f-profiles"></span></div>
@@ -396,6 +397,10 @@
         <div id="list"></div>
       </section></div>`);
     app.appendChild(body);
+    // Collapsing the rail gives the cards its width (usually one more column); remembered on desktop.
+    const rail = $(".rail", body), phone = matchMedia("(max-width: 900px)").matches;
+    body.classList.toggle("rail-collapsed", !rail.open && !phone);
+    rail.addEventListener("toggle", () => { if (phone) return; body.classList.toggle("rail-collapsed", !rail.open); save("railOpen", rail.open); });
     const bar = body;
     const bindChips = () => {
       const box = $("#f-profiles", bar);
@@ -998,14 +1003,16 @@
     if (!state.local) return app.appendChild(h(`<div class="empty"><h2>Local only</h2><p>Edit policy state on the local workbench. Published policy version: ${esc(state.data.policy_version || "—")}</p></div>`));
     let cfg;
     try { cfg = await api("/api/settings"); } catch (e) { return app.appendChild(h(`<div class="empty"><h2>${esc(e.message)}</h2></div>`)); }
-    const tools = h(`<div class="panel"><h3>Scores</h3><div class="row"><button class="btn sm warm" id="assess-all">Quick-assess unassessed active candidates (${esc(tierLabel("quick"))} each)</button><button class="btn sm warm" id="assess-all-redo">Re-assess ALL active candidates (${esc(tierLabel("quick"))} each)</button></div><div class="row" style="margin-top:8px"><button class="btn sm" id="rescore">Recompute preliminary scores (free)</button><button class="btn sm warm" id="renorm-missing">Re-normalize listings missing ratings (${esc((state.health?.models?.fast || "fast model").replace("claude-", "").replace(/-\d.*$/, ""))}, ~1–2¢ each)</button><button class="btn sm ghost" id="renorm-all">Re-normalize everything</button><span class="muted small" id="tool-status"></span></div><p class="muted small" style="margin:8px 0 0">Preliminary scores use the guide's 100-point rubric: documentation 25, condition 25, price/value 15, mission fit 15, logistics 10, spec 10. Price, budget, transmission and location are computed; documentation, condition and spec come from the fast model's read of the listing.</p></div>`);
+    const tools = h(`<div class="panel"><h3>Scores</h3><div class="row"><button class="btn sm warm" id="assess-all">Quick-assess unassessed active candidates (${esc(tierLabel("quick"))} each)</button><button class="btn sm warm" id="assess-all-full">Full-assess unassessed active candidates (${esc(tierLabel("full"))} each)</button><button class="btn sm warm" id="assess-all-redo">Re-assess ALL active candidates (${esc(tierLabel("quick"))} each)</button></div><div class="row" style="margin-top:8px"><button class="btn sm" id="rescore">Recompute preliminary scores (free)</button><button class="btn sm warm" id="renorm-missing">Re-normalize listings missing ratings (${esc((state.health?.models?.fast || "fast model").replace("claude-", "").replace(/-\d.*$/, ""))}, ~1–2¢ each)</button><button class="btn sm ghost" id="renorm-all">Re-normalize everything</button><span class="muted small" id="tool-status"></span></div><p class="muted small" style="margin:8px 0 0">Preliminary scores use the guide's 100-point rubric: documentation 25, condition 25, price/value 15, mission fit 15, logistics 10, spec 10. Price, budget, transmission and location are computed; documentation, condition and spec come from the fast model's read of the listing.</p></div>`);
     app.appendChild(tools);
     const run = async (path, label, q = "") => { $("#tool-status", tools).textContent = label + "…"; setTimeout(watchTask, 300); try { const r = await api(path + q, "POST"); $("#tool-status", tools).textContent = JSON.stringify(r).slice(0, 200); await loadData(); } catch (e) { $("#tool-status", tools).textContent = e.message; } pollTask(); };
     $("#rescore", tools).onclick = () => run("/api/rescore", "Rescoring");
     const ho = h(`<div class="panel"><h3>Handoff bundle</h3><div class="row"><button class="btn sm" id="handoff">Write handoff for the top <input type="number" class="num" id="handoff-n" value="10" min="3" max="40" style="width:70px"> candidates</button><span class="muted small" id="handoff-status"></span></div><p class="muted small" style="margin:8px 0 0">Writes a versioned Markdown + JSON bundle to data/handoffs/: methodology, policy state, profiles, every fact and cost figure per car, price history, comps, photo links and the captured listing text, plus the guide as an appendix. For a second opinion from another analyst.</p></div>`);
     tools.after(ho);
     $("#handoff", ho).onclick = async () => { $("#handoff-status", ho).textContent = "Writing…"; try { const r = await api(`/api/handoff?n=${$("#handoff-n", ho).value || 10}`, "POST"); $("#handoff-status", ho).textContent = r.markdown; } catch (e) { $("#handoff-status", ho).textContent = e.message; } };
-    $("#assess-all", tools).onclick = () => { const n = state.data.listings.filter((l) => l.role === "candidate" && (l.availability === "active" || l.availability === "pending") && l.profile_key && !l.assessment).length; if (!n) return toast("Nothing unassessed"); if (confirm(`Quick-assess ${n} listing(s) on ${tierLabel("quick").split(" · ")[0]}, roughly $${(n * (tierCost("quick") ?? 0.2)).toFixed(2)}? This runs one at a time and can take ${Math.ceil(n * 1)} minutes.`)) run("/api/assess-all", `Quick-assessing ${n} listing(s)`, "?tier=quick"); };
+    const assessUnassessed = (tier, verb) => { const n = state.data.listings.filter((l) => l.role === "candidate" && (l.availability === "active" || l.availability === "pending") && l.profile_key && !l.assessment).length; if (!n) return toast("Nothing unassessed"); if (confirm(`${verb}-assess ${n} listing(s) on ${tierLabel(tier).split(" · ")[0]}, roughly $${(n * (tierCost(tier) ?? 0.25)).toFixed(2)}? This runs one at a time and can take ${Math.ceil(n * 1)} minutes.`)) run("/api/assess-all", `${verb}-assessing ${n} listing(s)`, `?tier=${tier}`); };
+    $("#assess-all", tools).onclick = () => assessUnassessed("quick", "Quick");
+    $("#assess-all-full", tools).onclick = () => assessUnassessed("full", "Full");
     $("#assess-all-redo", tools).onclick = () => { const n = state.data.listings.filter((l) => l.role === "candidate" && (l.availability === "active" || l.availability === "pending") && l.profile_key).length; if (!n) return toast("No active candidates"); if (confirm(`Re-assess all ${n} active candidate(s) on ${tierLabel("quick").split(" · ")[0]}, roughly $${(n * (tierCost("quick") ?? 0.2)).toFixed(2)}, including the ones already assessed? About ${Math.ceil(n * 1)} minutes.`)) run("/api/assess-all", `Re-assessing ${n} listing(s)`, "?tier=quick&only_unassessed=false"); };
     $("#renorm-missing", tools).onclick = () => run("/api/renormalize-all", "Re-normalizing (this can take a few minutes)");
     $("#renorm-all", tools).onclick = () => { if (confirm("Re-run the fast model on every listing?")) run("/api/renormalize-all", "Re-normalizing everything", "?only_missing_ratings=false"); };
