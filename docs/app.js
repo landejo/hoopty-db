@@ -34,6 +34,7 @@
     let r;
     if (state.local) {
       r = await fetch("/api/export", { cache: "no-store" });
+      state.dataVersion = r.headers.get("X-Data-Version");
     } else {
       r = await fetch("data/index.json?ts=" + Date.now(), { cache: "no-store" });
       if (!r.ok) r = await fetch("data/scout.json?ts=" + Date.now(), { cache: "no-store" }); // pre-switchover fallback
@@ -255,7 +256,13 @@
       }
     } else if (!wasBoard) window.scrollTo(0, 0);
   }
-  window.addEventListener("hashchange", () => (state.local ? loadData().then(route) : route()));
+  // Moving between pages reloads the board data only if the database changed since the last load
+  // (a sync, a background assessment, an edit elsewhere): the export is several MB.
+  async function dataChanged() {
+    try { const r = await fetch("/api/data-version", { cache: "no-store" }); return String((await r.json()).version) !== state.dataVersion; }
+    catch (e) { return true; }
+  }
+  window.addEventListener("hashchange", async () => { if (state.local && await dataChanged()) await loadData(); route(); });
   // ← / → step through the board's current order on a listing page.
   window.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;

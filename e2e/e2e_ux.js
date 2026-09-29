@@ -161,6 +161,28 @@ const openDetail = async (page, l) => {
   await page.keyboard.press("ArrowLeft");
   await page.waitForTimeout(400);
   check("arrow keys inside a text box do not navigate", page.url().endsWith(`#/l/${order[3]}`));
+
+  // Page load: stepping between listings must not re-download the multi-MB board export
+  // when nothing changed, and a change made elsewhere (a sync, another tab) must still show.
+  const exN = await api(page, "/api/export");
+  const byId = (id) => exN.listings.find((l) => String(l.id) === id);
+  await page.evaluate(() => document.activeElement.blur());   // leaving the notes box may save it
+  await page.waitForTimeout(800);
+  await openDetail(page, byId(order[4]));   // absorbs that save's reload
+  const exportsBefore = exports;
+  const stepTimes = [];
+  for (const id of [order[5], order[6], order[7]]) {
+    const t0 = Date.now();
+    await openDetail(page, byId(id));
+    stepTimes.push(Date.now() - t0);
+  }
+  check("stepping between listings does not reload the board data", exports === exportsBefore, `${exports - exportsBefore} export fetches`);
+  check("a listing opens quickly", Math.max(...stepTimes) < 400, `${stepTimes.join(", ")} ms`);
+  const elsewhere = byId(order[8]);
+  await api(page, `/api/listings/${elsewhere.id}`, "PATCH", { notes: "changed elsewhere" });   // not through this page
+  await openDetail(page, elsewhere);
+  await page.waitForFunction(() => document.querySelector("#notes")?.value === "changed elsewhere", null, { timeout: 5000, polling: 100 }).catch(() => {});
+  check("a change made elsewhere still shows up", exports === exportsBefore + 1 && (await page.$eval("#notes", (e) => e.value)) === "changed elsewhere", `${exports - exportsBefore} export fetch`);
   // VIN near the top of the listing page, local workbench only.
   const exV = await api(page, "/api/export");
   const withVin = exV.listings.find((l) => l.vin && l.role === "candidate");

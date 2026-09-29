@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -219,6 +220,22 @@ def connect(path: Path | None = None) -> Iterator[sqlite3.Connection]:
         conn.commit()
     finally:
         conn.close()
+
+
+# One idle connection per database, used only to ask SQLite whether anything changed:
+# PRAGMA data_version moves whenever ANY other connection commits (this app's writes,
+# a background AI run, an external sqlite3 session). It never writes or holds a transaction.
+_version_conns: dict[str, sqlite3.Connection] = {}
+_version_lock = threading.Lock()
+
+
+def data_version(path: Path | None = None) -> int:
+    key = str(path or DB_PATH)
+    with _version_lock:
+        conn = _version_conns.get(key)
+        if conn is None:
+            conn = _version_conns[key] = sqlite3.connect(key, isolation_level=None, check_same_thread=False)
+        return conn.execute("PRAGMA data_version").fetchone()[0]
 
 
 _ADDITIVE_COLUMNS = {

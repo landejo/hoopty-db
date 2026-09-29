@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import time
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -265,16 +266,31 @@ async def ingest(payload: IngestPayload) -> dict[str, Any]:
     return {"ok": True, **stats, "ai_queue": ai_queue_depth()}
 
 
+# The export takes ~1 s to build and is several MB: build it once per database change.
+# EXPORT_MAX_AGE bounds anything in it that depends on the clock rather than the data.
+EXPORT_MAX_AGE = 600
+_export_cache: dict[str, Any] = {"version": None, "built": 0.0, "body": b""}
+
+
 @app.get("/api/export")
-def export() -> JSONResponse:
+def export() -> Response:
     """The local workbench's data: the published export plus each listing's VIN,
     which is local-only (Publish strips VINs and refuses to push one)."""
-    data = build_export()
-    vins = {r["id"]: r["vin"] for r in db.list_listings() if r.get("vin")}
-    for l in data["listings"]:
-        if l["id"] in vins:
-            l["vin"] = vins[l["id"]]
-    return JSONResponse(data)
+    version = (str(db.DB_PATH), db.data_version())   # read before building: a write during the build means a rebuild next time
+    if _export_cache["version"] != version or time.monotonic() - _export_cache["built"] > EXPORT_MAX_AGE:
+        data = build_export()
+        vins = {r["id"]: r["vin"] for r in db.list_listings() if r.get("vin")}
+        for l in data["listings"]:
+            if l["id"] in vins:
+                l["vin"] = vins[l["id"]]
+        _export_cache.update(version=version, built=time.monotonic(), body=JSONResponse(data).body)
+    return Response(_export_cache["body"], media_type="application/json", headers={"X-Data-Version": str(version[1])})
+
+
+@app.get("/api/data-version")
+def data_version() -> dict[str, Any]:
+    """Cheap check for the board: reload the export only when this has moved."""
+    return {"version": db.data_version()}
 
 
 @app.get("/api/listings/by-url")

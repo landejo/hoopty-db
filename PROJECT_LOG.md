@@ -303,3 +303,21 @@ virtualized, paged grid. Old code: 15/76, newest missing. New: 76/76.
 - Open: every listing navigation reloads /api/export (now 6.3 MB, ~0.9 s) — opening a
   listing feels slower as the board grows. Server label fix needs a restart after the
   running Full assessment finishes.
+
+## 2026-09-28 — Listing pages no longer reload the whole board
+
+Every hash navigation re-fetched /api/export (6.3 MB, ~0.8 s to build) to catch outside
+changes. Now: `db.data_version()` (SQLite `PRAGMA data_version` on one idle connection;
+moves on any other connection's commit), `GET /api/data-version`, the export cached per
+(DB path, version) with a 10-min cap, and the viewer reloads only when the version moved.
+Opening a listing: ~1 s → ~50 ms. A change made elsewhere still shows on the next click.
+
+Tests: tests/test_export_cache.py (2); e2e_ux adds three checks (0 export fetches while
+stepping; 46–56 ms per listing; outside change visible) — ux 43/43. Full default E2E run:
+all green except one reassess run where tier 2's browser request died with "Failed to
+fetch" after 4 cars; 4 reruns (alone and after ux/replay) passed 12/12. Cause not found.
+
+### System State Summary
+- Modified: scout/db.py, scout/server.py, docs/app.js, e2e/e2e_ux.js, tests/test_export_cache.py (new), PROJECT_LOG.md.
+- Needs: server restart to serve /api/data-version (the viewer falls back to reloading on every click until then).
+- Open: intermittent reassess E2E "Failed to fetch" (1 in 5 runs).
