@@ -53,10 +53,18 @@ On a listing page (not the saved list) the popup offers **Add this listing** for
   to" / reserve not met → ended. Pages with no clear signal go to the fast model,
   and its answer counts only if it quotes the page word for word. A page that
   did not load, a bot wall or a login page changes nothing. A sold/ended car
-  becomes a market comp (it feeds fair value from then on), its status becomes
-  **Sold** / **Ended** (never over **Purchased**), and policy 1.7.0 gates its
-  verdict to **Do not pursue**. Every stored assessment in an affected model is
+  becomes a market comp (it feeds fair value from then on) and policy 1.7.0
+  gates its System Assessment to **Do not pursue**; your call is left as it is. Every stored assessment in an affected model is
   then re-derived for free so offers and fair values use the new comp.
+- **System Assessment vs your call**: the System Assessment (verdict, score,
+  next step) is the system's opinion and is recomputed, never edited. **Your
+  call** is yours alone: New → Interested → Contacted → PPI Scheduled → Offer
+  Made → Purchased, or **Pass** with a reason. Once you make a call, it is the
+  card's chip and the system's next step stops counting for that car (tile,
+  filter, table). A Pass whose reason says the car is gone ("sold", "no longer
+  available") also moves it to the comps; **Mark sold / gone** does that
+  without changing your call. (Until 2026-09-29 this was a Status field plus a
+  "Your verdict" override; the migration list is `data/your-call-migration_v1.md`.)
 - **Re-assess tier N**: re-assesses on `SCOUT_MODEL_TOP` (Opus 5.5 by default)
   in tiers of 15, down the whole board in Pursue-next order (your filters are
   ignored). Each press takes the next 15 cars this cycle has not re-assessed yet;
@@ -186,7 +194,7 @@ Settings → Pages → *Deploy from a branch* → `gh-pages` / `/` (root). `main
 data — the site lives entirely on the `gh-pages` branch, which Publish rewrites from
 scratch on every run: one orphan commit (no parent, no accumulated history), force-pushed.
 The published JSON omits seller contact details, private-seller names, VINs, and the raw
-listing text, but everything else (your notes, statuses, scores) is public to anyone with
+listing text, but everything else (your notes, your calls and their reasons, scores) is public to anyone with
 the URL. The Pages copy is read-only; edits and analyses happen on the local server, then
 Publish. Data is split into `data/index.json` (everything the board/market/profile views
 need) and `data/l/<id>.json` (one file per listing, fetched on demand when you open its

@@ -66,22 +66,22 @@ def test_unloaded_or_blocked_page_changes_nothing():
 
 # ---------- apply ----------
 
-def test_sold_listing_becomes_a_comp_with_status_sold():
-    row = _add("https://www.facebook.com/marketplace/item/2/", status="Verify")
+def test_sold_listing_becomes_a_comp_and_your_call_is_left_alone():
+    row = _add("https://www.facebook.com/marketplace/item/2/", status="Interested")
     r = availability.apply(row["id"], {"text": "2001 BMW Z3\nSold\n$15,000"})
     assert r["changed"]
     after = db.get_listing(row["id"])
-    assert (after["availability"], after["role"], after["status"]) == ("sold", "comp", "Sold")
+    assert (after["availability"], after["role"], after["status"]) == ("sold", "comp", "Interested")
     assert after["raw"]["availability_check"]["sale_evidence"] == "explicit"
     from scout.market import is_sale
     assert is_sale(after)          # counts in fair value from now on
 
 
-def test_auction_result_price_and_ended_status():
+def test_auction_result_price_and_ended():
     row = _add("https://bringatrailer.com/listing/a/", site="bat", price="$20,000")
     availability.apply(row["id"], {"text": "Bid to USD $24,000 on 9/20/26"})
     after = db.get_listing(row["id"])
-    assert (after["availability"], after["status"], after["price"], after["price_kind"]) == ("ended", "Ended", 24000, "reserve_not_met")
+    assert (after["availability"], after["status"], after["price"], after["price_kind"]) == ("ended", "New", 24000, "reserve_not_met")
     row = _add("https://bringatrailer.com/listing/b/", site="bat", price="$20,000")
     availability.apply(row["id"], {"text": "Sold for USD $26,500 on 9/20/26"})
     assert db.get_listing(row["id"])["sold_price"] == 26500
@@ -167,7 +167,7 @@ def test_availability_endpoints_round_trip():
         fin = c.post("/api/availability/finish").json()
         assert "1 changed" in fin["summary"]
         assert c.get("/api/task").json()["active"] is False
-    assert db.get_listing(row["id"])["status"] == "Sold"
+    assert (db.get_listing(row["id"])["availability"], db.get_listing(row["id"])["status"]) == ("sold", "New")
 
 
 def test_reassess_requires_a_key_and_skips_non_candidates(monkeypatch):
@@ -426,26 +426,27 @@ def test_next_step_contact_watch_skip():
     assert compute_next_step({}, "docs", [], none, _costs18(20000, 21000), 55) is None
 
 
-def test_setting_status_sold_by_hand_takes_the_car_off_the_board():
+def test_mark_sold_by_hand_takes_the_car_off_the_board():
     from scout.server import app
-    row = _add("https://www.autotrader.com/cars-for-sale/vehicle/220", site="autotrader", profile_key="gx460")
+    row = _add("https://www.autotrader.com/cars-for-sale/vehicle/220", site="autotrader", profile_key="gx460", status="Contacted")
     with TestClient(app) as c:
-        r = c.patch(f"/api/listings/{row['id']}", json={"status": "Sold"}).json()
+        assert c.patch(f"/api/listings/{row['id']}", json={"status": "Sold"}).status_code == 400   # not a call of yours any more
+        r = c.post(f"/api/listings/{row['id']}/off-market", json={"availability": "sold"}).json()
     after = db.get_listing(row["id"])
-    assert (after["availability"], after["role"], after["role_user_set"]) == ("sold", "comp", 1)
+    assert (after["availability"], after["role"], after["role_user_set"], after["status"]) == ("sold", "comp", 1, "Contacted")
     assert r["role"] == "comp" and r["availability"] == "sold"
     # a later sync showing the card as live does not bring it back
     ingest_items("autotrader", [{"url": row["url"], "price_text": "$25,040", "card_text": "x"}], run_ai=False)
     assert db.get_listing(row["id"])["role"] == "comp"
 
 
-def test_your_verdict_that_it_is_gone_takes_it_off_the_board_but_too_expensive_does_not():
+def test_a_pass_because_it_is_gone_takes_it_off_the_board_but_too_expensive_does_not():
     from scout.server import app
     gone = _add("https://www.cargurus.com/details/4444", site="cargurus")
     pricey = _add("https://www.cargurus.com/details/5555", site="cargurus")
     with TestClient(app) as c:
-        c.patch(f"/api/listings/{gone['id']}", json={"verdict_override": "Do not pursue", "verdict_override_reason": "No longer available"})
-        c.patch(f"/api/listings/{pricey['id']}", json={"verdict_override": "Do not pursue", "verdict_override_reason": "too expensive for me"})
+        c.patch(f"/api/listings/{gone['id']}", json={"status": "Pass", "status_reason": "No longer available"})
+        c.patch(f"/api/listings/{pricey['id']}", json={"status": "Pass", "status_reason": "too expensive for me"})
     assert (db.get_listing(gone["id"])["availability"], db.get_listing(gone["id"])["role"]) == ("sold", "comp")
     assert (db.get_listing(pricey["id"])["availability"], db.get_listing(pricey["id"])["role"]) == ("active", "candidate")
 
@@ -453,7 +454,7 @@ def test_your_verdict_that_it_is_gone_takes_it_off_the_board_but_too_expensive_d
 def test_startup_reconciles_cars_you_already_said_are_gone(monkeypatch):
     from scout.server import app
     row = _add("https://www.autotrader.com/cars-for-sale/vehicle/9220", site="autotrader")
-    db.update_listing(row["id"], {"status": "Sold", "verdict_override": "Do not pursue", "verdict_override_reason": "no longer available"})
+    db.update_listing(row["id"], {"status": "Pass", "status_reason": "no longer available"})
     monkeypatch.setenv("SCOUT_STARTUP_RESCORE", "1")
     with TestClient(app):
         import time

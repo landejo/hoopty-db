@@ -321,3 +321,32 @@ fetch" after 4 cars; 4 reruns (alone and after ux/replay) passed 12/12. Cause no
 - Modified: scout/db.py, scout/server.py, docs/app.js, e2e/e2e_ux.js, tests/test_export_cache.py (new), PROJECT_LOG.md.
 - Needs: server restart to serve /api/data-version (the viewer falls back to reloading on every click until then).
 - Open: intermittent reassess E2E "Failed to fetch" (1 in 5 runs).
+
+## 2026-09-29 — Status + verdict override → "Your call"; "System Assessment"
+
+The system's opinion (verdict, score, next step) is the **System Assessment**, never edited.
+**Your call** (`status` + new `status_reason`) is yours: New, Interested, Contacted,
+PPI Scheduled, Offer Made, Purchased, Pass. Pass wins everywhere (card chip, Contact-now
+tile, Next-step filter, table, handoff); a Pass reason like "sold"/"gone" moves the car to
+the comps. "Mark sold / gone" is `POST /api/listings/{id}/off-market` and leaves your call
+alone; the availability check no longer writes status. Verify/Sold/Ended are gone.
+
+Migration (`db.migrate_your_call`, in init_db, idempotent): Pass or override Reject/Do not
+pursue → Pass (override reason kept); Pursue or override Pursue(/conditionally) → Interested;
+Verify/Sold/Ended and "Maybe / verify" overrides → New; override columns cleared.
+46 of 301 listings change — itemized in `data/your-call-migration_v1.md`; backup
+`data/backups/scout_pre-your-call_2026-09-29.db`. Runs on the live DB at the next server start.
+
+Tests: tests/test_your_call.py (mapping + migration on an old-schema DB); availability tests
+rewritten to the new model; e2e_ux +6 checks (one field, System Assessment label, Pass with
+reason, one chip, Pass-because-sold → comp). replay_real_pages judges what the replay did
+(#83 really sold since its page was captured; that failed on the old code too).
+Full E2E: startup 3/3, startup-board 2/2, ux 48/48, replay 12/12, reassess 12/12,
+published 12/12, popup 4/4, saved 4/4. Unit: 268 passed.
+
+### System State Summary
+- Modified: scout/config.py, scout/db.py, scout/availability.py, scout/server.py, scout/handoff.py,
+  scout/publish.py, docs/app.js, README.md, tests/test_availability.py, tests/test_publish_server.py,
+  tests/test_your_call.py (new), e2e/e2e_ux.js, e2e/replay_real_pages.py, PROJECT_LOG.md.
+- Needs: server restart (applies the migration to data/scout.db, serves the new endpoints).
+- Dead columns left in place on existing DBs: listings.verdict_override / verdict_override_reason (always NULL).

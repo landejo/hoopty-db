@@ -121,10 +121,10 @@ def test_server_roundtrip():
             {"url": "https://www.cars.com/vehicledetail/z/", "title": "2007 Lexus GX 470", "price_text": "$14,900", "detail": {"text": "t" * 300}}]})
         assert r.status_code == 200 and r.json()["created"] == 1
         lid = db.list_listings()[0]["id"]
-        r = c.patch(f"/api/listings/{lid}", json={"status": "Pursue", "notes": "call Tuesday", "profile_key": "gx470"})
+        r = c.patch(f"/api/listings/{lid}", json={"status": "Interested", "notes": "call Tuesday", "profile_key": "gx470"})
         assert r.status_code == 200
         row = c.get(f"/api/listings/{lid}").json()
-        assert row["status"] == "Pursue" and row["profile_key"] == "gx470" and row["history"]
+        assert row["status"] == "Interested" and row["profile_key"] == "gx470" and row["history"]
         assert c.patch(f"/api/listings/{lid}", json={"status": "Bogus"}).status_code == 400
         assert c.post("/api/ingest", json={"site": "ebay", "items": []}).status_code == 400
         # Analyze without an API key is a clean 400, never a paid call.

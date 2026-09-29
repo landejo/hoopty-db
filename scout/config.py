@@ -106,10 +106,10 @@ def estimate_cost(model: str, input_tokens: int = 0, output_tokens: int = 0,
 AVAILABILITY = ["active", "pending", "sold", "ended", "removed", "withdrawn", "unknown"]
 ROLES = ["candidate", "comp", "curiosity", "ignored"]
 
-STATUSES = [
-    "New", "Pursue", "Verify", "Contacted", "PPI Scheduled",
-    "Offer Made", "Pass", "Purchased", "Sold", "Ended",
-]
+# "Your call": where YOU are with a car. The system's opinion (verdict, next step) is the
+# System Assessment and is never stored here. Pass, with a reason, is your "no" and wins
+# over the System Assessment everywhere; a reason like "sold" also moves it to the comps.
+STATUSES = ["New", "Interested", "Contacted", "PPI Scheduled", "Offer Made", "Purchased", "Pass"]
 
 # Fixed score-axis vocabulary. Every profile assigns weights over a subset of
 # these; AI-generated profiles must pick from this list (coerce drops others).

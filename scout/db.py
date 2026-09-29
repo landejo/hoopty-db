@@ -241,7 +241,7 @@ def data_version(path: Path | None = None) -> int:
 _ADDITIVE_COLUMNS = {
     "ai_calls": [("effort", "TEXT")],
     "listings": [("mission", "TEXT"), ("vehicle_id", "INTEGER"), ("provenance_json", "TEXT"), ("mission_user_set", "INTEGER DEFAULT 0"),
-                 ("verdict_override", "TEXT"), ("verdict_override_reason", "TEXT"), ("unseen_syncs", "INTEGER DEFAULT 0"),
+                 ("status_reason", "TEXT"), ("unseen_syncs", "INTEGER DEFAULT 0"),
                  ("role_user_set", "INTEGER DEFAULT 0"), ("in_saved_list", "INTEGER DEFAULT 0")],
     "profiles": [("critical_evidence_json", "TEXT DEFAULT '[]'"), ("mission_default", "TEXT"),
                  ("risk_reserve", "INTEGER"), ("automatic_ok", "INTEGER DEFAULT 0"),
@@ -261,6 +261,45 @@ def init_db(path: Path | None = None) -> None:
         # edits are in the event log. Idempotent; nothing ever clears the flag.
         c.execute("UPDATE listings SET role_user_set=1 WHERE role_user_set=0 AND id IN "
                   "(SELECT DISTINCT listing_id FROM events WHERE kind='edit' AND detail LIKE '%''role'':%')")
+        migrate_your_call(c)
+
+
+# Before 2026-09-29 a listing had a Status AND a verdict override, often saying the same
+# thing twice. They became one field, "Your call" (status + status_reason). Idempotent:
+# a database with nothing old in it is left alone.
+_OLD_NO = {"Reject", "Do not pursue"}
+_OLD_YES = {"Pursue", "Pursue conditionally"}
+
+
+def your_call_for(status: str | None, override: str | None, override_reason: str | None,
+                  reason: str | None) -> tuple[str, str | None]:
+    status = status or "New"
+    if status == "Pass" or override in _OLD_NO:
+        return "Pass", reason or override_reason
+    if status == "Pursue" or override in _OLD_YES:
+        return "Interested", reason or override_reason
+    if status in {"Verify", "Sold", "Ended"}:   # the System Assessment and availability say these now
+        return "New", reason
+    return status, reason
+
+
+def migrate_your_call(c: sqlite3.Connection) -> list[dict[str, Any]]:
+    cols = {r[1] for r in c.execute("PRAGMA table_info(listings)")}
+    has_override = "verdict_override" in cols
+    sel = "id, title, status, status_reason" + (", verdict_override, verdict_override_reason" if has_override else "")
+    changes = []
+    for r in c.execute(f"SELECT {sel} FROM listings").fetchall():
+        override = r[4] if has_override else None
+        override_reason = r[5] if has_override else None
+        new_status, new_reason = your_call_for(r[2], override, override_reason, r[3])
+        if (new_status, new_reason) != (r[2], r[3]) or override or override_reason:
+            changes.append({"id": r[0], "title": r[1], "status": r[2], "override": override, "override_reason": override_reason,
+                            "your_call": new_status, "reason": new_reason})
+            c.execute("UPDATE listings SET status=?, status_reason=? WHERE id=?", (new_status, new_reason, r[0]))
+    if has_override:
+        c.execute("UPDATE listings SET verdict_override=NULL, verdict_override_reason=NULL "
+                  "WHERE verdict_override IS NOT NULL OR verdict_override_reason IS NOT NULL")
+    return changes
 
 
 def _row_to_dict(row: sqlite3.Row, json_cols: dict) -> dict[str, Any]:
@@ -903,8 +942,8 @@ def merge_listings(src_id: int, dst_id: int, path: Path | None = None) -> dict[s
         c.execute("UPDATE vehicle_events SET listing_id=? WHERE listing_id=?", (dst_id, src_id))
         # The user's own decisions win over an empty destination.
         sets = {}
-        for f, empty in (("status", "New"), ("notes", ""), ("verdict_override", None),
-                         ("verdict_override_reason", None), ("mission", None), ("vin", None), ("pinned", 0)):
+        for f, empty in (("status", "New"), ("notes", ""), ("status_reason", None),
+                         ("mission", None), ("vin", None), ("pinned", 0)):
             sv, dv = src.get(f), dst.get(f)
             if sv not in (None, "", empty) and dv in (None, "", empty):
                 sets[f] = sv

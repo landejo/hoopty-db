@@ -61,6 +61,9 @@ def get(path):
     return json.load(urllib.request.urlopen(urllib.request.Request(BASE + path, headers={"Origin": BASE})))
 
 
+# The cars move on in real life (a car captured live may since have sold, and a later sync
+# recorded it): judge what THIS replay did, not the car's history.
+was_comp = {lid: get(f"/api/listings/{lid}")["role"] == "comp" for lid, *_ in CASES}
 post("/api/availability/start", {})
 out = post("/api/availability/results", {"results": [
     {"id": lid, "detail": {"text": text, "page_url": url, "title": "", "is_detail_page": "/item/" in url or site != "facebook"}}
@@ -70,9 +73,9 @@ right = 0
 for (lid, site, url, _, truth), r in zip(CASES, out):
     row = get(f"/api/listings/{lid}")
     ok = (r["result"] in {"sold", "unavailable"}) if truth == "sold" else r["result"] == "active"
-    # a live car must stay where it was (never become a comp); a gone car must end up comp / Sold / Do not pursue
-    state_ok = (row["role"] == "comp" and row["availability"] == "sold" and row["status"] in {"Sold", "Purchased"}) if truth == "sold" \
-        else row["role"] != "comp" or row.get("role_user_set")
+    # a live page must never turn a candidate into a comp; a gone car must end up a sold comp
+    state_ok = (row["role"] == "comp" and row["availability"] == "sold") if truth == "sold" \
+        else row["role"] != "comp" or row.get("role_user_set") or was_comp[lid]
     right += ok and state_ok
     print(f"{'OK ' if ok and state_ok else 'BAD'} #{lid:<4} {site:<10} truth={truth:<6} got={r['result']:<11} -> "
           f"{row['availability']}/{row['role']}/{row['status']} verdict={(row.get('assessment') or {}).get('verdict')} · {r['evidence'][:60]}")

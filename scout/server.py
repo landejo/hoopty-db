@@ -330,8 +330,7 @@ class ListingPatch(BaseModel):
     role: str | None = None
     profile_key: str | None = None
     mission: str | None = None
-    verdict_override: str | None = None
-    verdict_override_reason: str | None = None
+    status_reason: str | None = None   # why: your Pass reason ("sold" / "gone" also moves it to the comps)
 
 
 @app.patch("/api/listings/{listing_id}")
@@ -354,13 +353,8 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         if patch.profile_key and not db.get_profile(patch.profile_key):
             raise HTTPException(400, "unknown profile")
         updates["profile_key"] = patch.profile_key or None
-    if patch.verdict_override is not None:
-        from scout.policy.preferences import VERDICTS
-        if patch.verdict_override and patch.verdict_override not in VERDICTS:
-            raise HTTPException(400, f"verdict_override must be one of {VERDICTS}")
-        updates["verdict_override"] = patch.verdict_override or None
-    if patch.verdict_override_reason is not None:
-        updates["verdict_override_reason"] = patch.verdict_override_reason[:2000] or None
+    if patch.status_reason is not None:
+        updates["status_reason"] = patch.status_reason[:2000] or None
     if patch.mission is not None:
         if patch.mission not in MISSIONS:
             raise HTTPException(400, f"mission must be one of {MISSIONS}")
@@ -368,7 +362,7 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         updates["mission_user_set"] = 1
     db.update_listing(listing_id, updates)
     db.log_event("edit", listing_id, str(updates))
-    if {"status", "verdict_override", "verdict_override_reason"} & set(updates):
+    if {"status", "status_reason"} & set(updates):
         from scout.availability import mark_off_market_by_user
         if mark_off_market_by_user(listing_id):   # you said it is sold / gone: off the board, into the comps
             row = db.get_listing(listing_id)
@@ -377,6 +371,25 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
     if "status" in updates and "availability" not in updates:
         _rederive_assessment(listing_id)
     return {"ok": True, **updates}
+
+
+class OffMarket(BaseModel):
+    availability: str = "sold"   # sold | ended
+
+
+@app.post("/api/listings/{listing_id}/off-market")
+def mark_off_market(listing_id: int, body: OffMarket) -> dict[str, Any]:
+    """"Mark sold / gone": a market comp, off the candidates board, System Assessment gated
+    to Do not pursue. Your call is left as it is."""
+    if not db.get_listing(listing_id):
+        raise HTTPException(404, "not found")
+    if body.availability not in {"sold", "ended"}:
+        raise HTTPException(400, "availability must be sold or ended")
+    from scout.availability import mark_off_market_by_user
+    mark_off_market_by_user(listing_id, body.availability)
+    _rederive_assessment(listing_id)
+    row = db.get_listing(listing_id)
+    return {"ok": True, "availability": row["availability"], "role": row["role"]}
 
 
 @app.delete("/api/listings/{listing_id}")

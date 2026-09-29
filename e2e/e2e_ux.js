@@ -34,9 +34,9 @@ const openDetail = async (page, l) => {
 
   // Policy 1.8.0 on the board: next step + walk-away, the tile, the filter, the detail block.
   const ns = await page.$$eval(".card", (cs) => cs.map((c) => ({ id: c.dataset.id, next: c.querySelector(".chip.next")?.textContent || null, walk: c.querySelector(".walk")?.textContent || null })));
-  const assessedIds = await page.evaluate(async () => (await (await fetch("/api/export")).json()).listings.filter((l) => l.assessment?.next_step && !l.verdict_override && l.role === "candidate" && l.availability === "active").map((l) => String(l.id)));
+  const assessedIds = await page.evaluate(async () => (await (await fetch("/api/export")).json()).listings.filter((l) => l.assessment?.next_step && (l.status || "New") === "New" && l.role === "candidate" && l.availability === "active").map((l) => String(l.id)));
   const missingChip = assessedIds.filter((id) => ns.some((c) => c.id === id && !c.next));
-  check("assessed cards show a next-step chip (your own verdict wins where set)", assessedIds.length > 0 && missingChip.length === 0, `${assessedIds.length} with a next step; missing on ${missingChip.join(",")}`);
+  check("assessed cards show a next-step chip (your call wins where made)", assessedIds.length > 0 && missingChip.length === 0, `${assessedIds.length} with a next step; missing on ${missingChip.join(",")}`);
   check("cards show a walk-away price", ns.filter((c) => c.walk).length > 0, `${ns.filter((c) => c.walk).length} cards; e.g. ${ns.find((c) => c.walk)?.walk}`);
   const tile = Number(await page.$$eval(".tile", (ts) => ts.find((t) => /Contact now/.test(t.textContent)).querySelector(".v").textContent));
   const contactChips = ns.filter((c) => c.next === "Contact now").length;
@@ -220,14 +220,14 @@ const openDetail = async (page, l) => {
 
   // Mark sold / gone from the listing page: off the candidates board, into the comps (Jason 2026-09-25).
   const ex2 = await api(page, "/api/export");
-  const victim = ex2.listings.find((l) => l.role === "candidate" && l.availability === "active" && l.assessment && !l.verdict_override && l.id !== cand.id);
+  const victim = ex2.listings.find((l) => l.role === "candidate" && l.availability === "active" && l.assessment && (l.status || "New") === "New" && l.id !== cand.id);
   await page.goto(BASE + "/");
   await page.waitForSelector(`.card[data-id="${victim.id}"]`);
   await openDetail(page, victim);
   await page.click("#mark-gone");
   await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /Marked sold/.test(t.textContent)), null, { timeout: 15000, polling: 250 });
   const v2 = await api(page, `/api/listings/${victim.id}`);
-  check("Mark sold / gone makes it a sold comp with verdict Do not pursue", v2.availability === "sold" && v2.role === "comp" && v2.status === "Sold" && v2.assessment?.verdict === "Do not pursue", `#${victim.id} ${v2.availability}/${v2.role}/${v2.status}/${v2.assessment?.verdict}`);
+  check("Mark sold / gone makes it a sold comp, System Assessment Do not pursue, your call untouched", v2.availability === "sold" && v2.role === "comp" && v2.status === "New" && v2.assessment?.verdict === "Do not pursue", `#${victim.id} ${v2.availability}/${v2.role}/${v2.status}/${v2.assessment?.verdict}`);
   await page.goto(BASE + "/");
   await page.waitForSelector(".card");
   check("…and it is gone from the candidates board", !(await page.$(`.card[data-id="${victim.id}"]`)));
@@ -237,9 +237,34 @@ const openDetail = async (page, l) => {
   await page.click('#role button[data-v="candidate"]');
   await page.waitForSelector(".card");
 
+  // Your call (one field; replaced Status + "Your verdict" 2026-09-29) and the System Assessment.
+  const exY = await api(page, "/api/export");
+  const yc = exY.listings.find((l) => l.role === "candidate" && l.availability === "active" && l.assessment && (l.status || "New") === "New" && ![victim.id, cand.id].includes(l.id));
+  await openDetail(page, yc);
+  const opts = await page.$$eval("select#status option", (os) => os.map((o) => o.textContent));
+  check("one Your call field, no separate verdict override", JSON.stringify(opts) === JSON.stringify(["New", "Interested", "Contacted", "PPI Scheduled", "Offer Made", "Purchased", "Pass"]) && !(await page.$("#voverride")), opts.join(" / "));
+  check("the system's verdict is labelled System Assessment", /^System Assessment: /.test(await page.textContent(".panel h3:has-text('System Assessment:')")));
+  await page.selectOption("select#status", "Pass");
+  await openDetail(page, yc);
+  await page.fill("#status-reason", "too many miles");
+  await page.click("h1");   // blur saves
+  await page.waitForFunction(() => /Your call: Passed — too many miles/.test(document.body.innerText), null, { timeout: 5000, polling: 100 });
+  const y2 = await api(page, `/api/listings/${yc.id}`);
+  check("Pass with a reason is saved; a price/mileage reason keeps it a candidate", y2.status === "Pass" && y2.status_reason === "too many miles" && y2.role === "candidate", `${y2.status}/${y2.status_reason}/${y2.role}`);
+  await page.goto(BASE + "/");
+  await page.waitForSelector(`.card[data-id="${yc.id}"]`);
+  const chipsY = await page.$$eval(`.card[data-id="${yc.id}"] .foot .chip`, (cs) => cs.map((c) => c.textContent));
+  check("its card shows one chip for it: Passed, not the system's next step", chipsY.includes("✕ Passed") && !(await page.$(`.card[data-id="${yc.id}"] .chip.next`)), chipsY.join(" | "));
+  await openDetail(page, yc);
+  await page.fill("#status-reason", "sold last week");
+  await page.click("h1");
+  await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /market comp/.test(t.textContent)), null, { timeout: 8000, polling: 100 });
+  const y3 = await api(page, `/api/listings/${yc.id}`);
+  check("a Pass because it sold moves it to the comps", y3.role === "comp" && y3.availability === "sold", `${y3.role}/${y3.availability}`);
+
   // Role menu: make a candidate a curiosity by hand.
   const exR = await api(page, "/api/export");
-  const pick = exR.listings.find((l) => l.role === "candidate" && l.availability === "active" && !l.verdict_override && l.id !== victim.id && l.id !== cand.id);
+  const pick = exR.listings.find((l) => l.role === "candidate" && l.availability === "active" && (l.status || "New") === "New" && l.id !== victim.id && l.id !== cand.id);
   await page.evaluate((id) => { location.hash = "#/l/" + id; }, pick.id);
   await page.waitForFunction((id) => location.hash === `#/l/${id}` && document.querySelector("select#role"), pick.id, { polling: 250 });
   await page.waitForTimeout(600);

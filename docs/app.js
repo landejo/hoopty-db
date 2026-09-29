@@ -6,13 +6,14 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const money = (n) => (n == null ? "—" : "$" + Number(n).toLocaleString());
   const num = (n) => (n == null ? "—" : Number(n).toLocaleString());
-  const STATUSES = ["New", "Pursue", "Verify", "Contacted", "PPI Scheduled", "Offer Made", "Pass", "Purchased", "Sold", "Ended"];
+  // Your call: where you are with a car. The System Assessment (verdict, next step) is the system's opinion.
+  const STATUSES = ["New", "Interested", "Contacted", "PPI Scheduled", "Offer Made", "Purchased", "Pass"];
   const TOP_N = 15;   // tier size for "Re-assess next tier" (server: TIER_SIZE)
 
   const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "pursue", role: "candidate", view: "cards", max_price: "", max_mileage: "", max_age: "", statuses: {} }),
                   q: "", compare: load("compare", []), theme: load("theme", null) };
 
-  function load(k, d) { try { const v = localStorage.getItem("scout." + k); const out = v ? JSON.parse(v) : d; if (k === "filters" && out && !Array.isArray(out.profiles)) out.profiles = out.profile ? [out.profile] : []; if (k === "filters" && out && typeof out.statuses !== "object") out.statuses = out.status ? { [out.status]: "include" } : {}; return out; } catch (e) { return d; } }
+  function load(k, d) { try { const v = localStorage.getItem("scout." + k); const out = v ? JSON.parse(v) : d; if (k === "filters" && out && !Array.isArray(out.profiles)) out.profiles = out.profile ? [out.profile] : []; if (k === "filters" && out && typeof out.statuses !== "object") out.statuses = out.status ? { [out.status]: "include" } : {}; if (k === "filters" && out) out.statuses = Object.fromEntries(Object.entries(out.statuses).filter(([st]) => STATUSES.includes(st))); return out; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem("scout." + k, JSON.stringify(v)); } catch (e) {} }
 
   // ---------- theme ----------
@@ -164,11 +165,13 @@
   function siteName(k) { return (state.data.sites || {})[k] || k; }
   function siteChip(k) { const c = { facebook: "teal", cargurus: "olive", carscom: "mustard", autotrader: "slate", carsandbids: "orange", bat: "rose" }[k] || ""; return `<span class="chip ${c}">${esc(siteName(k))}</span>`; }
   function scoreOf(l) { return l.assessment?.score?.total ?? null; }
-  function verdictOf(l) { return l.verdict_override || l.assessment?.verdict || null; }
-  function computedVerdictOf(l) { return l.assessment?.verdict || null; }
+  function verdictOf(l) { return l.assessment?.verdict || null; }   // the System Assessment's verdict
+  const CALL_TONE = { Interested: "olive", Contacted: "teal", "PPI Scheduled": "teal", "Offer Made": "teal", Purchased: "olive", Pass: "rose" };
+  function callOf(l) { const s = l.status || "New"; return s === "New" ? null : s; }
+  function callChip(l) { const c = callOf(l); return c ? `<span class="chip ${CALL_TONE[c] || ""} call" title="Your call${l.status_reason ? ": " + esc(l.status_reason) : ""}">${c === "Pass" ? "✕ Passed" : esc(c)}</span>` : ""; }
   const NEXT_TONE = { "Contact now": "olive", "Watch": "mustard", "Skip": "rose", "Follow up": "teal" };
-  // Your own verdict wins: an overridden car has no computed next step anywhere (card, tile, filter, table).
-  function nextStepOf(l) { return l.verdict_override ? null : l.assessment?.next_step || null; }
+  // Your call wins: once you have made one, the System Assessment's next step is not shown or counted anywhere.
+  function nextStepOf(l) { return callOf(l) ? null : l.assessment?.next_step || null; }
   function nextChip(l) { const n = nextStepOf(l); return n ? `<span class="chip ${NEXT_TONE[n.action] || ""} next" title="${esc(n.reason)}">${esc(n.action)}</span>` : ""; }
   // Walk-away (policy 1.8.0): the lower of the mission budget and what this car is worth.
   function walkaway(l) {
@@ -354,7 +357,7 @@
     const cands = L.filter((l) => l.role === "candidate" && l.availability === "active");
     const analyzed = cands.filter((l) => l.assessment).length;
     const comps = L.filter((l) => l.role === "comp").length;
-    const pursue = cands.filter((l) => l.status === "Pursue" || /^Pursue/.test(verdictOf(l) || "")).length;
+    const inPlay = cands.filter((l) => ["Interested", "Contacted", "PPI Scheduled", "Offer Made"].includes(l.status)).length;
     const contact = cands.filter((l) => nextStepOf(l)?.action === "Contact now").length;
     const ignored = L.filter((l) => l.role === "ignored").length;
     const curious = L.filter((l) => l.role === "curiosity" && (l.availability === "active" || l.availability === "pending")).length;
@@ -363,7 +366,7 @@
         <div><h1>The board</h1><p>Everything you've saved, normalized and scored. Sold and ended listings feed the <a href="#/market">market view</a>.</p></div>
         <div class="tiles bento">
           <div class="tile lead"><div class="k">Active candidates</div><div class="v">${cands.length}</div><div class="s">${analyzed} assessed${state.data.calibration?.offset != null ? ` · prelim ${offsetPhrase(state.data.calibration.offset)}` : ""}${curious ? ` · ${curious} curiosities followed` : ""}</div></div>
-          <div class="tile"><div class="k">Contact now</div><div class="v">${contact}</div><div class="s">${pursue} marked Pursue</div></div>
+          <div class="tile"><div class="k">Contact now</div><div class="v">${contact}</div><div class="s">${inPlay} you're pursuing</div></div>
           <div class="tile"><div class="k">Market comps</div><div class="v">${comps}</div><div class="s">sold + ended${ignored ? ` · ${ignored} ignored` : ""}</div></div>
           <div class="tile"><div class="k">Profiles</div><div class="v">${state.data.profiles.length}</div><div class="s">${state.data.profiles.filter((p) => !p.verified).length} unverified</div></div>
         </div>
@@ -378,7 +381,7 @@
           <span class="seg wide" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="curiosity" class="${f.role === "curiosity" ? "on" : ""}" title="Followed out of interest, not a serious candidate (over your curiosity line, or set by hand)">Curious</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span></div>
         <div class="rail-sec"><h4>Model <span class="muted small">⌥-click: only this</span></h4><span class="chips stack" id="f-profiles"></span></div>
         <div class="rail-sec"><h4>Next step</h4><span class="seg wide" id="f-next">${["", "Contact now", "Watch", "Skip"].map((k) => `<button data-v="${k}" class="${(f.next || "") === k ? "on" : ""}">${k ? k.replace(" now", "") : "Any"}</button>`).join("")}</span></div>
-        <div class="rail-sec"><h4>Status <span class="muted small">click: only · again: hide</span></h4><span class="chips" id="f-statuses"></span></div>
+        <div class="rail-sec"><h4>Your call <span class="muted small">click: only · again: hide</span></h4><span class="chips" id="f-statuses"></span></div>
         <div class="rail-sec"><h4>Where</h4>
           <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
           <select id="f-avail"><option value="">Any availability</option>${["active", "pending", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select></div>
@@ -604,8 +607,8 @@
           ${l.assessment?.headline ? `<div class="headline" title="${esc(l.assessment.headline)}">${esc(l.assessment.headline)}</div>` : ""}
           ${(l.documents || []).length ? `<span class="chip olive" title="${esc((l.documents || []).map((d) => d.kind).join(", "))}">📄 ${l.documents.length}</span>` : ""}${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
           <div class="foot">
-            <div class="row" style="gap:6px">${stageChip(l)}${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${l.role === "curiosity" ? `<span class="chip curiosity" title="Followed out of interest, not a serious candidate">Curiosity</span>` : nextStepOf(l) && !l.verdict_override ? nextChip(l) : v ? `<span class="chip ${verdictTone(v)}" title="${l.verdict_override ? "Your override (computed: " + esc(computedVerdictOf(l) || "none") + ")" : "computed"}">${l.verdict_override ? "★ " : ""}${esc(v)}</span>` : ""}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
-            <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label><span class="pill-status">${esc(l.status || "New")}</span></span>
+            <div class="row" style="gap:6px">${stageChip(l)}${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${l.role === "curiosity" ? `<span class="chip curiosity" title="Followed out of interest, not a serious candidate">Curiosity</span>` : callChip(l) || nextChip(l) || (v ? `<span class="chip ${verdictTone(v)}" title="System Assessment verdict">${esc(v)}</span>` : "")}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
+            <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label></span>
           </div>
         </div>
       </article>`);
@@ -618,7 +621,7 @@
   function tableView(rows) {
     const cols = [["", (l) => badge(l)], ["Listing", (l) => `<a href="#/l/${l.id}">${esc(title(l))}</a>`], ["Source", (l) => sourceLink(l) || "—"], ["Price", (l) => `<span class="mono">${money(l.sold_price || l.price)}</span>`],
       ["Miles", (l) => `<span class="mono">${num(l.mileage)}</span>`], ["Year", (l) => l.year ?? "—"], ["Trans.", (l) => esc(l.transmission || "—")], ["Location", (l) => esc(l.location || "—")],
-      ["Listed", (l) => listedAge(l)], ["Assessed", (l) => l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}">✓ ${esc(modelTag(l.assessment))} · ${ago(l.assessment.assessed_at)}</span>` : `<span class="muted small">preliminary</span>`], ["Next", (l) => nextChip(l) || "—"], ["Verdict", (l) => esc(verdictOf(l) || "—")], ["Rank", (l) => l.assessment?.priority != null ? `<span class="mono">${l.assessment.priority}</span>` : "—"], ["Mission", (l) => esc(missionLabel(l.mission))], ["Status", (l) => esc(l.status || "New")]];
+      ["Listed", (l) => listedAge(l)], ["Assessed", (l) => l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}">✓ ${esc(modelTag(l.assessment))} · ${ago(l.assessment.assessed_at)}</span>` : `<span class="muted small">preliminary</span>`], ["Next", (l) => callChip(l) || nextChip(l) || "—"], ["System verdict", (l) => esc(verdictOf(l) || "—")], ["Rank", (l) => l.assessment?.priority != null ? `<span class="mono">${l.assessment.priority}</span>` : "—"], ["Mission", (l) => esc(missionLabel(l.mission))], ["Your call", (l) => esc(l.status || "New")]];
     return h(`<div class="tablewrap"><table class="data"><thead><tr>${cols.map(([c]) => `<th>${c}</th>`).join("")}</tr></thead>
       <tbody>${rows.map((l) => `<tr data-id="${l.id}" tabindex="-1">${cols.map(([, f]) => `<td>${f(l)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
   }
@@ -768,7 +771,7 @@
     if (A?.next_step) {
       const n = A.next_step, c = A.costs;
       main.appendChild(h(`<div class="panel next-panel accent-${NEXT_TONE[n.action] || "teal"}"><div class="row" style="justify-content:space-between">
-        <div><div class="muted small">Next step</div><div class="next-action">${esc(n.action)}</div><div>${esc(n.reason)}</div></div>
+        <div><div class="muted small">System Assessment · next step</div><div class="next-action">${esc(n.action)}</div><div>${esc(n.reason)}</div></div>
         <div class="kv small">${A.merit != null ? `<span class="k" title="Score without the documentation you have not asked for yet">Known merit</span><span class="mono">${A.merit}/100</span>` : ""}<span class="k">Pursue-next rank</span><span class="mono">${A.priority ?? "—"}</span>${c?.max_price ? `<span class="k">Walk-away</span><span class="mono">${money(c.max_price)}</span>` : ""}<span class="k">Open questions</span><span class="mono">${(A.open_questions?.document?.length || 0) + (A.open_questions?.inspection?.length || 0)}</span></div>
       </div><p class="muted small" style="margin:8px 0 0">Before the seller answers, the ranking uses what can be judged now; the open questions below are the to-do list, not a score. The verdict takes over once documents or a PPI are in.</p></div>`));
     }
@@ -776,8 +779,8 @@
       const hard = A.gates.filter((g) => g.kind === "hard" || g.kind === "strategy" || g.kind === "configuration");
       const cond = A.gates.filter((g) => g.kind === "conditional");
       main.appendChild(h(`<div class="panel ${verdictTone(A.verdict) === "rose" ? "accent-rose" : verdictTone(A.verdict) === "mustard" ? "accent-mustard" : "accent-olive"}">
-        <h3>Verdict: ${esc(A.verdict)} <span class="muted small">${ago(A.assessed_at)} · ${esc(A.mission.replace("_", " "))} · ${esc(A.urgency_mode.replace("_", " "))}</span></h3>
-        ${l.verdict_override ? `<p class="small" style="background:var(--chip-teal);border-radius:8px;padding:6px 10px"><b>Your verdict: ${esc(l.verdict_override)}</b> (the system computed ${esc(A.verdict)}).${l.verdict_override_reason ? " " + esc(l.verdict_override_reason) : ""}</p>` : ""}
+        <h3>System Assessment: ${esc(A.verdict)} <span class="muted small">${ago(A.assessed_at)} · ${esc(A.mission.replace("_", " "))} · ${esc(A.urgency_mode.replace("_", " "))}</span></h3>
+        ${callOf(l) ? `<p class="small" style="background:var(--chip-${CALL_TONE[callOf(l)] || "teal"});border-radius:8px;padding:6px 10px"><b>Your call: ${esc(callOf(l) === "Pass" ? "Passed" : callOf(l))}</b>${l.status_reason ? " — " + esc(l.status_reason) : ""}</p>` : ""}
         ${(A.context_changed || []).length ? `<p class="small" style="background:var(--chip-mustard);border-radius:8px;padding:6px 10px"><b>Context changed since this assessment:</b> ${esc(A.context_changed.join("; "))}. The arithmetic has been re-derived, but the model's ratings were formed under the old settings. Re-assess to refresh them.</p>` : ""}
         ${A.headline ? `<p class="headline-line">${esc(A.headline)}</p>` : ""}
         <p><b>${esc(A.verdict_reason)}</b></p>
@@ -823,15 +826,14 @@
         <div class="row" style="margin-top:8px"><button class="btn sm" id="adddoc" title="Paste a Carfax, AutoCheck, invoice or service record: gold-tier evidence in the next assessment">+ Attach document</button></div>
         <div id="doclist" class="small muted" style="margin-top:6px"></div>
         <div class="row" style="margin-top:8px"><button class="btn sm warm" id="investigate" title="Queue a same-car search; the extension runs it in your browser">${P ? "Re-investigate provenance" : "Investigate provenance"}</button><span class="muted small" id="inv-status"></span></div>
-        <label style="display:block;margin-top:10px">Your verdict <select id="voverride"><option value="">— use the computed verdict —</option>${["Pursue", "Pursue conditionally", "Maybe / verify", "Reject", "Do not pursue"].map((x) => `<option ${l.verdict_override === x ? "selected" : ""}>${x}</option>`).join("")}</select>${A ? ` <span class="muted small">computed: ${esc(A.verdict)}</span>` : ""}</label>
-        <textarea class="notes" id="voverride-reason" placeholder="Why you disagree (saved on blur)" style="min-height:60px">${esc(l.verdict_override_reason || "")}</textarea>
+        <label style="display:block;margin-top:10px">Your call <select id="status">${STATUSES.map((s) => `<option ${(l.status || "New") === s ? "selected" : ""}>${s}</option>`).join("")}</select>${A ? ` <span class="muted small">System Assessment: ${esc(A.verdict)}</span>` : ""}</label>
+        <textarea class="notes" id="status-reason" placeholder="Why (saved on blur). A Pass reason like &quot;sold&quot; or &quot;gone&quot; moves it to the comps." style="min-height:60px">${esc(l.status_reason || "")}</textarea>
         <label style="display:block;margin-top:10px">Mission <select id="mission">${MISSIONS.map((m) => `<option value="${m}" ${l.mission === m ? "selected" : ""}>${missionLabel(m)}</option>`).join("")}</select> <span class="muted small">pragmatic bridge lifts the manual gate</span></label>
-        <div class="row" style="margin-top:10px"><label>Status <select id="status">${STATUSES.map((s) => `<option ${l.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>
-        <label><input type="checkbox" id="pin" ${l.pinned ? "checked" : ""}> pinned</label>
+        <div class="row" style="margin-top:10px"><label><input type="checkbox" id="pin" ${l.pinned ? "checked" : ""}> pinned</label>
         <label>Role <select id="role"><option value="candidate" ${l.role === "candidate" ? "selected" : ""}>candidate</option><option value="curiosity" ${l.role === "curiosity" ? "selected" : ""}>curiosity (following, not a serious candidate)</option><option value="comp" ${l.role === "comp" ? "selected" : ""}>comp</option><option value="ignored" ${l.role === "ignored" ? "selected" : ""}>ignored (not a car / not for me)</option></select></label></div>
         <label style="display:block;margin-top:10px">Profile <select id="prof"><option value="">— none —</option>${state.data.profiles.map((p) => `<option value="${p.key}" ${l.profile_key === p.key ? "selected" : ""}>${esc(p.label)}</option>`).join("")}</select></label>
         <textarea class="notes" id="notes" placeholder="Your notes (saved on blur)">${esc(l.notes || "")}</textarea>
-        <div class="row" style="margin-top:10px;justify-content:space-between">${l.availability === "sold" || l.availability === "ended" ? `<span class="muted small">Off the market: ${esc(l.availability)}</span>` : `<button class="btn sm" id="mark-gone" title="Sold or no longer available: becomes a market comp, leaves the candidates board, verdict Do not pursue">Mark sold / gone</button>`}<button class="btn sm ghost" id="delete" title="Remove this listing and its history from the workbench">Delete listing</button></div></div>`);
+        <div class="row" style="margin-top:10px;justify-content:space-between">${l.availability === "sold" || l.availability === "ended" ? `<span class="muted small">Off the market: ${esc(l.availability)}</span>` : `<button class="btn sm" id="mark-gone" title="Sold or no longer available: becomes a market comp and leaves the candidates board; the System Assessment turns to Do not pursue. Your call is unchanged.">Mark sold / gone</button>`}<button class="btn sm ghost" id="delete" title="Remove this listing and its history from the workbench">Delete listing</button></div></div>`);
       side.appendChild(act);
       if (l.last_error) side.appendChild(h(`<div class="panel accent-rose"><h3>Last run failed <span class="muted small">${ago(l.last_error.ts)}</span></h3><p class="small" style="margin:0">${esc(l.last_error.kind.replace("_", " "))}: ${esc(l.last_error.detail)}</p><p class="muted small" style="margin:6px 0 0">The paid call completed but its answer was rejected. This class of failure is now retried and trimmed automatically; run it again.</p></div>`));
       const runAssess = (tier) => async (e) => {
@@ -852,7 +854,7 @@
       const goneBtn = $("#mark-gone", act);
       if (goneBtn) goneBtn.onclick = async () => {
         goneBtn.disabled = true;
-        try { const r = await api(`/api/listings/${l.id}`, "PATCH", { status: "Sold" }); await loadData(); route(); toast(r.role === "comp" ? "Marked sold: now a market comp, off the candidates board" : "Marked sold"); }
+        try { const r = await api(`/api/listings/${l.id}/off-market`, "POST", { availability: "sold" }); await loadData(); route(); toast(r.role === "comp" ? "Marked sold: now a market comp, off the candidates board" : "Marked sold"); }
         catch (err) { toast(err.message, 4000); goneBtn.disabled = false; }
       };
       $("#delete", act).onclick = async () => {
@@ -890,16 +892,17 @@
         try { const r = await api(`/api/listings/${l.id}/documents`, "POST", { kind, text, title: "" }); toast(`Attached ${r.chars.toLocaleString()} chars — re-assess to use it`); renderDocs(); }
         catch (e) { toast(e.message, 5000); }
       };
-      $("#voverride", act).onchange = (e) => patch({ verdict_override: e.target.value });
-      $("#voverride-reason", act).onblur = (e) => { if (e.target.value !== (l.verdict_override_reason || "")) patch({ verdict_override_reason: e.target.value }); };
+      // Your call changes chips, counts and (a Pass because it's gone) the car's role: reload.
+      const setCall = async (body) => { try { const r = await api(`/api/listings/${l.id}`, "PATCH", body); await loadData(); route(); toast(r.role === "comp" && r.availability ? "Passed: it's gone, so it's now a market comp" : "Saved"); } catch (err) { toast(err.message, 4000); } };
+      $("#status", act).onchange = (e) => setCall({ status: e.target.value });
+      $("#status-reason", act).onblur = (e) => { if (e.target.value !== (l.status_reason || "")) setCall({ status_reason: e.target.value }); };
       $("#mission", act).onchange = (e) => patch({ mission: e.target.value });
-      $("#status", act).onchange = (e) => patch({ status: e.target.value });
       $("#pin", act).onchange = (e) => patch({ pinned: e.target.checked });
       $("#role", act).onchange = (e) => patch({ role: e.target.value }).then(() => { if (e.target.value === "ignored") { toast("Hidden from the board"); location.hash = "#/"; } else if (e.target.value === "curiosity") toast("Now a curiosity: under the Curious tab, out of bulk assessments"); });
       $("#prof", act).onchange = (e) => patch({ profile_key: e.target.value });
       $("#notes", act).onblur = (e) => { if (e.target.value !== (l.notes || "")) patch({ notes: e.target.value }); };
     } else {
-      side.appendChild(h(`<div class="panel"><div class="row" style="justify-content:space-between"><span class="pill-status">${esc(l.status || "New")}</span>${l.pinned ? `<span class="chip mustard">★ pinned</span>` : ""}</div>${l.notes ? `<p style="white-space:pre-wrap">${esc(l.notes)}</p>` : `<p class="muted small">Notes, mission, and status are edited on the local workbench.</p>`}</div>`));
+      side.appendChild(h(`<div class="panel"><div class="row" style="justify-content:space-between"><span class="pill-status" title="Your call">${esc(l.status || "New")}</span>${l.pinned ? `<span class="chip mustard">★ pinned</span>` : ""}</div>${l.notes ? `<p style="white-space:pre-wrap">${esc(l.notes)}</p>` : `<p class="muted small">Notes, mission, and your call are edited on the local workbench.</p>`}</div>`));
     }
 
     if (C) {
@@ -1051,7 +1054,7 @@
     app.appendChild(h(`<div class="hero"><div><h1>Compare</h1><p>Side by side. Pick up to four from the board.</p></div><a class="btn sm ghost" href="#/">← Board</a></div>`));
     if (!rows.length) return app.appendChild(h(`<div class="empty"><h2>Nothing selected</h2></div>`));
     const facts = [["Price", (l) => money(l.sold_price || l.price)], ["Mileage", (l) => l.mileage ? num(l.mileage) + " mi" : "—"], ["Year", (l) => l.year ?? "—"], ["Trim", (l) => l.trim || "—"], ["Engine", (l) => l.engine || "—"], ["Transmission", (l) => l.transmission || "—"], ["Location", (l) => l.location || "—"], ["Listed", listedAge], ["Site", (l) => siteName(l.site)],
-      ["Score", (l) => scoreOf(l) ?? "—"], ["Confidence", (l) => l.assessment?.confidence ?? "—"], ["Verdict", (l) => verdictOf(l) || "—"], ["Mission", (l) => missionLabel(l.mission)], ["Max price", (l) => money(l.assessment?.costs?.max_price)], ["All-in", (l) => l.assessment ? money(l.assessment.costs.all_in_low) + "–" + money(l.assessment.costs.all_in_high) : "—"], ["Hard gates", (l) => (l.assessment?.gates || []).filter((g) => g.kind !== "conditional").length], ["Unresolved", (l) => (l.assessment?.gates || []).filter((g) => g.kind === "conditional").length],
+      ["Score", (l) => scoreOf(l) ?? "—"], ["Confidence", (l) => l.assessment?.confidence ?? "—"], ["System verdict", (l) => verdictOf(l) || "—"], ["Your call", (l) => l.status || "New"], ["Mission", (l) => missionLabel(l.mission)], ["Max price", (l) => money(l.assessment?.costs?.max_price)], ["All-in", (l) => l.assessment ? money(l.assessment.costs.all_in_low) + "–" + money(l.assessment.costs.all_in_high) : "—"], ["Hard gates", (l) => (l.assessment?.gates || []).filter((g) => g.kind !== "conditional").length], ["Unresolved", (l) => (l.assessment?.gates || []).filter((g) => g.kind === "conditional").length],
       ["Red flags", (l) => (l.normalized?.red_flags || []).length], ["Status", (l) => l.status || "New"]];
     const c = h(`<div class="compare">${rows.map((l) => `<div class="col">${photo(l) ? `<img loading="lazy" referrerpolicy="no-referrer" src="${esc(photo(l))}" alt="">` : ""}<h3 style="margin:10px 0 6px"><a href="#/l/${l.id}">${esc(title(l))}</a></h3>
       <div class="kv">${facts.map(([k, f]) => `<span class="k">${k}</span><span class="mono">${esc(f(l))}</span>`).join("")}</div>

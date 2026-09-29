@@ -5,8 +5,8 @@ Facebook and dealer sites render normally) and posts what it read here. We
 classify it deterministically first; only a page with no clear signal goes to
 the fast model, whose answer counts only when it quotes the page verbatim.
 A listing that is sold, delisted ("no longer available") or ended becomes a
-market comp, its status moves to Sold / Ended, and the policy engine's
-availability gate turns its verdict to Do not pursue."""
+market comp, and the policy engine's availability gate turns its System Assessment
+to Do not pursue. Your call (status) is yours: the check never writes it."""
 from __future__ import annotations
 
 import re
@@ -21,7 +21,6 @@ CHECKABLE_SITES = {"facebook", "cargurus", "carscom", "autotrader", "carsandbids
 BLOCK_PAGE_RE = re.compile(r"you have been blocked|access denied|site is currently unavailable.*incident number|^var dd=\{", re.I | re.S)
 MIN_PAGE_TEXT = 120        # less than this is an empty / placeholder page, not a listing
 HEAD_CHARS = 2500          # only the top of the page carries the listing's own status
-KEEP_STATUSES = {"Purchased"}   # the user bought it: never overwrite
 
 _MONEY = r"(?:USD\s*)?\$\s?([\d,]{3,})"
 SOLD_PRICE_RE = re.compile(r"\bsold\s+for\s*:?\s*" + _MONEY, re.I)
@@ -192,29 +191,27 @@ def targets(limit: int | None = None) -> list[dict[str, Any]]:
     return out[:limit] if limit else out
 
 
-OFF_MARKET_STATUSES = {"Sold": "sold", "Ended": "ended"}
-# Your own "Do not pursue" whose reason says the car is gone (not "too expensive").
+# Your Pass whose reason says the car is gone (not "too expensive").
 OFF_MARKET_REASON_RE = re.compile(r"no longer (available|for sale|listed)|\bunavailable\b|\bsold\b|\bgone\b|delisted|"
                                   r"\bremoved\b|auction ended|reserve not met", re.I)
 
 
 def user_says_off_market(row: dict[str, Any]) -> str | None:
-    """"sold" / "ended" when you have said the car is off the market, else None."""
-    if row.get("status") in OFF_MARKET_STATUSES:
-        return OFF_MARKET_STATUSES[row["status"]]
-    reason = row.get("verdict_override_reason") or ""
-    if row.get("verdict_override") == "Do not pursue" and OFF_MARKET_REASON_RE.search(reason):
+    """"sold" / "ended" when your Pass says the car is off the market, else None."""
+    reason = row.get("status_reason") or ""
+    if row.get("status") == "Pass" and OFF_MARKET_REASON_RE.search(reason):
         return "ended" if re.search(r"auction ended|reserve not met", reason, re.I) and not re.search(r"\bsold\b", reason, re.I) else "sold"
     return None
 
 
-def mark_off_market_by_user(listing_id: int) -> bool:
-    """You marked the car Sold / Ended, or gave it your own "Do not pursue" because it
-    is gone: same outcome as the availability check finding it (a comp, off the
+def mark_off_market_by_user(listing_id: int, want: str | None = None) -> bool:
+    """You said the car is gone: "Mark sold / gone" (want="sold" / "ended"), or a Pass whose
+    reason says so. Same outcome as the availability check finding it (a comp, off the
     candidates board, gated to Do not pursue). The role counts as yours, so a later
     sync or a live-looking page never puts it back."""
     row = db.get_listing(listing_id)
-    want = user_says_off_market(row or {})
+    why = f"marked {want} by hand" if want else f"your Pass: {(row or {}).get('status_reason')}"
+    want = want or user_says_off_market(row or {})
     if not want or (row["availability"] in ("sold", "ended") and row["role"] in ("comp", "ignored")):
         return False
     updates: dict[str, Any] = {"availability": want, "role_user_set": 1}
@@ -223,9 +220,7 @@ def mark_off_market_by_user(listing_id: int) -> bool:
     db.update_listing(listing_id, updates)
     db.add_snapshot(listing_id, row.get("sold_price") or row.get("price"), row.get("price_kind"), want, None)
     db.log_event("availability_changed", listing_id,
-                 f"{row['availability']}/{row['role']} -> {want}/{updates.get('role', row['role'])}: "
-                 + (f"status set to {row['status']} by hand" if row.get("status") in OFF_MARKET_STATUSES
-                    else f"your verdict: {row.get('verdict_override_reason')}"))
+                 f"{row['availability']}/{row['role']} -> {want}/{updates.get('role', row['role'])}: {why}")
     return True
 
 
@@ -263,10 +258,6 @@ def apply(listing_id: int, detail: dict[str, Any] | None) -> dict[str, Any]:
             updates["price_kind"] = "reserve_not_met"
         raw["availability_check"]["sale_evidence"] = ("explicit" if avail == "sold" else
                                                       "delisted" if avail == "unavailable" else "auction ended")
-        status = "Ended" if new_avail == "ended" else "Sold"
-        if (row.get("status") or "New") not in KEEP_STATUSES and row.get("status") != status:
-            updates["status"] = status
-            changed = True
     elif avail in {"active", "pending"} and row["role"] == "comp" and row["availability"] in ("active", "pending") \
             and not row.get("role_user_set") and res.get("method") != "default":
         # A comp whose page is live was a misread (e.g. "sold" elsewhere on the page): back to candidate.

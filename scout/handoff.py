@@ -82,10 +82,11 @@ def car_section(rank: int, l: dict[str, Any], a: dict[str, Any] | None, glance: 
     lines = [f"## {rank}. {title}", ""]
     lines.append(f"**Tracker id** #{l['id']} · **Source** {SITES.get(l['site'], l['site'])} · **URL** {l['url']}")
     gtxt = f"{glance:.0f}/100" if glance is not None else "—"
-    if l.get("verdict_override"):
-        lines.append(f"**BUYER OVERRIDE — Jason's verdict: {l['verdict_override']}** (the system computed "
-                     f"{(a or {}).get('verdict', 'nothing')}). {l.get('verdict_override_reason') or ''}\n")
-    lines.append(f"**Glance score** {gtxt} ({'assessed' if a else 'preliminary, calibrated'}) · **Status (Jason)** {l.get('status') or 'New'} · **Mission** {l.get('mission')} · **Profile** {profile.get('label') or 'none assigned'}")
+    if l.get("status") == "Pass":
+        lines.append(f"**JASON PASSED on this car** (the System Assessment says "
+                     f"{(a or {}).get('verdict', 'nothing')}). {l.get('status_reason') or ''}\n")
+    lines.append(f"**Glance score** {gtxt} ({'assessed' if a else 'preliminary, calibrated'}) · **Jason's call** {l.get('status') or 'New'}"
+                 f"{' (' + l['status_reason'] + ')' if l.get('status_reason') and l.get('status') != 'Pass' else ''} · **Mission** {l.get('mission')} · **Profile** {profile.get('label') or 'none assigned'}")
     lines.append("")
     lines.append("### Identity and listing facts (tracker read)")
     facts = [("Year", l.get("year")), ("Make", l.get("make")), ("Model", l.get("model")), ("Generation", l.get("generation")), ("Trim", l.get("trim")),
