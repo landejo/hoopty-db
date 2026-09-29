@@ -253,14 +253,50 @@ const openDetail = async (page, l) => {
   check("Pass with a reason is saved; a price/mileage reason keeps it a candidate", y2.status === "Pass" && y2.status_reason === "too many miles" && y2.role === "candidate", `${y2.status}/${y2.status_reason}/${y2.role}`);
   await page.goto(BASE + "/");
   await page.waitForSelector(`.card[data-id="${yc.id}"]`);
-  const chipsY = await page.$$eval(`.card[data-id="${yc.id}"] .foot .chip`, (cs) => cs.map((c) => c.textContent));
-  check("its card shows one chip for it: Passed, not the system's next step", chipsY.includes("✕ Passed") && !(await page.$(`.card[data-id="${yc.id}"] .chip.next`)), chipsY.join(" | "));
+  const callY = await page.$eval(`.card[data-id="${yc.id}"] .call-select`, (e) => ({ v: e.value, rose: e.classList.contains("rose") }));
+  check("its card shows your call (Pass), not the system's next step", callY.v === "Pass" && callY.rose && !(await page.$(`.card[data-id="${yc.id}"] .chip.next`)), JSON.stringify(callY));
   await openDetail(page, yc);
   await page.fill("#status-reason", "sold last week");
   await page.click("h1");
   await page.waitForFunction(() => [...document.querySelectorAll(".toast")].some((t) => /market comp/.test(t.textContent)), null, { timeout: 8000, polling: 100 });
   const y3 = await api(page, `/api/listings/${yc.id}`);
   check("a Pass because it sold moves it to the comps", y3.role === "comp" && y3.availability === "sold", `${y3.role}/${y3.availability}`);
+
+  // Your call straight from a board card (Jason 2026-09-29).
+  {
+  await page.goto(BASE + "/");
+  await page.waitForSelector(".card .call-select");
+  const exCard = await api(page, "/api/export");
+  const onBoard = await page.$$eval(".card", (cs) => cs.map((c) => c.dataset.id));
+  const fresh = exCard.listings.filter((l) => onBoard.includes(String(l.id)) && (l.status || "New") === "New" && l.assessment?.next_step && ![victim.id, cand.id, yc.id].includes(l.id));
+  const [c1, c2, c3] = fresh.slice(4, 7);
+  const sel = (l) => `.card[data-id="${l.id}"] .call-select`;
+  await page.$eval(sel(c1), (e) => e.scrollIntoView({ block: "center" }));
+  const yBefore = await page.evaluate(() => scrollY);
+  await page.click(sel(c1));   // opening the menu must not open the listing
+  await page.keyboard.press("Escape");
+  check("clicking the card's Your call menu does not open the listing", !/#\/l\//.test(page.url()), page.url());
+  await page.selectOption(sel(c1), "Interested");
+  await page.waitForFunction((s) => document.querySelector(s)?.value === "Interested" && document.querySelector(s)?.classList.contains("olive"), sel(c1), { timeout: 5000, polling: 100 });
+  const s1 = await api(page, `/api/listings/${c1.id}`);
+  const yAfter = await page.evaluate(() => scrollY);
+  check("set Your call from the card: saved, shown, no next-step chip", s1.status === "Interested" && !(await page.$(`.card[data-id="${c1.id}"] .chip.next`)), `${s1.status}`);
+  check("…and the board keeps your place", Math.abs(yAfter - yBefore) < 40, `${Math.round(yBefore)} -> ${Math.round(yAfter)}`);
+  page.once("dialog", (d) => d.dismiss());
+  await page.selectOption(sel(c2), "Pass");
+  await page.waitForTimeout(500);
+  check("cancelling the Pass reason leaves the car as it was", (await page.$eval(sel(c2), (e) => e.value)) === "New" && (await api(page, `/api/listings/${c2.id}`)).status === "New");
+  page.once("dialog", (d) => d.accept("too far away"));
+  await page.selectOption(sel(c2), "Pass");
+  await page.waitForFunction((s) => document.querySelector(s)?.value === "Pass", sel(c2), { timeout: 5000, polling: 100 });
+  const s2 = await api(page, `/api/listings/${c2.id}`);
+  check("Pass from the card with a reason", s2.status === "Pass" && s2.status_reason === "too far away" && s2.role === "candidate", `${s2.status}/${s2.status_reason}/${s2.role}`);
+  page.once("dialog", (d) => d.accept("sold"));
+  await page.selectOption(sel(c3), "Pass");
+  await page.waitForFunction((id) => !document.querySelector(`.card[data-id="${id}"]`), c3.id, { timeout: 5000, polling: 100 });
+  const s3 = await api(page, `/api/listings/${c3.id}`);
+  check("Pass because it sold, from the card: off the candidates board, into the comps", s3.role === "comp" && s3.availability === "sold", `${s3.role}/${s3.availability}`);
+  }
 
   // Role menu: make a candidate a curiosity by hand.
   const exR = await api(page, "/api/export");

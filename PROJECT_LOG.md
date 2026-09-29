@@ -350,3 +350,13 @@ published 12/12, popup 4/4, saved 4/4. Unit: 268 passed.
   tests/test_your_call.py (new), e2e/e2e_ux.js, e2e/replay_real_pages.py, PROJECT_LOG.md.
 - Needs: server restart (applies the migration to data/scout.db, serves the new endpoints).
 - Dead columns left in place on existing DBs: listings.verdict_override / verdict_override_reason (always NULL).
+
+## 2026-09-29 — Your call from the board card
+
+Local board cards carry a "Your call" menu (styled as the chip; dashed "Your call…" when
+New). Choosing Pass asks for an optional reason (Cancel leaves the car unchanged); "sold"/
+"gone" moves it to the comps. Saves in place, re-renders, keeps the board's scroll position;
+clicking the menu never opens the listing. The published board keeps the read-only chip.
+Also: the listing page's headline verdict is labelled "System Assessment".
+E2E ux 54/54 (+6: menu click doesn't navigate, set from card, scroll kept, cancelled Pass,
+Pass with reason, Pass-because-sold leaves the board). Phone: no card-footer overflow.

@@ -167,6 +167,12 @@ a.src.on-photo:hover { background: var(--teal); text-decoration: none; }
 /* Chips & badges */
 .chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; background: var(--chip-slate); color: var(--ink-2); }
 .chip.teal { background: var(--chip-teal); color: var(--teal-ink); }
+/* Your call as a menu on the card: looks like a chip, with a caret */
+select.call-select { appearance: none; -webkit-appearance: none; border: 1px dashed var(--line); cursor: pointer; font-family: inherit; padding-right: 22px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 11px) 55%, calc(100% - 7px) 55%; background-size: 4px 4px; background-repeat: no-repeat; }
+select.call-select.olive, select.call-select.rose, select.call-select.teal { border-style: solid; border-color: transparent; }
+select.call-select:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
 .chip.mustard { background: var(--chip-mustard); color: #6B4E0A; }
 .chip.orange { background: var(--chip-orange); color: #7A3418; }
 .chip.olive { background: var(--chip-olive); color: #3B5424; }

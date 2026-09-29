@@ -168,6 +168,11 @@
   function verdictOf(l) { return l.assessment?.verdict || null; }   // the System Assessment's verdict
   const CALL_TONE = { Interested: "olive", Contacted: "teal", "PPI Scheduled": "teal", "Offer Made": "teal", Purchased: "olive", Pass: "rose" };
   function callOf(l) { const s = l.status || "New"; return s === "New" ? null : s; }
+  // On the local board your call is a menu right on the card (the published board is read-only).
+  function callSelect(l) {
+    const c = callOf(l);
+    return `<select class="chip call call-select ${c ? CALL_TONE[c] || "" : ""}" aria-label="Your call" title="Your call${l.status_reason ? ": " + esc(l.status_reason) : " (click to change)"}">${STATUSES.map((s) => `<option value="${s}" ${(l.status || "New") === s ? "selected" : ""}>${s === "New" ? "Your call…" : s === "Pass" ? "✕ Pass" : s}</option>`).join("")}</select>`;
+  }
   function callChip(l) { const c = callOf(l); return c ? `<span class="chip ${CALL_TONE[c] || ""} call" title="Your call${l.status_reason ? ": " + esc(l.status_reason) : ""}">${c === "Pass" ? "✕ Passed" : esc(c)}</span>` : ""; }
   const NEXT_TONE = { "Contact now": "olive", "Watch": "mustard", "Skip": "rose", "Follow up": "teal" };
   // Your call wins: once you have made one, the System Assessment's next step is not shown or counted anywhere.
@@ -607,13 +612,28 @@
           ${l.assessment?.headline ? `<div class="headline" title="${esc(l.assessment.headline)}">${esc(l.assessment.headline)}</div>` : ""}
           ${(l.documents || []).length ? `<span class="chip olive" title="${esc((l.documents || []).map((d) => d.kind).join(", "))}">📄 ${l.documents.length}</span>` : ""}${(l.also_on || []).length ? `<div class="row" style="gap:6px"><span class="muted small">same VIN also on</span>${l.also_on.map((o) => `<a href="#/l/${o.id}" class="chip" onclick="event.stopPropagation()" title="${esc(money(o.sold_price || o.price))}">${esc(siteName(o.site))} ${money(o.sold_price || o.price)}</a>`).join("")}</div>` : ""}
           <div class="foot">
-            <div class="row" style="gap:6px">${stageChip(l)}${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${l.role === "curiosity" ? `<span class="chip curiosity" title="Followed out of interest, not a serious candidate">Curiosity</span>` : callChip(l) || nextChip(l) || (v ? `<span class="chip ${verdictTone(v)}" title="System Assessment verdict">${esc(v)}</span>` : "")}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
+            <div class="row" style="gap:6px">${stageChip(l)}${l.assessment ? `<span class="chip ${/opus/i.test(l.assessment.model || "") ? "teal" : "olive"}" title="${esc(modelTag(l.assessment))} assessment ${ago(l.assessment.assessed_at)} · policy ${esc(l.assessment.policy_version)}${l.assessment.shared_from ? " · shared from the same VIN's other listing #" + l.assessment.shared_from : ""}">✓ ${esc(modelTag(l.assessment) || "assessed")}${l.assessment.shared_from ? " (same VIN)" : ""}</span>` : `<span class="chip" title="Preliminary only: sync-time read, not yet assessed">preliminary</span>`}${l.role === "curiosity" ? `<span class="chip curiosity" title="Followed out of interest, not a serious candidate">Curiosity</span>` : state.local ? callSelect(l) + (callOf(l) ? "" : nextChip(l) || (v ? `<span class="chip ${verdictTone(v)}" title="System Assessment verdict">${esc(v)}</span>` : "")) : callChip(l) || nextChip(l) || (v ? `<span class="chip ${verdictTone(v)}" title="System Assessment verdict">${esc(v)}</span>` : "")}${drops ? `<span class="chip olive" title="Price reductions on record (site-reported + observed)">↓ ${money(drops)}</span>` : ""}${qg.map((g) => `<span class="chip rose" title="sync-time policy flag">${esc(g)}</span>`).join("")}${flags ? `<span class="chip orange" title="${esc(l.normalized.red_flags.join("\n"))}">⚑ ${flags}</span>` : ""}${l.availability !== "active" ? availChip(l.availability) : ""}${l.pinned ? `<span class="chip mustard">★</span>` : ""}</div>
             <span class="row" style="gap:8px"><label class="cmp" title="Add to compare"><input type="checkbox" ${state.compare.includes(l.id) ? "checked" : ""}></label></span>
           </div>
         </div>
       </article>`);
-    el.onclick = (e) => { if (e.target.closest(".cmp")) return; location.hash = "#/l/" + l.id; };
-    el.onkeydown = (e) => { if (e.target.closest(".cmp")) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); location.hash = "#/l/" + l.id; } };
+    el.onclick = (e) => { if (e.target.closest(".cmp, .call-select")) return; location.hash = "#/l/" + l.id; };
+    el.onkeydown = (e) => { if (e.target.closest(".cmp, .call-select")) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); location.hash = "#/l/" + l.id; } };
+    const sel = $(".call-select", el);
+    if (sel) sel.onchange = async () => {
+      const body = { status: sel.value };
+      if (sel.value === "Pass") {
+        const why = prompt(`Pass on ${title(l)}? Reason (optional). "Sold" or "gone" also moves it to the comps.`, l.status_reason || "");
+        if (why === null) { sel.value = l.status || "New"; return; }   // cancelled
+        body.status_reason = why;
+      }
+      sel.disabled = true;
+      try {
+        const r = await api(`/api/listings/${l.id}`, "PATCH", body);
+        await loadData(); route();   // a board re-render keeps your scroll position
+        toast(r.role === "comp" && r.availability ? "Passed: it's gone, so it's now a market comp" : sel.value === "New" ? "Your call cleared" : `Your call: ${sel.value}`);
+      } catch (err) { toast(err.message, 4000); sel.value = l.status || "New"; sel.disabled = false; }
+    };
     $(".cmp input", el).onchange = (e) => { toggleCompare(l.id, e.target.checked); };
     return el;
   }
