@@ -732,7 +732,7 @@
           <div><div class="price">${money(l.sold_price || l.price)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
           ${S ? `<div class="dial" style="--pct:${S.total}"><span>${S.total}</span><small>/100</small></div>`
               : prelimOf(l) != null ? `<div class="dial prelim" style="--pct:${Math.round(calibrated(l))}"><span>${state.data.calibration?.offset != null ? "≈" : ""}${Math.round(calibrated(l))}</span><small>prelim</small></div>` : ""}
-          ${A ? `<div><div class="verdict ${esc(A.verdict.split(" ")[0])}">${esc(A.verdict)}</div><div class="muted small">${esc(modelTag(A))} · confidence ${A.confidence}/100 · policy ${esc(A.policy_version)}</div></div>`
+          ${A ? `<div><div class="muted small">System Assessment</div><div class="verdict ${esc(A.verdict.split(" ")[0])}">${esc(A.verdict)}</div><div class="muted small">${esc(modelTag(A))} · confidence ${A.confidence}/100 · policy ${esc(A.policy_version)}</div></div>`
               : `<div><div class="verdict" style="color:var(--muted)">Not assessed</div><div class="muted small">${(() => { const r = rankOf(l); return r ? `#${r.rank} of ${r.of} in profile · ` : ""; })()}preliminary read only</div></div>`}
         </div>
       </div>
@@ -826,7 +826,7 @@
         <div class="row" style="margin-top:8px"><button class="btn sm" id="adddoc" title="Paste a Carfax, AutoCheck, invoice or service record: gold-tier evidence in the next assessment">+ Attach document</button></div>
         <div id="doclist" class="small muted" style="margin-top:6px"></div>
         <div class="row" style="margin-top:8px"><button class="btn sm warm" id="investigate" title="Queue a same-car search; the extension runs it in your browser">${P ? "Re-investigate provenance" : "Investigate provenance"}</button><span class="muted small" id="inv-status"></span></div>
-        <label style="display:block;margin-top:10px">Your call <select id="status">${STATUSES.map((s) => `<option ${(l.status || "New") === s ? "selected" : ""}>${s}</option>`).join("")}</select>${A ? ` <span class="muted small">System Assessment: ${esc(A.verdict)}</span>` : ""}</label>
+        <label style="display:block;margin-top:10px">Your call <select id="status">${STATUSES.map((s) => `<option ${(l.status || "New") === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>${A ? `<div class="muted small">System Assessment: ${esc(A.verdict)}</div>` : ""}
         <textarea class="notes" id="status-reason" placeholder="Why (saved on blur). A Pass reason like &quot;sold&quot; or &quot;gone&quot; moves it to the comps." style="min-height:60px">${esc(l.status_reason || "")}</textarea>
         <label style="display:block;margin-top:10px">Mission <select id="mission">${MISSIONS.map((m) => `<option value="${m}" ${l.mission === m ? "selected" : ""}>${missionLabel(m)}</option>`).join("")}</select> <span class="muted small">pragmatic bridge lifts the manual gate</span></label>
         <div class="row" style="margin-top:10px"><label><input type="checkbox" id="pin" ${l.pinned ? "checked" : ""}> pinned</label>
