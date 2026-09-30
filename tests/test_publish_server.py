@@ -182,3 +182,17 @@ def test_evidence_gaps_split_documents_from_inspection():
     assert g["blocked_on_vin"] is True and g["estimated_score_gain"] == 5 and g["potential_score"] == 50
     msg = request_message(lid)
     assert "VIN" in msg and "Carfax" in msg and "pre-purchase inspection" in msg
+
+
+def test_second_seller_reply_does_not_delete_the_first():
+    """2026-09-30: attaching a buyers-guide page as "other" deleted the seller's replies."""
+    from scout.server import app
+    lid, _ = db.upsert_listing({"site": "facebook", "url": "https://www.facebook.com/groups/1/permalink/2/", "title": "2000 BMW M Roadster",
+                                "role": "candidate", "availability": "active"})
+    with TestClient(app) as c:
+        for title in ("Seller reply 1", "Seller reply 2", "Buyers guide page"):
+            assert c.post(f"/api/listings/{lid}/documents", json={"kind": "other", "text": title * 20, "title": title}).status_code == 200
+        c.post(f"/api/listings/{lid}/documents", json={"kind": "carfax", "text": "old report " * 30, "title": "Carfax v1"})
+        c.post(f"/api/listings/{lid}/documents", json={"kind": "carfax", "text": "new report " * 30, "title": "Carfax v2"})
+    titles = [d["title"] for d in db.list_documents(lid)]
+    assert titles == ["Seller reply 1", "Seller reply 2", "Buyers guide page", "Carfax v2"]   # a re-captured Carfax still replaces

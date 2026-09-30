@@ -360,3 +360,15 @@ clicking the menu never opens the listing. The published board keeps the read-on
 Also: the listing page's headline verdict is labelled "System Assessment".
 E2E ux 54/54 (+6: menu click doesn't navigate, set from card, scroll kept, cancelled Pass,
 Pass with reason, Pass-because-sold leaves the board). Phone: no card-footer overflow.
+
+## 2026-09-30 — Documents of the same kind no longer overwrite each other
+
+`db.add_document` deleted any earlier document of the same kind on the listing. Attaching the
+M Roadster Buyers Guide page (kind "other") to #276 deleted both seller replies (docs 9 and 11),
+and the re-assessment ran without them. Now only single-copy reports (Carfax, AutoCheck, window
+sticker) replace an earlier capture; seller replies, invoices, service records and inspections
+accumulate. Restored #276's replies (doc 9 from data/backups/scout_pre-your-call_2026-09-29.db,
+the 2026-09-29 reply re-added as doc 13) and re-assessed: Maybe / verify 55, c47, walk-away $16,543.
+Checked every listing: #276 was the only one affected (#22's documents went with the listing).
+Test: test_second_seller_reply_does_not_delete_the_first. Unit 269 passed.
+Needs a server restart (the running server still replaces by kind).

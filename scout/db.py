@@ -885,15 +885,19 @@ def latest_assessments_by_vehicle(path: Path | None = None) -> dict[int, dict[st
 # ---------- documents (history reports, invoices, service records) ----------
 
 DOC_KINDS = ["carfax", "autocheck", "service_records", "invoice", "inspection", "window_sticker", "other"]
+SINGLE_COPY_DOC_KINDS = {"carfax", "autocheck", "window_sticker"}
 
 
 def add_document(listing_id: int, kind: str, text: str, title: str = "", source: str = "",
                  url: str = "", vin: str | None = None, path: Path | None = None) -> int:
-    """Attach a document to a listing. Replaces an existing document of the same
-    kind for that listing so a re-capture updates rather than duplicates."""
+    """Attach a document to a listing. A report the car has one current copy of (Carfax,
+    AutoCheck, window sticker) replaces the earlier capture; everything else (seller
+    replies, invoices, service records, inspections) accumulates. Until 2026-09-30 every
+    kind replaced, so a second "other" silently deleted the first."""
     kind = kind if kind in DOC_KINDS else "other"
     with connect(path) as c:
-        c.execute("DELETE FROM documents WHERE listing_id=? AND kind=?", (listing_id, kind))
+        if kind in SINGLE_COPY_DOC_KINDS:
+            c.execute("DELETE FROM documents WHERE listing_id=? AND kind=?", (listing_id, kind))
         cur = c.execute(
             "INSERT INTO documents (listing_id, vin, kind, title, source, url, text, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
