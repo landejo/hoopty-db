@@ -38,6 +38,14 @@ NEXT_STEP_SKIP_OVER_WALKAWAY = 0.15  # asking more than 15% over the walk-away: 
 NEXT_STEP_CONTACT_OVER_WALKAWAY = 0.05
 NEXT_STEP_SKIP_OBSERVED_PRIORITY = 40  # an observed problem and a low rank: skip
 NEXT_STEP_AUCTION_HOURS = 72         # a live auction closing this soon is contacted now if it ranks near the bar
+# 1.9.0: a walk-away read off fewer comparable sales than this is too rough to Skip a car on; it says Watch.
+NEXT_STEP_SKIP_MIN_COMPS = 8
+
+# 1.9.0 mileage fit: mission -> [(miles over, mission-fit cap)], highest first. Keepers only for now
+# (Jason passed on a 152k-mile M Roadster the board ranked third, 2026-09-29).
+MILEAGE_FIT_CAPS: dict[str, list[tuple[int, int]]] = {
+    "future_keeper": [(150_000, 6), (120_000, 9)],
+}
 
 # §9 confidence: below this, verdict should rarely exceed Maybe / verify.
 CONFIDENCE_PROVISIONAL = 50

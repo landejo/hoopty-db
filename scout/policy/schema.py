@@ -390,6 +390,7 @@ class CostBreakdown(BaseModel):
     fair_low: int | None = None
     fair_high: int | None = None
     fair_note: str = ""
+    fair_n: int | None = None            # 1.9.0: comparable sales behind the fair range (thin sets cannot force a Skip)
 
 
 class Score(BaseModel):

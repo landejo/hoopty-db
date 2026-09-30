@@ -70,3 +70,29 @@ def match_profile(profiles: list[dict[str, Any]], make: str | None, model: str |
                 if best is None or len(pml) > best[0]:
                     best = (len(pml), p)
     return best[1] if best else None
+
+
+# Evidence strong enough to overrule the sync's profile pick: what the car is, not what the ad says.
+_IDENTITY_SOURCES = {"photo", "history_report", "external_vin", "receipt"}
+_QUALIFIER_RE = re.compile(r"\(|,|;|\bnot\b|\bbut\b", re.I)
+_PACKAGE_RE = re.compile(r"\bM[\s-]?(sport|performance|technik)\b", re.I)   # a 3.0i "M Sport" is not a Z3 M
+
+
+def profile_from_evidence(facts: list[Any], listing: dict[str, Any],
+                          profiles: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The profile the assessment's own identity facts point to (a verified model or
+    trim, or one read from photos or a history report), or None when they do not
+    name one. "Z3 M Roadster (E36/7 M), not a Z3 3.0i" reads as "Z3 M Roadster"."""
+    for f in facts:
+        key = getattr(f, "key", None)
+        if key not in {"model", "trim"}:
+            continue
+        if getattr(f, "status", "") != "verified" and getattr(f, "source", "") not in _IDENTITY_SOURCES:
+            continue
+        name = _PACKAGE_RE.sub("", _QUALIFIER_RE.split(str(getattr(f, "value", "") or ""), 1)[0]).strip()
+        if key == "trim" and listing.get("model"):
+            name = f"{listing['model']} {name}"
+        found = match_profile(profiles, listing.get("make"), name, listing.get("year"))
+        if found:
+            return found
+    return None

@@ -230,10 +230,12 @@ def ingest_items(site: str, items: list[dict[str, Any]], include_sold: bool | No
         role = "comp" if availability in {"sold", "ended"} else "candidate"
         if existing and existing.get("role") == "comp":
             # A comp stays a comp: a stale card claiming "active" must not resurrect a
-            # sold car. The exception is a listing we never actually saw sell — the role
-            # came from a misread — which returns to being a candidate while it is live.
+            # sold car. The exceptions are a listing we never actually saw sell — the role
+            # came from a misread — and one whose own page, read just now, shows it live;
+            # either returns to being a candidate.
             role = "comp"
-            if availability in {"active", "pending"} and not _ever_sold(existing["id"]) and not existing.get("role_user_set"):
+            if availability in {"active", "pending"} and not existing.get("role_user_set") \
+                    and (not _ever_sold(existing["id"]) or page_shows_live(site, page_text)):
                 role = "candidate"
         if existing and existing.get("role") == "ignored":
             role = "ignored"  # not a car (or manually ignored): stays out of the way
@@ -314,7 +316,11 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
         raw.setdefault("time_left_seen_at", db.now())
         updates["raw"] = raw
     # The model reading "sold" in the text beats the scraper's "active" but never the reverse.
-    if norm.get("availability") in {"sold", "ended"} and scraper_availability == "active":
+    # Off the auction sites it needs the page's own status to agree: a seller's
+    # "I will take the ad down when it's sold" is not a sale (#71, #97, 2026-09-29).
+    site = (db.get_listing(lid) or {}).get("site") or ""
+    if norm.get("availability") in {"sold", "ended"} and scraper_availability == "active" \
+            and (site in AUCTION_SITES or page_shows_sale(site, raw_text)):
         updates["availability"] = norm["availability"]
         updates["role"] = "comp"
     elif norm.get("availability") == "pending" and scraper_availability == "active":
@@ -365,7 +371,10 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
                     db.log_event("profile_created", lid, key)
             except Exception as e:
                 stats["errors"].append(f"profile {key}: {e}")
-    if prof:
+    kept = _row.get("profile_source") and _row.get("profile_key") and db.get_profile(_row["profile_key"])
+    if kept:
+        prof = kept   # chosen by you, or by an assessment's evidence: a re-read does not undo it
+    elif prof:
         updates["profile_key"] = prof["key"]
         updates["profile_confidence"] = norm.get("profile_confidence")
 
@@ -414,11 +423,30 @@ def _ever_sold(listing_id: int) -> bool:
     return any(s.get("availability") in ("sold", "ended") for s in db.list_snapshots(listing_id))
 
 
+def _page_status(site: str, text: str) -> str | None:
+    """The page's own status line, read with the availability check's deterministic
+    patterns (only the top of the page counts, so a seller's description does not)."""
+    if not text:
+        return None
+    from scout.availability import classify_deterministic  # lazy: availability imports ingest
+    return (classify_deterministic(site, {"text": text}) or {}).get("availability")
+
+
+def page_shows_sale(site: str, text: str) -> bool:
+    return _page_status(site, text) in {"sold", "ended", "unavailable"}
+
+
+def page_shows_live(site: str, text: str) -> bool:
+    return _page_status(site, text) in {"active", "pending"}
+
+
 def repair_roles() -> list[dict[str, Any]]:
-    """Comps that are currently live and were never seen to sell become candidates again."""
+    """Comps that are currently live become candidates again when they were never
+    seen to sell, or when their stored page shows the listing live (a misread "sold")."""
     fixed = []
     for r in db.list_listings(role="comp"):
-        if r["availability"] in ("active", "pending") and not _ever_sold(r["id"]) and not r.get("role_user_set"):
+        if r["availability"] in ("active", "pending") and not r.get("role_user_set") \
+                and (not _ever_sold(r["id"]) or page_shows_live(r["site"], r.get("raw_text") or "")):
             db.update_listing(r["id"], {"role": "candidate"})
             rescore_listing(r["id"])
             fixed.append({"id": r["id"], "title": r.get("title"), "availability": r["availability"]})

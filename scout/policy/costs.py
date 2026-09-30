@@ -163,4 +163,5 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
                          max_price=max_price, offer_low=offer_lo, offer_high=offer_hi, notes=notes,
                          max_price_budget=max_budget or None, max_price_value=max_value, max_price_basis=max_basis,
                          fair_mid=fair_mid, fair_low=fair.get("low") if fair else None,
-                         fair_high=fair.get("high") if fair else None, fair_note=((fair.get("note") or "") if fair else ""))
+                         fair_high=fair.get("high") if fair else None, fair_note=((fair.get("note") or "") if fair else ""),
+                         fair_n=fair.get("n") if fair else None)

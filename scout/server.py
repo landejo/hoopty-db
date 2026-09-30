@@ -353,6 +353,7 @@ def patch_listing(listing_id: int, patch: ListingPatch) -> dict[str, Any]:
         if patch.profile_key and not db.get_profile(patch.profile_key):
             raise HTTPException(400, "unknown profile")
         updates["profile_key"] = patch.profile_key or None
+        updates["profile_source"] = "user" if patch.profile_key else None
     if patch.status_reason is not None:
         updates["status_reason"] = patch.status_reason[:2000] or None
     if patch.mission is not None:
@@ -454,6 +455,19 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     evidence.facts.extend(Fact(**f) for f in decoded_facts(decoded))
     for c in history["vin_decode_contradictions"]:
         evidence.contradictions.append(Contradiction(**c))
+    # 1.9.0: photos or a history report show a different model than the sync picked
+    # (a "3.0i" that is an M Roadster): value and judge it as that car from now on.
+    from scout.profiles import profile_from_evidence
+    better = None if row.get("profile_source") == "user" else profile_from_evidence(evidence.facts, row, db.list_profiles())
+    if better and better["key"] != prof["key"]:
+        moved = {"profile_key": better["key"], "profile_source": "assessment"}
+        if not row.get("mission_user_set"):
+            moved["mission"] = default_mission(better)
+        db.update_listing(listing_id, moved)
+        db.log_event("reprofiled", listing_id, f"{prof['key']} -> {better['key']} (assessment evidence)")
+        row, prof = db.get_listing(listing_id), better
+        mission = row.get("mission") or default_mission(prof)
+        fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
     result = assess(row, prof, evidence, state, vin_history=history, fair=fair,
                     mission=mission, model=model, stage=stage)
     data = result.model_dump()

@@ -114,7 +114,7 @@ def compute_next_step(listing: dict[str, Any], stage: str, gates: list[Gate], cl
                       costs: CostBreakdown, priority: int) -> dict | None:
     """1.8.0: one action before and just after contact. Later stages go by the verdict."""
     from scout.policy.preferences import (NEXT_STEP_AUCTION_HOURS, NEXT_STEP_CONTACT_OVER_WALKAWAY, NEXT_STEP_CONTACT_PRIORITY,
-                                          NEXT_STEP_SKIP_OBSERVED_PRIORITY, NEXT_STEP_SKIP_OVER_WALKAWAY)
+                                          NEXT_STEP_SKIP_MIN_COMPS, NEXT_STEP_SKIP_OBSERVED_PRIORITY, NEXT_STEP_SKIP_OVER_WALKAWAY)
     from scout.scoring import auction_hours_left
     if stage not in {"listing", "questions"}:
         return None
@@ -122,7 +122,8 @@ def compute_next_step(listing: dict[str, Any], stage: str, gates: list[Gate], cl
     if block:
         return {"action": "Skip", "reason": _clip(block.reason, 140)}
     over = over_walkaway(costs)
-    if over is not None and over > NEXT_STEP_SKIP_OVER_WALKAWAY:
+    thin = costs.max_price_basis == "value" and (costs.fair_n or 0) < NEXT_STEP_SKIP_MIN_COMPS
+    if over is not None and over > NEXT_STEP_SKIP_OVER_WALKAWAY and not thin:
         return {"action": "Skip", "reason": f"${costs.price:,} is {round(100 * over)}% over your walk-away ${costs.max_price:,}"}
     observed = classified.get("observed") or []
     if observed and priority < NEXT_STEP_SKIP_OBSERVED_PRIORITY:
@@ -136,7 +137,8 @@ def compute_next_step(listing: dict[str, Any], stage: str, gates: list[Gate], cl
         return {"action": "Contact now", "reason": f"Auction closes in about {round(hrs)}h; ask before bidding" + (f": {ask}" if ask else "")}
     if priority >= NEXT_STEP_CONTACT_PRIORITY and (over is None or over <= NEXT_STEP_CONTACT_OVER_WALKAWAY):
         return {"action": "Contact now", "reason": "Ranks near the top" + (f"; ask for: {ask}" if ask else "")}
-    why = (f"${costs.price:,} is {round(100 * over)}% over your walk-away ${costs.max_price:,}" if over and over > 0
+    why = (f"${costs.price:,} is {round(100 * over)}% over your walk-away ${costs.max_price:,}"
+           + (f" (from only {costs.fair_n} sales)" if thin else "") if over and over > 0
            else f"observed: {observed[0]}" if observed else f"ranks {priority}; others come first")
     return {"action": "Watch", "reason": _clip(why, 140)}
 

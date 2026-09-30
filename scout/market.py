@@ -8,6 +8,10 @@ from datetime import date, timedelta
 from typing import Any
 
 _ENDED_SALE_KINDS = {"sold", "asking"}   # price_kind values that still count as a sale when availability=ended
+# 1.9.0: a sold or delisted classified ad shows its last asking price, not what it sold for
+# (BaT and Cars & Bids hammers are transaction prices).
+_CLASSIFIED_SITES = {"facebook", "cargurus", "carscom", "autotrader"}
+LAST_ASK_DISCOUNT = 0.93
 
 _OPEN_BODY = ("roadster", "convertible", "cabrio", "spyder", "targa")
 _CLOSED_BODY = ("coupe", "hatch", "sedan", "wagon", "suv")
@@ -30,6 +34,12 @@ def sale_price(r: dict[str, Any]) -> int | None:
     return r.get("sold_price") or r.get("price")
 
 
+def realized_factor(r: dict[str, Any]) -> float:
+    """1.9.0: an auction hammer counts in full; a classified ad that sold or vanished
+    (Facebook, CarGurus, Cars.com, Autotrader) shows only its last asking price."""
+    return LAST_ASK_DISCOUNT if r.get("site") in _CLASSIFIED_SITES else 1.0
+
+
 def body_class(r: dict[str, Any]) -> str | None:
     text = " ".join(str(r.get(k) or "") for k in ("body_style", "model", "trim")).lower()
     for w in _OPEN_BODY:
@@ -46,13 +56,15 @@ def _mileage_factor(listing_miles: int, comp_miles: int) -> float:
     return max(0.70, min(1.35, factor))
 
 
-def _adjusted_prices(listing: dict[str, Any], rows: list[dict[str, Any]]) -> list[float]:
+def _adjusted_prices(listing: dict[str, Any], rows: list[dict[str, Any]], realized: bool = False) -> list[float]:
     l_miles = listing.get("mileage")
     out = []
     for r in rows:
         price = sale_price(r)
         if not price:
             continue
+        if realized:
+            price = price * realized_factor(r)
         c_miles = r.get("mileage")
         if l_miles and c_miles:
             out.append(price * _mileage_factor(int(l_miles), int(c_miles)))
@@ -85,8 +97,9 @@ def _segment(rows: list[dict[str, Any]], listing: dict[str, Any], years: int | N
             out = [r for r in out if body_class(r) == lb]
     if need_trans:
         lt = (listing.get("transmission") or "").strip().lower()
-        if lt:
-            out = [r for r in out if (r.get("transmission") or "").strip().lower() == lt]
+        if lt and lt != "unknown":
+            # 1.9.0: a comp whose transmission was never read is not a mismatch.
+            out = [r for r in out if (r.get("transmission") or "").strip().lower() in {lt, "", "unknown"}]
     return out
 
 
@@ -156,7 +169,7 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
             if seg_failed:
                 failed_high_bid_max = max(r["price"] for r in seg_failed)
         recent = _recency_filter(segmented, now)
-        adj = sorted(p * discount for p in _adjusted_prices(listing, recent))
+        adj = sorted(p * discount for p in _adjusted_prices(listing, recent, realized=basis == "sold"))
         if not adj:
             return None
         n = len(adj)

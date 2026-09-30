@@ -68,7 +68,13 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
             gates.append(Gate(kind="hard", key=key, reason=reason))
     for c in evidence.contradictions:
         if c.severity == "identity" and not _is_tracker_artifact(c):
-            gates.append(Gate(kind="hard", key="identity_contradiction", reason=f"{c.topic}: {c.detail}"))
+            if listing.get("vin") or not _is_which_car(c):
+                gates.append(Gate(kind="hard", key="identity_contradiction", reason=f"{c.topic}: {c.detail}"))
+            else:
+                # 1.9.0: with no VIN yet, a listing that disagrees with itself (Facebook's
+                # year/trim picker vs the seller's words) is a question the VIN answers,
+                # not a finding against the car.
+                gates.append(Gate(kind="conditional", key="identity_unverified", reason=f"{c.topic}: {c.detail}"))
 
     # Model-critical evidence from the profile (single source: profile YAML / generated profile).
     # Models sometimes rename the keys they were given; match on meaning before giving up.
@@ -170,6 +176,16 @@ def match_reported(req: dict[str, Any], reported: list[Any]):
 _ARTIFACT_RE = __import__("re").compile(
     r"structured (data|facts|feed|fields?)|normalized (feed|fields?|data)|tracker'?s? (own )?(read|feed|fields?|data)|"
     r"no vin|without a vin|vin (is )?(missing|absent|not (provided|shown|listed))|nothing .* confirms", __import__("re").I)
+
+
+_WHICH_CAR_RE = __import__("re").compile(r"\b(model|trim|year|engine|variant|body|badg\w*|identity)\b", __import__("re").I)
+_NOT_WHICH_CAR_RE = __import__("re").compile(r"mile|odometer|title|salvage|vin\b", __import__("re").I)
+
+
+def _is_which_car(c) -> bool:
+    """A contradiction about which car this is (model, trim, year, engine, body):
+    the VIN settles it. Mileage, title or VIN conflicts are not this kind."""
+    return bool(_WHICH_CAR_RE.search(c.topic)) and not _NOT_WHICH_CAR_RE.search(c.topic)
 
 
 def _is_tracker_artifact(c) -> bool:

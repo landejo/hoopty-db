@@ -242,7 +242,8 @@ _ADDITIVE_COLUMNS = {
     "ai_calls": [("effort", "TEXT")],
     "listings": [("mission", "TEXT"), ("vehicle_id", "INTEGER"), ("provenance_json", "TEXT"), ("mission_user_set", "INTEGER DEFAULT 0"),
                  ("status_reason", "TEXT"), ("unseen_syncs", "INTEGER DEFAULT 0"),
-                 ("role_user_set", "INTEGER DEFAULT 0"), ("in_saved_list", "INTEGER DEFAULT 0")],
+                 ("role_user_set", "INTEGER DEFAULT 0"), ("in_saved_list", "INTEGER DEFAULT 0"),
+                 ("profile_source", "TEXT")],   # NULL: the sync's pick; "user" / "assessment": syncs keep it
     "profiles": [("critical_evidence_json", "TEXT DEFAULT '[]'"), ("mission_default", "TEXT"),
                  ("risk_reserve", "INTEGER"), ("automatic_ok", "INTEGER DEFAULT 0"),
                  ("catchup_notes", "TEXT")],

@@ -372,3 +372,34 @@ the 2026-09-29 reply re-added as doc 13) and re-assessed: Maybe / verify 55, c47
 Checked every listing: #276 was the only one affected (#22's documents went with the listing).
 Test: test_second_seller_reply_does_not_delete_the_first. Unit 269 passed.
 Needs a server restart (the running server still replaces by kind).
+
+## 2026-09-29 — Policy 1.9.0 (Z3 review); "sold" in the seller's words
+
+Review of the 31 unsold Facebook Z3-family listings found one bug and four scoring gaps.
+Details and reasons: scout/policy/POLICY_CHANGES.md § 1.9.0.
+
+- Bug: the fast read took "sold" from seller prose and made live cars comps, forever
+  (`_ever_sold`). Off auction sites the reader's "sold" now needs the page's own status
+  (availability.classify_deterministic); a comp whose page reads live returns to candidate
+  (ingest and `repair_roles`). Freed #71 and #269 (live BaT Cayman S, closes 2026-10-01).
+- 1.9.0: VIN-less which-car contradictions are an `identity_unverified` question;
+  assessment evidence (photo / history report / VIN / verified) re-profiles a car
+  (`listings.profile_source`, also set by a hand-picked profile; syncs keep both);
+  unknown-transmission comps count; walk-away from < 8 sales cannot Skip; classified
+  "sold" prices count at 93%; keeper mission fit capped over 120k / 150k miles.
+- Live DB: backup data/backups/scout_20260929-195751_pre-policy-1.9.db; migration +
+  repair + free re-derivation (114 assessments). Opus 5.5 medium on #109 (re-profiled
+  z3_30i -> z3_m, Skip -> Contact now), #97 (Skip: $23,999 vs walk-away $14,780 on 8
+  sales), #59 (Contact now). About $0.75.
+
+Tests: tests/test_policy_1_9.py (17; 12 fail on the old code). Unit 286 passed.
+E2E: startup 3/3, startup-board 2/2, ux 54/54, replay 12/12, reassess 12/12,
+published 12/12, popup 4/4, saved 4/4.
+
+### System State Summary
+- Modified: scout/{db,ingest,market,profiles,server}.py, scout/policy/{__init__,costs,engine,gates,
+  preferences,schema,scoring}.py, scout/policy/POLICY_CHANGES.md, tests/test_policy_1_9.py (new), PROJECT_LOG.md.
+- Needs: server restart (PID 73417 still runs 1.8.0 code; until then a sync could re-mark
+  a seller's "sold" or reset #109's profile). Not committed.
+- Open: board priority is not comparable across stages (a worked car at Docs, e.g. #276 at 17,
+  vs an uncontacted one on merit, e.g. #59 at 52).

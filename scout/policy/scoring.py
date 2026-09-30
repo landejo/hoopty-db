@@ -6,7 +6,7 @@ from typing import Any
 from scout.evidence import COND_GAIN_CAP, COND_GAIN_PER_ITEM, DOC_GAIN_CAP, GAIN_PER_ITEM, classify
 from scout.policy.preferences import (
     CATEGORY_POINTS, CONFIDENCE_PROVISIONAL, REJECT_FLOOR_NOTHING_OBSERVED, DOC_CAP_CONDITIONAL_MISSING, DOC_CAP_HARD_MISSING,
-    LOGISTICS_CAP_BY_BAND, RELIST_MARKUP_FLAG, RELIST_PRICE_VALUE_CAP, SCORE_BANDS, VERDICT_RANK,
+    LOGISTICS_CAP_BY_BAND, MILEAGE_FIT_CAPS, RELIST_MARKUP_FLAG, RELIST_PRICE_VALUE_CAP, SCORE_BANDS, VERDICT_RANK,
 )
 from scout.policy.schema import CostBreakdown, EvidenceInterpretation, Gate, Score
 from scout.scoring import locality_hint
@@ -61,6 +61,14 @@ def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: 
             if pts["mission_fit"] > cap:
                 pts["mission_fit"] = cap
                 caps.append(f"mission fit capped at {cap}: price above the {mission.replace('_', ' ')} budget")
+    # 1.9.0: mileage past the mission's comfort line cannot score as a good fit.
+    miles = listing.get("mileage") or 0
+    for over, cap in MILEAGE_FIT_CAPS.get(mission, []):
+        if miles > over:
+            if pts["mission_fit"] > cap:
+                pts["mission_fit"] = cap
+                caps.append(f"mission fit capped at {cap}: {miles:,} miles is over {over:,} for a {mission.replace('_', ' ')}")
+            break
     if mission == "pragmatic_bridge" and pts["mission_fit"] > 11:
         pts["mission_fit"] = 11
         caps.append("mission fit capped at 11: pragmatic bridge solves the immediate problem, not the enthusiast brief")
@@ -109,6 +117,7 @@ def compute_confidence(evidence: EvidenceInterpretation, gates: list[Gate], list
 _OPEN_FLAG_LABELS = {
     "major_service_claimed_undocumented": "Major service claimed but not documented",
     "accident_without_repair_docs": "Accident history without repair records and measurements",
+    "identity_unverified": "VIN to confirm which car this is (the listing contradicts itself)",
 }
 _OPEN_FLAG_KEYS = set(_OPEN_FLAG_LABELS) | {"stale_listing"}
 

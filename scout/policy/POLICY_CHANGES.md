@@ -4,6 +4,56 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.9.0 (2026-09-29)
+
+Jason's instruction, 2026-09-29, after a review of his 31 unsold Facebook
+Z3-family listings.
+
+1. **A listing that contradicts itself about which car it is, with no VIN yet,
+   is a question, not a Reject.** Facebook's year/trim picker is unreliable: #109
+   was listed as a "2000 3.0i" (no US 3.0i existed for 2000) with a seller who
+   wrote "Z3M Roadster" and photos showing M parts; #58 as a "2000 3.0i". Both
+   were hard-rejected. A model/trim/year/engine/body contradiction on a listing
+   without a VIN is now a conditional `identity_unverified` gate: a document
+   question ("VIN to confirm which car this is") that caps the verdict at
+   Maybe / verify. With a VIN in hand it stays hard, and mileage, title or VIN
+   conflicts are never softened.
+2. **Assessment evidence can re-profile a car.** When the assessment reads a
+   model or trim from photos, a history report, a VIN decode or a receipt (or
+   marks it verified) and that names a different profile, the car moves to it
+   (`profile_source = "assessment"`), takes that profile's default mission
+   unless you set one, and is valued against that profile's comps. "M Sport" /
+   "M Performance" packages never count as an M car. A profile you pick
+   (`profile_source = "user"`) is never overridden, and a later sync's fast
+   read no longer undoes either (before, a re-read reset a hand-picked profile).
+3. **Comps with no transmission read count.** The segment filter dropped every
+   comp whose transmission was blank or "Unknown"; the 3.0i roadster fair value
+   rested on 5 sales (all 2001). It now counts them (the pool is 8). A walk-away
+   read off fewer than 8 comparable sales can no longer Skip a car on price
+   alone; the next step says Watch "(from only N sales)".
+4. **A classified ad's "sold" price is its last ask.** Facebook, CarGurus,
+   Cars.com and Autotrader show the last asking price of a car that sold or
+   vanished, not a transaction price (CarGurus' sold tab included dealer asks of
+   $39,991 and $59,995). Those comps now count at 93% (the same discount as the
+   asking-price fallback). BaT and Cars & Bids hammers count in full.
+5. **Keeper mileage fit.** For `future_keeper`, over 120,000 miles caps mission
+   fit at 9 of 15 and over 150,000 at 6 (Jason passed on a 152k-mile M Roadster
+   the board ranked third). Bridges are unchanged.
+
+**Fix in the same change (not policy):** the sync's fast read took "sold" from a
+seller's own words ("I will take the ad down when it's sold", "the previous
+owner … sold it", "Sold new in Missouri") and made live listings comps, and one
+recorded "sold" kept them comps forever. Off the auction sites, the reader's
+"sold" now needs the page's own status line (the availability check's
+deterministic patterns); a comp whose page, read now, shows it live returns to
+the candidates. Freed: #71 (M Coupe), #269 (live BaT Cayman S); #97 had been
+moved back by hand.
+
+On Jason's data after re-derivation: #58 Skip → Contact now (VIN first); #285
+(152k) Contact now → Watch; #100 and #304 Watch → Skip (M fair values fell
+about 1% with last asks discounted); the 3.0i roadster walk-aways moved by
+under $450 with 8 comps, so #62 stays Skip.
+
 ## 1.8.0 (2026-09-25)
 
 Jason's instruction, 2026-09-25, after a review of 34 assessed active cars: 32
