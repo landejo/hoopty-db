@@ -85,6 +85,8 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
         st = ce.status if ce else "missing"
         if st in ("satisfied", "not_applicable"):
             continue   # not_applicable: the reader established the item cannot apply to this car
+        if st != "failed" and is_bonus_only(req, profile):
+            continue   # missing or claimed only: no penalty
         label = req.get("label", req["key"])
         detail = f" ({ce.evidence})" if ce and ce.evidence else ""
         if st == "failed" and req.get("severity") == "hard":
@@ -192,6 +194,14 @@ def _is_tracker_artifact(c) -> bool:
     """A 'contradiction' between the listing and our own metadata, or an
     absence of proof, is not an identity conflict."""
     return bool(_ARTIFACT_RE.search(f"{c.topic} {c.detail}"))
+
+
+def is_bonus_only(req: dict[str, Any], profile: dict[str, Any]) -> bool:
+    """1.9.2 (Jason 2026-10-01): a Porsche borescope is almost never available and the
+    risk at this age is low, so not having one is no longer held against the car; a clean
+    one earns a bonus (engine.py) and a failed one still counts."""
+    is_porsche = (profile.get("make") or "").lower() == "porsche" or (profile.get("key") or "").startswith("porsche")
+    return is_porsche and "borescope" in (req.get("key") or "").lower()
 
 
 def _applies(req: dict[str, Any], listing: dict[str, Any]) -> bool:

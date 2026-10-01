@@ -21,7 +21,7 @@ immediate_repairs: fluids, tires by date, AOS if unknown, cooling inspection
 repairs_12mo: clutch/flywheel if worn, water pump, coolant pipes, suspension bushings
 market_notes: >
   Good 2.7 manuals were expected around $22-26k for 40-65k miles; S cars carry a
-  premium that the borescope requirement must justify. Tiptronic cars trade well below.
+  premium; a clean borescope supports it (bonus, not a requirement, since 1.9.2). Tiptronic cars trade well below.
 catchup_notes: >
   Require DME over-rev report; compression/leakdown interpreted with, never instead
   of, the borescope. Verify California smog with the exact installed modifications.
@@ -34,12 +34,11 @@ weights:
   locality: 0.07
   desirability: 0.07
 dealbreaker_rules:
-  - Cayman S without a satisfactory specialist borescope (cylinders 4-6 photographed) or a documented rebuild with new/re-sleeved cylinders
   - Automatic (Tiptronic) for the enthusiast brief
   - Salvage or rebuilt title
 critical_evidence:
   - key: borescope
-    label: Independent Porsche-specialist borescope with retained photos, especially cylinders 4-6, OR invoices for an engine rebuild with new or re-sleeved cylinders (no scope and no rebuild record, no Cayman S)
+    label: Independent Porsche-specialist borescope with retained photos, especially cylinders 4-6, OR invoices for an engine rebuild with new or re-sleeved cylinders (a bonus when present; not having one is not held against the car)
     severity: hard
     applies_when: {min_engine_liters: 3.3, or_trim_contains: "S"}
   - key: dme_overrev

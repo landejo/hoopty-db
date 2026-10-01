@@ -415,3 +415,15 @@ the 5 Rebuilt-title cars. tests/test_history_value.py; unit 290 passed.
 Note: another session committed policy 1.9.0 (c16504e) and had uncommitted edits in
 scout/config.py, scout/market.py, scout/profiles.py, tests/test_policy_1_9.py — left untouched.
 Needs a server restart (startup re-derives stored assessments with the new costs).
+
+## 2026-10-01 — Policy 1.9.2: Porsche borescope is a bonus, not a requirement
+
+Jason: borescope evidence is almost never available and the risk at this age is low; add a
+bonus when a car has one. A Porsche profile's critical-evidence item with "borescope" in its
+key no longer raises a gate when missing or claimed only (was hard on the 987 Cayman S,
+conditional elsewhere); a clean one adds 3 documentation points; a failed one still counts.
+Seed 987 Cayman YAML wording softened. Re-derived the 23 assessed Porsches (no AI): every
+borescope gate gone; scores up 0-8 where the documentation cap had applied (#131 59->67,
+#82 54->59, #246 71->74 with the bonus); verdicts unchanged — they rest on other gates and on
+the model's own documentation ratings, which a fresh assessment would redo.
+Tests: guide scenario 1 rewritten to the new rule; Porsche-only check. Unit 292 passed.

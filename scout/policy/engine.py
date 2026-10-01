@@ -7,6 +7,8 @@ from typing import Any
 
 from scout.policy import POLICY_VERSION
 from scout.policy.preferences import CATEGORY_POINTS
+
+BORESCOPE_BONUS = 3   # documentation points for a clean Porsche borescope (1.9.2)
 from scout.policy.costs import compute_costs
 from scout.policy.gates import evaluate_gates
 from scout.policy.schema import Assessment, CostBreakdown, EvidenceInterpretation, Gate
@@ -206,6 +208,17 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
                            f"({'documented post-sale work' if allowance > 0.1 else 'no documented post-sale work'}) = ${ceiling:,}; "
                            f"the new ${listing.get('price') or 0:,} ask is not the anchor" + (" (cap applied)." if capped else "."))
     score = compute_score(evidence, gates, listing, mission, state, vin_history, costs=costs)
+    # 1.9.2: a clean Porsche borescope is a bonus (its absence no longer counts against the car).
+    from scout.policy.gates import is_bonus_only, match_reported
+    for req in profile.get("critical_evidence") or []:
+        ce = match_reported(req, evidence.critical_evidence) if is_bonus_only(req, profile) else None
+        if ce and ce.status == "satisfied":
+            gain = min(BORESCOPE_BONUS, CATEGORY_POINTS["documentation"] - score.documentation)
+            if gain > 0:
+                score.documentation += gain
+                score.total += gain
+                score.caps_applied.append(f"documentation +{gain}: clean borescope on record")
+            break
     confidence = compute_confidence(evidence, gates, listing)
     if not (evidence.next_action or "").strip():
         # The model must always leave one concrete step; derive it from its own lists.

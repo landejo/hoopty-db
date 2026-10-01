@@ -4,6 +4,18 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.9.2 (2026-10-01)
+
+Jason, 2026-10-01: "for the Porsche models, we de-emphasize having/not having borescope
+evidence. It's almost never available, and I think the risk of issues is pretty low at
+this stage … we can certainly add bonus when a car DOES have it."
+
+1. **A missing (or seller-claimed only) borescope on a Porsche profile raises no gate**:
+   no hard block (the 987 Cayman S rule), no verdict cap, no documentation cap. Applies to
+   any Porsche profile's critical-evidence item whose key contains "borescope".
+2. **A clean borescope adds 3 documentation points** (capped at the category's 25).
+3. **A failed borescope still counts** as before (hard on the 987 Cayman S).
+
 ## 1.9.1 (2026-09-30)
 
 Jason, 2026-09-30, after #59's Carfax showed a 2012 insurance total loss under a

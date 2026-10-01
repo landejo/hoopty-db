@@ -36,25 +36,30 @@ def _listing(**kw):
 STATE = dict(DEFAULT_STATE)
 
 
-# 1. Cayman S with an excellent spec but no borescope -> Reject, regardless of arithmetic.
-def test_cayman_s_without_borescope_is_required_first_then_rejected_after_ppi():
+# 1. Cayman S borescope (1.9.2, Jason 2026-10-01): missing is no penalty, clean is a bonus,
+#    failed still rejects. (Before 1.9.2 a missing scope was a hard requirement.)
+def test_cayman_s_borescope_missing_is_no_penalty_clean_is_a_bonus_failed_rejects():
     l = _listing(make="Porsche", model="Cayman S", trim="S", engine_liters=3.4, year=2007, price=14500, mileage=60000)
-    ev = _ev(doc=9, cond=9, val=9, fit=8, log=9, emo=10, quality=8,
-             critical={"borescope": "claimed_only", "dme_overrev": "missing", "cooling_aos_service": "satisfied"})
-    # Policy 1.6.0: before the PPI a missing hard item is required, not yet a finding.
-    a = assess(l, _profile("porsche_987_cayman"), ev, STATE, mission="future_keeper")
-    assert a.verdict == "Maybe / verify" and a.priority > 0
-    assert any(g.kind == "conditional" and g.key == "critical_missing:borescope" and g.reason.endswith("(required before purchase)") for g in a.gates)
-    assert a.headline.startswith("Maybe / verify — required first:") and a.next_steps[0].startswith("Get this first")
-    assert a.score.documentation <= 10 and "documentation capped" in " ".join(a.score.caps_applied)
-    assert a.policy_version == POLICY_VERSION
-    # Still missing after the PPI: Reject.
-    a = assess(l, _profile("porsche_987_cayman"), ev, STATE, mission="future_keeper", stage="ppi")
-    assert a.verdict == "Reject" and any(g.kind == "hard" and g.key == "critical_missing:borescope" for g in a.gates)
-    # A failed scope rejects at any stage.
-    ev_failed = _ev(doc=9, cond=9, val=9, fit=8, log=9, emo=10, quality=8,
-                    critical={"borescope": "failed", "dme_overrev": "missing", "cooling_aos_service": "satisfied"})
-    assert assess(l, _profile("porsche_987_cayman"), ev_failed, STATE, mission="future_keeper").verdict == "Reject"
+    crit = lambda bs: {"borescope": bs, "dme_overrev": "satisfied", "cooling_aos_service": "satisfied"}
+    ev = lambda bs: _ev(doc=8, cond=9, val=9, fit=8, log=9, emo=10, quality=8, critical=crit(bs))
+    prof = _profile("porsche_987_cayman")
+    for stage in ("listing", "ppi"):
+        a = assess(l, prof, ev("missing"), STATE, mission="future_keeper", stage=stage)
+        assert not any("borescope" in g.key for g in a.gates), stage
+        assert "documentation capped" not in " ".join(a.score.caps_applied)
+        assert a.verdict != "Reject" and a.policy_version == POLICY_VERSION
+    assert not any("borescope" in g.key for g in assess(l, prof, ev("claimed_only"), STATE, mission="future_keeper").gates)
+    missing, clean = assess(l, prof, ev("missing"), STATE, mission="future_keeper"), assess(l, prof, ev("satisfied"), STATE, mission="future_keeper")
+    assert clean.score.documentation == missing.score.documentation + 3 and clean.score.total == missing.score.total + 3
+    assert "clean borescope" in " ".join(clean.score.caps_applied)
+    assert assess(l, prof, ev("failed"), STATE, mission="future_keeper").verdict == "Reject"
+
+
+def test_borescope_rule_is_porsche_only():
+    from scout.policy.gates import is_bonus_only
+    assert is_bonus_only({"key": "cylinder_borescope"}, {"key": "porsche_boxster_981", "make": "Porsche"})
+    assert not is_bonus_only({"key": "borescope_images"}, {"key": "toyota_mr2_spyder", "make": "Toyota"})
+    assert not is_bonus_only({"key": "coolant_pipe_invoice_or_scope"}, {"key": "porsche_cayenne_turbo_955", "make": "Porsche"})
 
 
 # 2. Stock Z3 3.0 with a clean structural inspection but no reinforcement -> not penalized for the missing kit.
