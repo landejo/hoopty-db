@@ -352,6 +352,9 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     pk = norm.get("profile_key")
     if prof is None and pk and pk not in {"new", "skip"}:
         prof = next((p for p in profiles if p["key"] == pk), None)
+        yrs, yr = (prof or {}).get("years") or [], norm.get("year")
+        if prof and yr and len(yrs) == 2 and not (yrs[0] <= yr <= yrs[1]):
+            prof = None   # the model's pick must fit the car's year too: a 1999 328i is not a 2011-13 E93
     if prof is None and pk != "skip" and norm.get("make") and norm.get("model") and CONFIG.ai_enabled:
         key = suggest_key(norm.get("make"), norm.get("model"), norm.get("generation"))
         prof = db.get_profile(key)

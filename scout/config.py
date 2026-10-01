@@ -72,6 +72,7 @@ SITES = {
     "carsandbids": "Cars & Bids",
     "bat": "Bring a Trailer",
     "builtforbackroads": "Built for Backroads",
+    "bayluxuryautos": "Bay Luxury Autos",
 }
 AUCTION_SITES = {"carsandbids", "bat"}
 

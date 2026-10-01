@@ -339,3 +339,23 @@ def test_facebook_junk_images_are_never_stored():
     assert clean_all_photos() == 1
     row = db.get_listing_by_url(url)
     assert row["photos"] == [car] and row["thumb"] == car
+
+
+def test_model_profile_pick_outside_its_years_is_not_used(monkeypatch):
+    """2026-09-30: a 1999 328i convertible was filed under a 2011-13 E93 profile because
+    the normalizer named it; the deterministic matcher had rightly refused it."""
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    monkeypatch.setattr("scout.vin.decode_vin", lambda *a, **k: None)
+    base = db.get_profile("z3_m")   # a complete profile to borrow the shape from
+    db.upsert_profile({**base, "key": "bmw_328i_convertible_e93_lci", "label": "BMW 328i Convertible (E93 LCI)", "make": "BMW",
+                       "models": ["328i Convertible"], "years": [2011, 2013], "source": "ai", "verified": False})
+    import scout.ai.normalize as nz
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": True, "year": 1999, "make": "BMW", "model": "328i Convertible",
+                                                                  "profile_key": "bmw_328i_convertible_e93_lci", "prelim_summary": "x"})
+    import scout.ai.profile_gen as pg
+    monkeypatch.setattr(pg, "generate_profile", lambda *a, **k: None)   # no new profile in a test
+    url = "https://www.example.com/1999-328i/"
+    ing.ingest_items("facebook", [_item(url, title="1999 BMW 328i Convertible", price="$18,900")], run_ai=True)
+    assert db.get_listing_by_url(url)["profile_key"] != "bmw_328i_convertible_e93_lci"
