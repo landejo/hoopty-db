@@ -4,6 +4,18 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.9.1 (2026-09-30)
+
+Jason, 2026-09-30, after #59's Carfax showed a 2012 insurance total loss under a
+clean Oregon title: its walk-away ($17,917) came from clean-history M Roadster sales.
+
+1. **A branded title or an insurance total loss cuts the car's fair value by 30%**
+   (low, mid and high), so its walk-away and offer range follow. The trigger is a
+   salvage / rebuilt / reconstructed title status, or the event lines of an
+   attached Carfax / AutoCheck ("TOTAL LOSS VEHICLE", "Total Loss Reported:"; the
+   glossary every report carries does not count). 30% is a rule of thumb, stated as
+   such on the car; nothing else (score, gates, verdict) changes.
+
 ## 1.9.0 (2026-09-29)
 
 Jason's instruction, 2026-09-29, after a review of his 31 unsold Facebook

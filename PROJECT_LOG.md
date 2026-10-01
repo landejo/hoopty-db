@@ -403,3 +403,15 @@ published 12/12, popup 4/4, saved 4/4.
   a seller's "sold" or reset #109's profile). Not committed.
 - Open: board priority is not comparable across stages (a worked car at Docs, e.g. #276 at 17,
   vs an uncontacted one on merit, e.g. #59 at 52).
+
+## 2026-09-30 — Policy 1.9.1: total-loss / branded-title value cut
+
+#59's Carfax shows a 2012 insurance total loss under a clean Oregon title; its walk-away
+($17,917) came from clean-history comps. Now a salvage/rebuilt/reconstructed title status, or
+the event lines of an attached Carfax/AutoCheck ("TOTAL LOSS VEHICLE", "Total Loss Reported:" —
+not the glossary every report carries), cut fair low/mid/high by 30% (rule of thumb, noted on
+the car), so walk-away and offers follow. Score, gates and verdict unchanged. Affects #59 and
+the 5 Rebuilt-title cars. tests/test_history_value.py; unit 290 passed.
+Note: another session committed policy 1.9.0 (c16504e) and had uncommitted edits in
+scout/config.py, scout/market.py, scout/profiles.py, tests/test_policy_1_9.py — left untouched.
+Needs a server restart (startup re-derives stored assessments with the new costs).

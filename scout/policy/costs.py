@@ -1,6 +1,7 @@
 """Risk-adjusted acquisition cost and the backward-solved maximum price (§10)."""
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -8,6 +9,25 @@ from scout.policy.schema import CostBreakdown, EvidenceInterpretation, Gate
 from scout.scoring import is_early_bid, locality_hint
 
 VALUE_CEILING_MIN_COMPS = 3   # fewer comparable sales than this: the budget alone sets the walk-away
+# 1.9.1: a branded title or an insurance total loss on record sells well under the
+# clean-history comps. One flat rule-of-thumb cut (not measured from comps).
+HISTORY_VALUE_DISCOUNT = 0.30
+_BRANDED_TITLE_RE = re.compile(r"\b(salvage|rebuilt|reconstructed)\b", re.I)
+# The event lines only: every Carfax also carries "Total Loss Vehicle" in its glossary.
+_TOTAL_LOSS_RE = re.compile(r"TOTAL LOSS VEHICLE|Total Loss Reported:")
+
+
+def history_value_flag(listing: dict[str, Any]) -> str | None:
+    """Why this car is worth less than its clean-history comps, or None."""
+    m = _BRANDED_TITLE_RE.search(listing.get("title_status") or "")
+    if m:
+        return f"a {m.group(1).lower()} title"
+    if listing.get("id"):
+        from scout import db   # the attached Carfax / AutoCheck text
+        for d in db.list_documents(listing["id"]):
+            if d.get("kind") in ("carfax", "autocheck") and _TOTAL_LOSS_RE.search(d.get("text") or ""):
+                return "an insurance total loss on its history report"
+    return None
 
 
 def buyer_fee(site: str, price: int, state: dict[str, Any]) -> int:
@@ -83,7 +103,12 @@ def price_basis(listing: dict[str, Any], evidence: EvidenceInterpretation, fair:
 def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceInterpretation,
                   gates: list[Gate], state: dict[str, Any], fair: dict[str, Any] | None,
                   mission: str | None = None) -> CostBreakdown:
+    history = history_value_flag(listing) if fair else None
+    if history:
+        fair = {**fair, **{k: int(fair[k] * (1 - HISTORY_VALUE_DISCOUNT)) for k in ("low", "mid", "high") if fair.get(k) is not None}}
     basis, price, notes = price_basis(listing, evidence, fair, state)
+    if history:
+        notes.append(f"Fair value cut {HISTORY_VALUE_DISCOUNT:.0%} for {history}: clean-history comps overstate it (a rule of thumb, not measured).")
     site = listing.get("site") or ""
     fee = buyer_fee(site, price, state)
     transport = transport_cost(listing.get("location"), state)
