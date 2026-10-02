@@ -89,7 +89,7 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
             continue   # missing or claimed only: no penalty
         label = req.get("label", req["key"])
         detail = f" ({ce.evidence})" if ce and ce.evidence else ""
-        if st == "failed" and req.get("severity") == "hard":
+        if st == "failed" and (req.get("severity") == "hard" or is_bonus_only(req, profile)):   # 1.9.2: a failed Porsche scope rejects
             gates.append(Gate(kind="hard", key=f"critical_failed:{req['key']}", reason=f"{label}: failed{detail}"))
         elif st == "failed":
             gates.append(Gate(kind="conditional", key=f"critical_reservation:{req['key']}",

@@ -427,3 +427,7 @@ borescope gate gone; scores up 0-8 where the documentation cap had applied (#131
 #82 54->59, #246 71->74 with the bonus); verdicts unchanged — they rest on other gates and on
 the model's own documentation ratings, which a fresh assessment would redo.
 Tests: guide scenario 1 rewritten to the new rule; Porsche-only check. Unit 292 passed.
+- 2026-10-01 follow-up: a failed borescope is a hard reject on every Porsche profile (generated
+  profiles had it "conditional", which only capped the verdict). Generated Porsche profiles'
+  borescope labels now say "bonus when present" (DB edit); their dealbreakers are unchanged
+  (a first pass wrongly dropped the "scoring found" ones; restored from backups and checked).

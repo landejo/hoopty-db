@@ -55,6 +55,18 @@ def test_cayman_s_borescope_missing_is_no_penalty_clean_is_a_bonus_failed_reject
     assert assess(l, prof, ev("failed"), STATE, mission="future_keeper").verdict == "Reject"
 
 
+def test_failed_borescope_rejects_on_any_porsche_profile():
+    """Jason 2026-10-01: a failed borescope is a big dealbreaker, even where a generated
+    profile marked the scope only "conditional"."""
+    prof = {**_profile("porsche_987_cayman"), "key": "porsche_cayman_s_987_2", "source": "ai",
+            "critical_evidence": [{"key": "borescope_images", "label": "Borescope photos", "severity": "conditional"}]}
+    l = _listing(make="Porsche", model="Cayman S", trim="S", engine_liters=3.4, year=2010, price=30000, mileage=50000)
+    ev = lambda bs: _ev(doc=8, cond=9, val=9, fit=8, log=9, emo=10, quality=8, critical={"borescope_images": bs})
+    failed = assess(l, prof, ev("failed"), STATE, mission="future_keeper")
+    assert failed.verdict == "Reject" and any(g.kind == "hard" and g.key == "critical_failed:borescope_images" for g in failed.gates)
+    assert not any("borescope" in g.key for g in assess(l, prof, ev("missing"), STATE, mission="future_keeper").gates)
+
+
 def test_borescope_rule_is_porsche_only():
     from scout.policy.gates import is_bonus_only
     assert is_bonus_only({"key": "cylinder_borescope"}, {"key": "porsche_boxster_981", "make": "Porsche"})
