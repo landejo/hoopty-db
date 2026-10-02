@@ -431,3 +431,13 @@ Tests: guide scenario 1 rewritten to the new rule; Porsche-only check. Unit 292 
   profiles had it "conditional", which only capped the verdict). Generated Porsche profiles'
   borescope labels now say "bonus when present" (DB edit); their dealbreakers are unchanged
   (a first pass wrongly dropped the "scoring found" ones; restored from backups and checked).
+
+## 2026-10-01 — Facebook "Today's picks" thumbnails were stored as car photos
+
+Every Marketplace listing (85/85) carried ~20 feed thumbnails from under the listing (#109's
+included a different black Z3), and assessments saw them. They are square-cropped
+(stp=c<x>.<y>.<w>.<h>a_); a listing's own photos never are (checked on all 85; group posts
+unaffected). Filter in extension/adapters/facebook.js (0.4.5) and scout/ingest.py
+(is_junk_photo; clean_all_photos also runs at server start). Cleaned the DB: 1,647 photos
+removed from 85 listings (#45, a sold listing showing only the feed, now has none).
+Then re-assessed the 39 affected active candidates on Opus 5.5 medium. Unit 294 passed; E2E saved 4/4.

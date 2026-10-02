@@ -15,10 +15,18 @@ from scout.scoring import locality_hint
 # Facebook image types that are never the car: profile pictures, reel/video
 # thumbnails, Instagram-sourced feed images, ad creatives (2026-09-28).
 FB_JUNK_PHOTO_RE = re.compile(r"/v/t(?:39\.30808-1|15\.5256-10|51\.82787-15|45\.1600-4)/")
+# Facebook's "Today's picks" feed under a Marketplace listing serves square-cropped
+# thumbnails (stp=c<x>.<y>.<w>.<h>a_...); the listing's own photos are never cropped
+# (checked on all 85 stored listings, 2026-10-01: about 20 feed images on every one).
+FB_FEED_THUMB_RE = re.compile(r"fbcdn\.net/.*[?&]stp=c\d+\.\d+\.\d+\.\d+a_")
+
+
+def is_junk_photo(url: str | None) -> bool:
+    return bool(FB_JUNK_PHOTO_RE.search(url or "") or FB_FEED_THUMB_RE.search(url or ""))
 
 
 def clean_photos(urls: list[str] | None) -> list[str]:
-    return [u for u in (urls or []) if not FB_JUNK_PHOTO_RE.search(u or "")]
+    return [u for u in (urls or []) if not is_junk_photo(u)]
 
 
 def clean_all_photos() -> int:
@@ -29,7 +37,7 @@ def clean_all_photos() -> int:
         kept = clean_photos(photos)
         if len(kept) != len(photos):
             updates: dict[str, Any] = {"photos": kept}
-            if r.get("thumb") and FB_JUNK_PHOTO_RE.search(r["thumb"]):
+            if r.get("thumb") and is_junk_photo(r["thumb"]):
                 updates["thumb"] = kept[0] if kept else None
             db.update_listing(r["id"], updates)
             n += 1

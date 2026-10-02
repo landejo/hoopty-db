@@ -359,3 +359,14 @@ def test_model_profile_pick_outside_its_years_is_not_used(monkeypatch):
     url = "https://www.example.com/1999-328i/"
     ing.ingest_items("facebook", [_item(url, title="1999 BMW 328i Convertible", price="$18,900")], run_ai=True)
     assert db.get_listing_by_url(url)["profile_key"] != "bmw_328i_convertible_e93_lci"
+
+
+def test_facebook_feed_thumbnails_are_not_car_photos():
+    """2026-10-01: every Marketplace listing carried ~20 "Today's picks" thumbnails
+    (a different black Z3 among #109's). They are square-cropped (stp=c...a_)."""
+    from scout.ingest import clean_photos
+    own = "https://scontent-sea1-1.xx.fbcdn.net/v/t45.5328-4/752298083_872857545552066_1161282114595082518_n.jpg?stp=dst-jpg_p720x720_tt6&_nc_cat=1"
+    feed = "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.30808-6/677622780_10164110802079313_3107839779461854359_n.jpg?stp=c256.0.1536.1536a_dst-jpg_tt6&_nc_cat=1"
+    feed_small = "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.84726-6/783673546_1093883892980510_677158706730998009_n.jpg?stp=c0.208.526.526a_dst-jpg_p526x395_tt6"
+    other_site = "https://automanager.blob.core.windows.net/wmphotos/025137/x/9db0c505e6_800.jpg?stp=c0.0.1.1a_"
+    assert clean_photos([own, feed, feed_small, other_site]) == [own, other_site]

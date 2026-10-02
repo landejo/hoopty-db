@@ -7,7 +7,10 @@
   // Image types that are never the car: profile pictures, reel/video thumbnails,
   // Instagram-sourced feed images, ad creatives (read off real pages 2026-09-28).
   const JUNK = /\/v\/t(?:39\.30808-1|15\.5256-10|51\.82787-15|45\.1600-4)\//;
-  const isCarPhoto = (src) => /fbcdn|scontent/.test(src) && !JUNK.test(src);
+  // The "Today's picks" feed under a listing serves square-cropped thumbnails
+  // (stp=c<x>.<y>.<w>.<h>a_); the listing's own photos are never cropped (2026-10-01).
+  const FEED_THUMB = /[?&]stp=c\d+\.\d+\.\d+\.\d+a_/;
+  const isCarPhoto = (src) => /fbcdn|scontent/.test(src) && !JUNK.test(src) && !FEED_THUMB.test(src);
   const sleep = S.sleep;
 
   // The post's own photos: the grid inside the post, then Facebook's photo viewer
