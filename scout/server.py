@@ -225,7 +225,6 @@ def _startup() -> None:
     if os.environ.get("SCOUT_STARTUP_RESCORE", "1") != "0":
         # Free: re-derive assessments stored under an older policy so a policy change
         # (e.g. 1.7.0's sold/ended gate) reaches every car without pressing Recompute.
-        import threading
 
         def _rescore_stale() -> None:
             from scout.ingest import clean_all_photos

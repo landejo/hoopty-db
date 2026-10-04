@@ -56,3 +56,15 @@ def test_publish_writes_a_card_image_from_the_saved_copy(cache, tmp_path):
     with Image.open(tmp_path / "stage" / "data" / "t" / "7.jpg") as im:
         assert max(im.size) == 640
     assert "thumb_file" not in index["listings"][1]
+
+
+def test_server_starts_with_the_photo_worker_on(monkeypatch):
+    """2026-10-04: a local `import threading` later in _startup made the worker start raise
+    UnboundLocalError; the tests had the worker off and missed it."""
+    from scout import server
+    started = []
+    monkeypatch.setenv("SCOUT_PHOTO_CACHE", "1")
+    monkeypatch.setattr(server, "_photo_worker", lambda: started.append(1))
+    with TestClient(server.app) as c:
+        assert c.get("/api/health").status_code == 200
+    assert started == [1]
