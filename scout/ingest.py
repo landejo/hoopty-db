@@ -68,6 +68,21 @@ ENDED_RE = re.compile(r"\b(bid to|reserve not met|auction ended|ended)\b", re.I)
 PRICE_RE = re.compile(r"\$\s?(?:([\d,]{3,})|(\d+(?:\.\d+)?)\s?[kK]\b)")
 
 
+FB_FEED_MARKERS = ("Today's picks", "Today’s picks")
+
+
+def listing_own_text(site: str, text: str | None) -> str:
+    """The part of a page that is about THIS listing. On Facebook Marketplace the
+    "Today's picks" feed under the listing carries other items' "Pending" / "Sold"
+    lines (2026-10-04: 22 live cars read as pending from a $50 drum box and the like)."""
+    text = text or ""
+    if site == "facebook":
+        cut = min([i for i in (text.find(m) for m in FB_FEED_MARKERS) if i >= 0], default=-1)
+        if cut >= 0:
+            return text[:cut]
+    return text
+
+
 def detect_availability(item: dict[str, Any], site: str) -> str:
     """Cheap, deterministic read of the scraper's flags + text before any AI."""
     if item.get("sold") is True:
@@ -75,7 +90,7 @@ def detect_availability(item: dict[str, Any], site: str) -> str:
     if item.get("ended") is True:
         return "ended"
     card = ((item.get("price_text") or "") + " " + (item.get("badge") or "")).strip()
-    status_text = (item.get("detail", {}) or {}).get("status_text", "") or ""
+    status_text = listing_own_text(site, (item.get("detail", {}) or {}).get("status_text", "") or "")
     head = (card + " " + status_text).strip()
     if SOLD_RE.search(card) or PAGE_SOLD_RE.search(status_text):
         return "sold"

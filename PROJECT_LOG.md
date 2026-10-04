@@ -457,3 +457,16 @@ the browser), and assessments would have run without photos. Now:
 - publish: a 640px card image per car (data/t/<id>.jpg, thumb_file) from the saved copy.
 Tests: tests/test_photo_cache.py (3); e2e_ux +2 photo checks (56/56). Unit 297 passed.
 Open: no pruning of orphaned copies yet (~186 MB → ~300 MB expected).
+
+## 2026-10-04 — Facebook "Today's picks" made live cars read as pending
+
+#109 vanished from the board (default filter: active) because today's sync marked it pending:
+the "Pending" line belonged to a $50 drum box in the "Today's picks" feed under the listing.
+The extension and the server both read status from the first ~1,500–3,000 characters of the
+page, which include that feed. Now ingest.listing_own_text() cuts a Facebook page at
+"Today's picks" for detect_availability and availability.classify_deterministic, and the
+extension (0.4.6) reads Sold/Pending only from the listing's own text. Restored 23 falsely
+pending listings to active (#109 among them); #293 and #283 stay pending (their own text says so).
+Checked the "sold" Facebook comps whose evidence looked weak: #67, #94, #103, #104 really are sold
+(their own header reads "Sold · <title>"); #52 redirected to unavailable_product; #294 marked
+Purchased by hand. Test added; unit 299, E2E replay 12/12.

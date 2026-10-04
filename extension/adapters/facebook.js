@@ -93,8 +93,12 @@
       if (m) { d.listed_text = m[1]; if (m[2]) d.location_text = m[2]; }
       const mi = d.text.match(/Driven\s+([\d,]+)\s+miles/i);
       if (mi) d.mileage_text = mi[1];
-      const sold = /^\s*Sold\b/m.test(d.text.slice(0, 1500)) || /This listing is sold/i.test(d.text);
-      const pending = !sold && /^\s*Pending\b/m.test(d.text.slice(0, 1500));
+      // Only the listing's own text: the "Today's picks" feed below it carries other
+      // items' "Pending" / "Sold" lines (22 live cars read as pending, 2026-10-04).
+      const feedAt = d.text.search(/Today[’']s picks/);
+      const own = feedAt >= 0 ? d.text.slice(0, feedAt) : d.text;
+      const sold = /^\s*Sold\b/m.test(own.slice(0, 1500)) || /This listing is sold/i.test(own);
+      const pending = !sold && /^\s*Pending\b/m.test(own.slice(0, 1500));
       d.status_text = (sold ? "Sold\n" : pending ? "Pending\n" : "") + d.status_text;
       return d;
     },

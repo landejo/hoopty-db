@@ -470,3 +470,20 @@ def test_expected_hammer_above_100k_is_accepted():
     from scout.policy.schema import MoneyRange
     r = MoneyRange(low=145000, high=185000)
     assert (r.low, r.high) == (145000, 185000)
+
+
+FB_PAGE_WITH_FEED = ("Marketplace\nBrowse all\n2000 BMW z3 3.0i Roadster 2D\n$14,000\nListed 10 weeks ago in Seattle, WA\nMessage again\n"
+                     "About this vehicle\nDriven 54,000 miles\nManual transmission\nSeller's description\nNeed to sell\n"
+                     "Today's picks\nHollister · 40 mi\n$400\nPint one wheel\nShips to you\nPending\n·\n$50\nIndex Drums Doom Box\nSold\n$9\nLamp\n")
+
+
+def test_facebook_feed_items_pending_or_sold_do_not_change_the_car():
+    """2026-10-04: #109 (live) read as pending from a drum box in the "Today's picks" feed."""
+    from scout.ingest import detect_availability, listing_own_text
+    assert "Pending" not in listing_own_text("facebook", FB_PAGE_WITH_FEED)
+    item = {"url": "u", "detail": {"text": FB_PAGE_WITH_FEED, "status_text": FB_PAGE_WITH_FEED[:3000]}}
+    assert detect_availability(item, "facebook") == "active"
+    assert availability.classify_deterministic("facebook", {"text": FB_PAGE_WITH_FEED, "page_url": "https://www.facebook.com/marketplace/item/1/"}) \
+        not in ({"availability": "pending"}, ) and (availability.classify_deterministic("facebook", {"text": FB_PAGE_WITH_FEED}) or {}).get("availability") in (None, "active")
+    own_pending = FB_PAGE_WITH_FEED.replace("$14,000\n", "Pending\n$14,000\n", 1)
+    assert detect_availability({"url": "u", "detail": {"status_text": own_pending}}, "facebook") == "pending"

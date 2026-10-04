@@ -61,8 +61,9 @@ def classify_deterministic(site: str, detail: dict[str, Any]) -> dict[str, Any] 
     """A clear status from the page head, or None when the page gives no strong
     signal (the common case for a live listing). Result keys: availability
     (sold | ended | unavailable | pending | active), evidence, price."""
+    from scout.ingest import listing_own_text   # not the feed of other items under the listing
     head = ((detail.get("bid_label") or "") + " " + (detail.get("bid_text") or "") + "\n" +
-            (detail.get("text") or "")[:HEAD_CHARS])
+            listing_own_text(site, detail.get("text"))[:HEAD_CHARS])
     m = SOLD_PRICE_RE.search(head)
     if m:
         return {"availability": "sold", "evidence": m.group(0), "price": _money(m.group(1))}
