@@ -50,8 +50,8 @@ fresh_db() {
   sqlite3 "$SB/scout.db" "DELETE FROM settings WHERE key='reassess_cycle'"
 }
 start_server() {   # $1 = "ai" to use the fake Anthropic API
-  local extra=(ANTHROPIC_API_KEY= SCOUT_STARTUP_RESCORE_DELAY=${RESCORE_DELAY:-0})
-  if [ "${1:-}" = ai ]; then extra=(SCOUT_STARTUP_RESCORE_DELAY=0 ANTHROPIC_API_KEY=fake-e2e-key ANTHROPIC_BASE_URL=http://127.0.0.1:$FAKE_PORT); fi
+  local extra=(ANTHROPIC_API_KEY= SCOUT_STARTUP_RESCORE_DELAY=${RESCORE_DELAY:-0} SCOUT_PHOTO_CACHE=0)
+  if [ "${1:-}" = ai ]; then extra=(SCOUT_STARTUP_RESCORE_DELAY=0 SCOUT_PHOTO_CACHE=0 ANTHROPIC_API_KEY=fake-e2e-key ANTHROPIC_BASE_URL=http://127.0.0.1:$FAKE_PORT); fi
   export SERVER_STARTED=$(date -u +%Y-%m-%dT%H:%M:%S)
   (cd "$SB/repo" && exec env SCOUT_PORT=$PORT SCOUT_DB_PATH="$SB/scout.db" SCOUT_BACKUP_DIR=off \
      SCOUT_AUTOPUBLISH=1 SCOUT_AUTOPUBLISH_IDLE_MIN=1 SCOUT_AUTOPUBLISH_CHECKPOINT_MIN=30 "${extra[@]}" \

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import threading
 import time
 from typing import Any
 
@@ -153,6 +154,61 @@ def _rederive_assessment(listing_id: int) -> None:
         db.add_assessment(listing_id, d)
 
 
+# ---------- photo cache ----------
+# Facebook photo links expire a few days after a sync (oe=...). Save every car's
+# photos locally right after each sync (and once at startup), and serve the board
+# through /api/photo so a saved copy outlives its link. Candidates and curiosities
+# keep up to 12 photos (what an assessment sends), comps just their card photo.
+PHOTO_CACHE_PER_LISTING = {"candidate": 12, "curiosity": 12, "comp": 1}
+_photo_wake = threading.Event()
+
+
+def _photos_to_cache() -> list[str]:
+    urls: list[str] = []
+    order = {"candidate": 0, "curiosity": 1, "comp": 2}
+    for r in sorted(db.list_listings(), key=lambda r: (order.get(r["role"], 9), r["id"])):
+        n = PHOTO_CACHE_PER_LISTING.get(r["role"], 0)
+        urls += (r.get("photos") or [])[:n] or ([r["thumb"]] if n and r.get("thumb") else [])
+    return urls
+
+
+def _photo_worker() -> None:
+    from scout.ai.photos import cached_path, fetch_cached
+    while True:
+        saved = failed = 0
+        for u in _photos_to_cache():
+            if cached_path(u):
+                continue
+            if fetch_cached(u):
+                saved += 1
+            else:
+                failed += 1
+        if saved or failed:
+            db.log_event("photos_cached", None, f"saved {saved} photo(s); {failed} could not be fetched (expired or blocked)")
+        _photo_wake.wait(timeout=6 * 3600)
+        _photo_wake.clear()
+
+
+_photo_allowed: dict[str, Any] = {"version": None, "urls": set()}
+
+
+@app.get("/api/photo")
+def photo(u: str) -> Response:
+    """A listing's photo: the saved copy, else fetched (and saved) now. Only URLs that
+    belong to a tracked listing are served, so this is not an open proxy."""
+    from scout.ai.photos import fetch_cached
+    version = (str(db.DB_PATH), db.data_version())
+    if _photo_allowed["version"] != version:
+        _photo_allowed["urls"] = {x for r in db.list_listings() for x in (r.get("photos") or []) + [r.get("thumb") or ""] if x}
+        _photo_allowed["version"] = version
+    if u not in _photo_allowed["urls"]:
+        raise HTTPException(404, "not a tracked photo")
+    data = fetch_cached(u)
+    if data is None:
+        raise HTTPException(404, "photo unavailable (link expired and no saved copy)")
+    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"})
+
+
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()
@@ -164,6 +220,8 @@ def _startup() -> None:
         except Exception as e:
             print(f"warning: startup backup failed: {e}")
     autopublish.restore()
+    if os.environ.get("SCOUT_PHOTO_CACHE", "1") != "0":
+        threading.Thread(target=_photo_worker, name="scout-photo-cache", daemon=True).start()
     if os.environ.get("SCOUT_STARTUP_RESCORE", "1") != "0":
         # Free: re-derive assessments stored under an older policy so a policy change
         # (e.g. 1.7.0's sold/ended gate) reaches every car without pressing Recompute.
@@ -263,6 +321,7 @@ async def ingest(payload: IngestPayload) -> dict[str, Any]:
         async with _ai_lock:
             stats = await asyncio.to_thread(ingest_items, payload.site, payload.items, payload.include_sold,
                                             True, payload.full_sync)
+    _photo_wake.set()   # save the new photos while their links are fresh
     return {"ok": True, **stats, "ai_queue": ai_queue_depth()}
 
 

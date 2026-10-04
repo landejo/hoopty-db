@@ -227,7 +227,13 @@
   function safeUrl(u) { return u && /^https?:\/\//i.test(u) ? u : null; }
   // Opens the original listing in a new tab without opening the card.
   function sourceLink(l, cls = "src") { const u = safeUrl(l.url); return u ? `<a class="${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="Open the listing on ${esc(siteName(l.site))} (new tab)" onclick="event.stopPropagation()">${esc(siteName(l.site))} <span aria-hidden="true">↗</span></a>` : ""; }
-  function photo(l) { return (l.photos && l.photos[0]) || l.thumb || null; }
+  // Locally every photo goes through the server's saved copy (Facebook links expire a
+  // few days after a sync); the published board has a small saved card image per car.
+  function photoSrc(url) { return url && state.local ? "/api/photo?u=" + encodeURIComponent(url) : url; }
+  function photo(l) {
+    if (!state.local && l.thumb_file) return l.thumb_file;
+    return photoSrc((l.photos && l.photos[0]) || l.thumb || null);
+  }
   function profileLabel(k) { return state.profiles.get(k)?.label || k || "unprofiled"; }
   // offset = average(assessed - prelim). Negative: prelim over-read (runs high).
   // Positive: prelim under-read (runs low). Zero: matches.
@@ -271,6 +277,18 @@
     catch (e) { return true; }
   }
   window.addEventListener("hashchange", async () => { if (state.local && await dataChanged()) await loadData(); route(); });
+  // A photo that will not load (expired link, no saved copy) shows a placeholder, not a broken image.
+  document.addEventListener("error", (e) => {
+    const im = e.target;
+    if (!(im instanceof HTMLImageElement)) return;
+    // The saved copy failed (server not restarted yet, or it cannot fetch the photo): try the link itself once.
+    const via = (im.getAttribute("src") || "").match(/^\/api\/photo\?u=(.+)$/);
+    if (via && !im.dataset.direct) { im.dataset.direct = "1"; im.src = decodeURIComponent(via[1]); return; }
+    if (im.closest(".gallery .thumbs") || im.closest(".compare")) { im.remove(); return; }
+    if (im.closest(".card .photo") || im.closest(".gallery .main")) {
+      im.replaceWith(h(`<div class="nophoto expired" title="The listing's photo link has expired and no copy was saved">⌁<small>${state.local ? "Photo expired. Re-sync to refresh" : "Photo no longer available"}</small></div>`));
+    }
+  }, true);
   // ← / → step through the board's current order on a listing page.
   window.addEventListener("keydown", (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
@@ -730,7 +748,7 @@
     }
     const A = l.assessment, N = l.normalized || {}, prof = state.profiles.get(l.profile_key);
     const E = A?.evidence, S = A?.score, C = A?.costs;
-    const photos = l.photos && l.photos.length ? l.photos : l.thumb ? [l.thumb] : [];
+    const photos = (l.photos && l.photos.length ? l.photos : l.thumb ? [l.thumb] : []).map(photoSrc);
     const peers = state.data.listings.filter((x) => x.profile_key === l.profile_key && x.role === "candidate" && x.availability === "active" && x.id !== l.id);
     const siblings = l.vehicle_id ? state.data.listings.filter((x) => x.vehicle_id === l.vehicle_id && x.id !== l.id) : [];
     const comps = state.data.listings.filter((x) => x.profile_key === l.profile_key && x.role === "comp");

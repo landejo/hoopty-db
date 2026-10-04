@@ -30,6 +30,7 @@ def temp_backup_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("SCOUT_BACKUP_DIR", str(tmp_path / "backups"))
     monkeypatch.setenv("SCOUT_AUTOPUBLISH", "0")   # never push from a test
     monkeypatch.setenv("SCOUT_STARTUP_RESCORE", "0")   # no background thread outliving the temp DB
+    monkeypatch.setenv("SCOUT_PHOTO_CACHE", "0")       # no photo downloads from a test
     from scout import autopublish
     autopublish.reset_for_tests()
     yield

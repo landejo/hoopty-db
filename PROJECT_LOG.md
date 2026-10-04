@@ -441,3 +441,19 @@ unaffected). Filter in extension/adapters/facebook.js (0.4.5) and scout/ingest.p
 (is_junk_photo; clean_all_photos also runs at server start). Cleaned the DB: 1,647 photos
 removed from 85 listings (#45, a sold listing showing only the feed, now has none).
 Then re-assessed the 39 affected active candidates on Opus 5.5 medium. Unit 294 passed; E2E saved 4/4.
+
+## 2026-10-04 — Saved photo copies; no more broken tiles
+
+Facebook photo links carry a signed expiry (oe=…) a few days after the sync that captured them;
+on 10-04 nearly every stored Facebook link had expired (21 tiles broken, the rest only cached by
+the browser), and assessments would have run without photos. Now:
+- scout/ai/photos.py: one saved-copy cache (data/photo_cache) keyed by the Facebook file name, so a
+  re-signed link finds its copy (old full-URL keys still read); fetch_cached / cached_path / thumbnail.
+- server: a photo worker saves photos at startup and right after every /api/ingest (candidates and
+  curiosities up to 12, comps their card photo); GET /api/photo serves the saved copy (tracked URLs
+  only, not an open proxy). SCOUT_PHOTO_CACHE=0 turns the worker off (tests, E2E).
+- board: every photo through /api/photo; on failure it tries the original link once, then a
+  "Photo expired. Re-sync to refresh" placeholder instead of a broken image.
+- publish: a 640px card image per car (data/t/<id>.jpg, thumb_file) from the saved copy.
+Tests: tests/test_photo_cache.py (3); e2e_ux +2 photo checks (56/56). Unit 297 passed.
+Open: no pruning of orphaned copies yet (~186 MB → ~300 MB expected).

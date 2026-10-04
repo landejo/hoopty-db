@@ -259,6 +259,19 @@ def _stage_site(staging: Path, index: dict[str, Any], details: dict[Any, dict[st
     l_dir = data_dir / "l"
     l_dir.mkdir(parents=True, exist_ok=True)
 
+    # The card image from the local photo cache (a Facebook link would expire within days).
+    from scout.ai.photos import thumbnail
+    t_dir = data_dir / "t"
+    thumbs = 0
+    for l in index.get("listings", []):
+        src = ((details.get(l["id"]) or {}).get("photos") or [None])[0] or l.get("thumb")
+        jpg = thumbnail(src) if src else None
+        if jpg:
+            t_dir.mkdir(parents=True, exist_ok=True)
+            (t_dir / f"{l['id']}.jpg").write_bytes(jpg)
+            l["thumb_file"] = f"data/t/{l['id']}.jpg"
+            thumbs += 1
+
     index_json = _dump(index)
     (data_dir / "index.json").write_text(index_json)
 
@@ -275,6 +288,7 @@ def _stage_site(staging: Path, index: dict[str, Any], details: dict[Any, dict[st
         "detail_files": len(detail_sizes),
         "largest_detail_bytes": largest,
         "total_bytes": total,
+        "card_images": thumbs,
     }
 
 

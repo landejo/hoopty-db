@@ -32,6 +32,14 @@ const openDetail = async (page, l) => {
   await page.waitForTimeout(3000);   // past the first task poll
   check("page load fetches the board once (no idle-poll re-render)", exports === 1, `${exports} /api/export calls`);
 
+  // Photos (2026-10-04): every card photo comes through /api/photo; one that cannot load
+  // (an expired Facebook link with no saved copy, as in this sandbox) is a placeholder, never a broken image.
+  await page.evaluate(async () => { for (const c of document.querySelectorAll(".card")) { c.scrollIntoView(); await new Promise((r) => setTimeout(r, 40)); } window.scrollTo(0, 0); });
+  await page.waitForTimeout(4000);
+  const ph = await page.$$eval(".card .photo", (ps) => ps.map((p) => { const im = p.querySelector("img"); return { src: im ? im.getAttribute("src") : null, broken: !!(im && im.complete && !im.naturalWidth), placeholder: !!p.querySelector(".nophoto.expired") }; }));
+  check("card photos go through the local saved-copy endpoint", ph.filter((x) => x.src).every((x) => x.src.startsWith("/api/photo?u=")), `${ph.filter((x) => x.src).length} with a photo`);
+  check("no broken card images: unavailable photos show a placeholder", ph.every((x) => !x.broken), `${ph.filter((x) => x.placeholder).length} placeholders, ${ph.filter((x) => x.src && !x.broken).length} loaded`);
+
   // Policy 1.8.0 on the board: next step + walk-away, the tile, the filter, the detail block.
   const ns = await page.$$eval(".card", (cs) => cs.map((c) => ({ id: c.dataset.id, next: c.querySelector(".chip.next")?.textContent || null, walk: c.querySelector(".walk")?.textContent || null })));
   const assessedIds = await page.evaluate(async () => (await (await fetch("/api/export")).json()).listings.filter((l) => l.assessment?.next_step && (l.status || "New") === "New" && l.role === "candidate" && l.availability === "active").map((l) => String(l.id)));

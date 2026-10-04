@@ -9,6 +9,8 @@ fetch."""
 from __future__ import annotations
 
 import hashlib
+import re
+from pathlib import Path
 from typing import Any
 
 from scout.config import DATA_DIR
@@ -18,41 +20,72 @@ MAX_PHOTO_BYTES = 4_000_000
 _CACHE_DIR = DATA_DIR / "photo_cache"
 
 
-def photo_blocks(urls: list[str], limit: int = MAX_PHOTOS, max_edge: int = 1568) -> list[dict[str, Any]]:
-    """Download (or reuse a cached copy of) each photo, downscale so the long
-    edge is at most max_edge (never upscale), and return base64 image blocks.
-    Any failure (expired CDN link, hotlink block, huge file, bad image data)
-    just skips that photo."""
-    import base64
+# Facebook re-signs the same image with a new expiring query on every page load
+# (oe=...): key it by the file name in the path so a re-sync finds the saved copy.
+_FB_NAME_RE = re.compile(r"fbcdn\.net/.*/(\d+_\d+_\d+_n)\.(?:jpg|jpeg|png|webp)", re.I)
+
+
+def cache_key(url: str) -> str:
+    m = _FB_NAME_RE.search(url or "")
+    return f"fb_{m.group(1)}" if m else hashlib.sha1((url or "").encode("utf-8")).hexdigest()
+
+
+def cached_path(url: str) -> Path | None:
+    """The saved copy of this photo, if any (also under the pre-2026-10-04 full-URL key)."""
+    for key in {cache_key(url), hashlib.sha1((url or "").encode("utf-8")).hexdigest()}:
+        p = _CACHE_DIR / f"{key}.jpg"
+        if p.exists():
+            return p
+    return None
+
+
+def fetch_cached(url: str, max_edge: int = 1568) -> bytes | None:
+    """The photo as a processed JPEG: the saved copy, or downloaded and saved now.
+    None on any failure (expired CDN link, hotlink block, huge file, bad data)."""
     import urllib.request
+    try:
+        p = cached_path(url)
+        if p:
+            return p.read_bytes()
+        if not re.match(r"https?://", url or ""):
+            return None
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh) hoopty-scout/0.2", "Accept": "image/*"})
+        with urllib.request.urlopen(req, timeout=8) as r:  # noqa: S310
+            ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+                return None
+            raw = r.read(MAX_PHOTO_BYTES + 1)
+        if len(raw) > MAX_PHOTO_BYTES or len(raw) < 2000:
+            return None
+        data = _process(raw, max_edge)
+        if data is None:
+            return None
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        (_CACHE_DIR / f"{cache_key(url)}.jpg").write_bytes(data)
+        return data
+    except Exception:
+        return None
+
+
+def thumbnail(url: str, max_edge: int = 640) -> bytes | None:
+    """A small JPEG of a saved photo (for the published board's cards), or None."""
+    p = cached_path(url)
+    return _process(p.read_bytes(), max_edge) if p else None
+
+
+def photo_blocks(urls: list[str], limit: int = MAX_PHOTOS, max_edge: int = 1568) -> list[dict[str, Any]]:
+    """Each photo (saved copy first, so an expired CDN link still works once it has
+    been fetched) downscaled to max_edge, as base64 image blocks. Failures are skipped."""
+    import base64
 
     out: list[dict[str, Any]] = []
     for url in urls:
         if len(out) >= limit:
             break
-        try:
-            cache_path = _CACHE_DIR / f"{hashlib.sha1(url.encode('utf-8')).hexdigest()}.jpg"
-            if cache_path.exists():
-                data = cache_path.read_bytes()
-            else:
-                req = urllib.request.Request(
-                    url, headers={"User-Agent": "Mozilla/5.0 (Macintosh) hoopty-scout/0.2", "Accept": "image/*"})
-                with urllib.request.urlopen(req, timeout=8) as r:  # noqa: S310
-                    ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-                    if ctype not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
-                        continue
-                    raw = r.read(MAX_PHOTO_BYTES + 1)
-                if len(raw) > MAX_PHOTO_BYTES or len(raw) < 2000:
-                    continue
-                data = _process(raw, max_edge)
-                if data is None:
-                    continue
-                _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-                cache_path.write_bytes(data)
+        data = fetch_cached(url, max_edge)
+        if data is not None:
             out.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                      "data": base64.b64encode(data).decode("ascii")}})
-        except Exception:
-            continue
     return out
 
 
