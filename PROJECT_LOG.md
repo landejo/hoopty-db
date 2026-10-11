@@ -470,3 +470,14 @@ pending listings to active (#109 among them); #293 and #283 stay pending (their 
 Checked the "sold" Facebook comps whose evidence looked weak: #67, #94, #103, #104 really are sold
 (their own header reads "Sold · <title>"); #52 redirected to unavailable_product; #294 marked
 Purchased by hand. Test added; unit 299, E2E replay 12/12.
+
+## 2026-10-10 — Walk-away labels: expected auction price; budget-only when comps are thin
+
+- Auction cards compared the walk-away with the expected hammer while showing the early bid
+  (#338 "$5,000 · 3% over"; #336). Card now: "expected ~$X · N% over expected"; listing header:
+  "early bid; expected to sell ~$X" instead of a percentile of the early bid.
+- With fewer than 3 comparable sales the walk-away is only what the mission budget allows
+  (#253: "$32,904" next to a $23,000 car the comps call overpriced). Card, next-step panel and
+  cost table now say "budget limit … too few sales to value" instead of "walk-away".
+- Open: e2e_ux "board keeps your place" fails 7317 -> 6877 (440px) on the current data with
+  the previous commit too (not caused by these changes); to investigate.
