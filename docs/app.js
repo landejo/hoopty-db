@@ -182,7 +182,9 @@
   function walkaway(l) {
     const c = l.assessment?.costs; if (!c?.max_price || !c.price || c.price_basis === "unpriced") return "";
     const over = c.price / c.max_price - 1;
-    return `<span class="walk ${over > 0.05 ? "over" : over > 0 ? "near" : ""}" title="Walk-away price, set by ${c.max_price_basis === "value" ? "what this car is worth (top of its fair range, less known work and open questions)" : "your budget for this mission"}">walk-away ${money(c.max_price)}${over > 0 ? ` · ${Math.round(over * 100)}% over` : ""}</span>`;
+    // An early auction bid carries no weight: the comparison is with the expected hammer, so say so.
+    const expected = c.price_basis === "expected_hammer";
+    return `<span class="walk ${over > 0.05 ? "over" : over > 0 ? "near" : ""}" title="Walk-away price, set by ${c.max_price_basis === "value" ? "what this car is worth (top of its fair range, less known work and open questions)" : "your budget for this mission"}${expected ? `. Compared with the expected final price ${money(c.price)}, not the early bid` : ""}">walk-away ${money(c.max_price)}${expected ? ` · expected ~${money(c.price)}` : ""}${over > 0 ? ` · ${Math.round(over * 100)}% over${expected ? " expected" : ""}` : ""}</span>`;
   }
   function verdictTone(v) { return { "Pursue": "olive", "Pursue conditionally": "olive", "Maybe / verify": "mustard", "Reject": "rose", "Do not pursue": "rose" }[v] || ""; }
   const MISSIONS = ["enthusiast_bridge", "pragmatic_bridge", "future_keeper", "utility_capability"];
@@ -767,7 +769,7 @@
       <div class="headline">
         <div><h1>${esc(title(l))}</h1>${l.vin ? `<div class="vin-line"><span class="muted small">VIN</span> <span class="mono vin">${esc(l.vin)}</span> <button class="btn sm ghost" id="copy-vin" title="Copy the VIN">Copy</button> <span class="muted small">local only, never published</span></div>` : ""}<div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>
         <div class="row" style="gap:18px">
-          <div><div class="price">${money(l.sold_price || l.price)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
+          <div><div class="price">${money(l.sold_price || l.price)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${A?.costs?.price_basis === "expected_hammer" ? ` · early bid; expected to sell ~${money(A.costs.price)}` : l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
           ${S ? `<div class="dial" style="--pct:${S.total}"><span>${S.total}</span><small>/100</small></div>`
               : prelimOf(l) != null ? `<div class="dial prelim" style="--pct:${Math.round(calibrated(l))}"><span>${state.data.calibration?.offset != null ? "≈" : ""}${Math.round(calibrated(l))}</span><small>prelim</small></div>` : ""}
           ${A ? `<div><div class="muted small">System Assessment</div><div class="verdict ${esc(A.verdict.split(" ")[0])}">${esc(A.verdict)}</div><div class="muted small">${esc(modelTag(A))} · confidence ${A.confidence}/100 · policy ${esc(A.policy_version)}</div></div>`
