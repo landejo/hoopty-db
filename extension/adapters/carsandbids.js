@@ -17,6 +17,9 @@
         if (!m || seen.has(m[1])) continue;
         seen.add(m[1]);
         const cardText = S.text(li).slice(0, 600);
+        // Only your watched cars: the page can also show other auctions (2026-10-11 a sync
+        // pulled in 71, incl. a Ford GT and an SLR, against 2 watched + 20 watched results).
+        if (!/\bWatched\b/.test(cardText)) continue;
         const img = li.querySelector("img");
         items.push({
           site: "carsandbids", site_id: m[1], url: `https://carsandbids.com/auctions/${m[1]}/${m[2]}`,

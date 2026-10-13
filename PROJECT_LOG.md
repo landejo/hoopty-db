@@ -481,3 +481,11 @@ Purchased by hand. Test added; unit 299, E2E replay 12/12.
   cost table now say "budget limit … too few sales to value" instead of "walk-away".
 - Open: e2e_ux "board keeps your place" fails 7317 -> 6877 (440px) on the current data with
   the previous commit too (not caused by these changes); to investigate.
+
+## 2026-10-12 — Cars & Bids sync pulled in 71 auctions you were not watching
+
+The Oct 11 watch-list sync collected every li.auction-item on the page: 71 (Ford GT, SLR, Singer…)
+against 2 watched live auctions + 20 watched results. The adapter now takes only cards marked
+"Watched" (extension 0.4.7; checked in the signed-in watch list: 22/22 cards carry it). Cleanup:
+69 listings created by that sync and not watched set to ignored (role_user_set, reversible);
+the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-10-10 untouched.
