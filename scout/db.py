@@ -342,14 +342,19 @@ def get_listing_by_url(url: str, path: Path | None = None) -> dict[str, Any] | N
     return _row_to_dict(row, JSON_COLS) if row else None
 
 
-def list_listings(role: str | None = None, profile_key: str | None = None,
+def list_listings(role: str | None = None, profile_key: str | list[str] | None = None,
                   path: Path | None = None) -> list[dict[str, Any]]:
+    """profile_key: one key, or a list of keys (a comp pool shared by twins)."""
     q = "SELECT * FROM listings WHERE 1=1"
     args: list[Any] = []
     if role:
         q += " AND role=?"
         args.append(role)
-    if profile_key:
+    if isinstance(profile_key, (list, tuple, set)):
+        keys = sorted(profile_key)
+        q += f" AND profile_key IN ({','.join('?' * len(keys))})"
+        args.extend(keys)
+    elif profile_key:
         q += " AND profile_key=?"
         args.append(profile_key)
     q += " ORDER BY last_seen DESC, id DESC"

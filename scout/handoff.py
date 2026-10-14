@@ -16,6 +16,7 @@ from typing import Any
 
 from scout import db
 from scout.config import DATA_DIR, ROOT, SITES
+from scout.market import comp_keys
 from scout.policy import GUIDE_FILENAME, POLICY_VERSION
 from scout.policy.preferences import CATEGORY_LABELS, CATEGORY_POINTS, SCORE_BANDS, VERDICTS
 from scout.policy.state import load_state
@@ -374,7 +375,7 @@ utility_capability (SUV branch, automatic fine). **Urgency mode:** {state.get('u
     export_cars = []
     for i, (l, a, g) in enumerate(ranked, 1):
         prof = profiles_used.get(l.get("profile_key")) or {}
-        comps = db.list_listings(role="comp", profile_key=l["profile_key"]) if l.get("profile_key") else []
+        comps = db.list_listings(role="comp", profile_key=comp_keys(l["profile_key"])) if l.get("profile_key") else []
         peers = [p for p in (db.list_listings(role="candidate", profile_key=l["profile_key"]) if l.get("profile_key") else [])
                  if p["availability"] in ("active", "pending") and p["id"] != l["id"]]
         md.append(car_section(i, l, a, g, prof, state, comps, peers))

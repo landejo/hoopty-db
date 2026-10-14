@@ -147,7 +147,7 @@ def _rederive_assessment(listing_id: int) -> None:
     from scout import market
     from scout.policy.engine import rescore_assessment
     state = load_state()
-    fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
+    fair = market.fair_value(row, db.list_listings(profile_key=market.comp_keys(prof["key"])))
     stage = stage_for(row, db.list_documents(listing_id))
     d = rescore_assessment(row, prof, a, state, fair=fair, stage=stage)
     if d:
@@ -479,9 +479,9 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
     mission = row.get("mission") or default_mission(prof)
     peers = [p for p in db.list_listings(role="candidate", profile_key=prof["key"])
              if p["id"] != listing_id and p["availability"] == "active"]
-    comps = db.list_listings(role="comp", profile_key=prof["key"])
     from scout import market
-    fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
+    comps = db.list_listings(role="comp", profile_key=market.comp_keys(prof["key"]))
+    fair = market.fair_value(row, db.list_listings(profile_key=market.comp_keys(prof["key"])))
     stage = stage_for(row, db.list_documents(listing_id))
     snaps = db.list_snapshots(listing_id)
     history = db.vin_history(row.get("vin"), exclude_listing_id=listing_id)
@@ -525,7 +525,7 @@ async def assess_listing(listing_id: int, tier: str = "full") -> dict[str, Any]:
         db.log_event("reprofiled", listing_id, f"{prof['key']} -> {better['key']} (assessment evidence)")
         row, prof = db.get_listing(listing_id), better
         mission = row.get("mission") or default_mission(prof)
-        fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
+        fair = market.fair_value(row, db.list_listings(profile_key=market.comp_keys(prof["key"])))
     result = assess(row, prof, evidence, state, vin_history=history, fair=fair,
                     mission=mission, model=model, stage=stage)
     data = result.model_dump()
@@ -758,7 +758,9 @@ def availability_finish() -> dict[str, Any]:
     from scout.ingest import rescore_listing
     refreshed = 0
     state = load_state()
-    for pk in sorted(_avail_run["profiles"]):
+    from scout import market
+    twins = sorted({k for pk in _avail_run["profiles"] for k in market.comp_keys(pk)})
+    for pk in twins:
         for r in db.list_listings(profile_key=pk):
             rescore_listing(r["id"], state)
             if r["role"] == "candidate" and r["availability"] in ("active", "pending"):
@@ -962,7 +964,7 @@ def rescore(assessments: bool = True) -> dict[str, Any]:
             prof = db.get_profile(row["profile_key"]) if row and row.get("profile_key") else None
             if not (row and prof):
                 continue
-            fair = market.fair_value(row, db.list_listings(profile_key=prof["key"]))
+            fair = market.fair_value(row, db.list_listings(profile_key=market.comp_keys(prof["key"])))
             stage = stage_for(row, db.list_documents(lid))
             d = rescore_assessment(row, prof, a, state, fair=fair, stage=stage)
             if d:

@@ -488,7 +488,7 @@ def rescore_listing(lid: int, state: dict[str, Any] | None = None) -> int | None
     if not row or row.get("role") == "ignored":
         return None
     prof = db.get_profile(row["profile_key"]) if row.get("profile_key") else None
-    fair = market.fair_value(row, db.list_listings(profile_key=row["profile_key"])) if row.get("profile_key") else None
+    fair = market.fair_value(row, db.list_listings(profile_key=market.comp_keys(row["profile_key"]))) if row.get("profile_key") else None
     total, breakdown = preliminary_score(row, prof, state or load_state(), fair)
     n = dict(row.get("normalized") or {})
     n["prelim_breakdown"] = breakdown

@@ -13,6 +13,19 @@ _ENDED_SALE_KINDS = {"sold", "asking"}   # price_kind values that still count as
 _CLASSIFIED_SITES = {"facebook", "cargurus", "carscom", "autotrader"}
 LAST_ASK_DISCOUNT = 0.93
 
+# Badge-engineered twins are one market: a BRZ, an 86 and an FR-S are the same
+# car, so each is valued against all three (2026-10-14).
+COMP_TWINS = [frozenset({"subaru_brz", "toyota_86", "scion_frs"})]
+
+
+def comp_keys(profile_key: str) -> list[str]:
+    """The profile keys whose listings price this one: itself plus any twins."""
+    for group in COMP_TWINS:
+        if profile_key in group:
+            return sorted(group)
+    return [profile_key]
+
+
 _OPEN_BODY = ("roadster", "convertible", "cabrio", "spyder", "targa")
 _CLOSED_BODY = ("coupe", "hatch", "sedan", "wagon", "suv")
 
