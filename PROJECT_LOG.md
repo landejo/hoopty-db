@@ -489,3 +489,21 @@ against 2 watched live auctions + 20 watched results. The adapter now takes only
 "Watched" (extension 0.4.7; checked in the signed-in watch list: 22/22 cards carry it). Cleanup:
 69 listings created by that sync and not watched set to ignored (role_user_set, reversible);
 the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-10-10 untouched.
+
+## 2026-10-14 — BRZ / 86 / FR-S share one comp pool; full re-assessment of the board
+
+- `market.COMP_TWINS` / `comp_keys()`: a BRZ, 86 or FR-S values against all three (fair value,
+  offers, walk-away, comps given to the assessment). `db.list_listings(profile_key=[...])` takes a
+  list. Commit b0d1ba6; tests/test_comp_twins.py; unit 302.
+- Re-assessed all 34 active, non-Pass candidates on Full (Opus 5.5 medium), including the 5
+  never-assessed BaT cars (#427, #430, #431, #435, #436); 34/34, run from a separate process.
+- Side effect to watch: the shared pool has 3 sales (two ~90k-mile FR-S at $10–11k, one BRZ
+  $16,400), so the 86/BRZ value switched from asking prices to these sales and fell (#445
+  $18.5–21k → $11.7–15.8k). Thin; more 86/BRZ sold comps needed.
+- Not changed: the detail page's "Market context" box still counts one profile's comps.
+
+### System State Summary
+- Server needs a restart to pick up the comp-pool change (the batch ran outside it).
+- Uncommitted from another session: scout/config.py, scout/market.py (bmwcca), scout/profiles.py,
+  tests/test_policy_1_9.py.
+- Open: task_15cf6b69 (board scroll jump); #253 waiting on seller; G37 #443 auction ends 2026-10-15.
