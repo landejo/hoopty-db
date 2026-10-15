@@ -164,7 +164,9 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
     now = now or date.today()
     lid = listing.get("id")
     lvid = listing.get("vehicle_id")
-    others = [r for r in rows if r.get("id") != lid and not (lvid and r.get("vehicle_id") and r.get("vehicle_id") == lvid)]
+    # An ignored listing (not a car, or not a fair comparison, e.g. modified) prices nothing.
+    others = [r for r in rows if r.get("id") != lid and r.get("role") != "ignored"
+              and not (lvid and r.get("vehicle_id") and r.get("vehicle_id") == lvid)]
 
     sold_all = [r for r in others if is_sale(r)]
     is_failed = lambda r: (r.get("availability") == "ended" and r.get("price_kind") == "reserve_not_met" and r.get("price"))

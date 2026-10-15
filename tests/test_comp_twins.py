@@ -31,3 +31,13 @@ def test_a_brz_values_against_86_and_frs_sales():
     assert market.fair_value(brz, db.list_listings(profile_key="subaru_brz")) is None
     fair = market.fair_value(brz, db.list_listings(profile_key=market.comp_keys("subaru_brz")))
     assert fair and fair["n"] == 4 and fair["basis"] == "sold"
+
+
+def test_an_ignored_listing_is_not_a_comp():
+    for i, p in enumerate([17000, 18000, 19000, 20000]):
+        _add(f"c{i}", "toyota_86", sold_price=p, price=p)
+    _add("modded", "toyota_86", role="ignored", sold_price=5000, price=5000)
+    car = db.get_listing(_add("car", "toyota_86", role="candidate", price_kind="asking",
+                              availability="active", sold_price=None))
+    fair = market.fair_value(car, db.list_listings(profile_key="toyota_86"))
+    assert fair["n"] == 4 and fair["low"] >= 17000
