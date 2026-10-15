@@ -507,3 +507,12 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 - Uncommitted from another session: scout/config.py, scout/market.py (bmwcca), scout/profiles.py,
   tests/test_policy_1_9.py.
 - Open: task_15cf6b69 (board scroll jump); #253 waiting on seller; G37 #443 auction ends 2026-10-15.
+
+## 2026-10-14 (later) — 86/BRZ/FR-S sold comps; ignored listings no longer price cars
+
+- Added 13 stock, manual 2013–2020 results (#446–458): Cars & Bids 6 (one reserve-not-met), BaT 7.
+  Skipped supercharged/turbo/track/modified cars. #256 corrected to reserve not met at $14,500.
+  #257 and #260 (modified) set to ignored. Backup: data/backups/scout_pre-twin-comps_2026-10-14.db.
+- `market.fair_value` now skips role=ignored (commit a06c2e8; unit 303). Also moved: #436 128i,
+  the GX470s and the Caymans slightly (each had one ignored sale in its pool).
+- 86/BRZ fair now ~$15–21k from 13 sales (was $11.7–15.8k from 3); walk-aways $18.0–19.4k.
