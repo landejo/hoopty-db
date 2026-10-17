@@ -161,6 +161,16 @@
     if (!src) return null;
     return Math.max(0, Math.round((Date.now() - new Date(src).getTime()) / 864e5));
   }
+  // Owner count for the header: the assessment's owners fact (Carfax / seller), else the listing's own field.
+  function ownersText(l) {
+    const f = (l.assessment?.evidence?.facts || []).find((x) => x.key === "owners");
+    const v = f && f.status !== "unknown" ? String(f.value || "") : "";
+    const m = v.match(/^\D{0,12}?(\d+)/);
+    const n = m ? Number(m[1]) : l.num_owners;
+    if (!n) return { text: "owners unknown", tip: v || "" };
+    const atLeast = /at least/i.test(v) && m;
+    return { text: `${n}${atLeast ? "+" : ""} owner${n === 1 && !atLeast ? "" : "s"}`, tip: v || "listing field" };
+  }
   function listedAge(l) { return l.listing_date ? ago(l.listing_date) : l.first_seen ? "seen " + ago(l.first_seen) : "—"; }
   function siteName(k) { return (state.data.sites || {})[k] || k; }
   function siteChip(k) { const c = { facebook: "teal", cargurus: "olive", carscom: "mustard", autotrader: "slate", carsandbids: "orange", bat: "rose" }[k] || ""; return `<span class="chip ${c}">${esc(siteName(k))}</span>`; }
@@ -770,7 +780,7 @@
         <div class="row">${siteChip(l.site)}${availChip(l.availability)}${l.role === "comp" ? `<span class="chip dark">market comp</span>` : ""}<span class="chip" title="mission">${esc(missionLabel(l.mission))}</span>${siblings.map((o) => `<a href="#/l/${o.id}" class="chip teal" title="same VIN, other venue">also on ${esc(siteName(o.site))} · ${money(o.sold_price || o.price)}</a>`).join("")}${safeUrl(l.url) ? `<a class="btn sm" href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener">Open listing ↗</a>` : l.url ? `<span class="btn sm ghost" title="not a valid http(s) URL">${esc(l.url)}</span>` : ""}</div>
       </div>
       <div class="headline">
-        <div><h1>${esc(title(l))}</h1>${l.vin ? `<div class="vin-line"><span class="muted small">VIN</span> <span class="mono vin">${esc(l.vin)}</span> <button class="btn sm ghost" id="copy-vin" title="Copy the VIN">Copy</button> <span class="muted small">local only, never published</span></div>` : ""}<div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>
+        <div><h1>${esc(title(l))}</h1>${l.vin ? `<div class="vin-line"><span class="muted small">VIN</span> <span class="mono vin">${esc(l.vin)}</span> <button class="btn sm ghost" id="copy-vin" title="Copy the VIN">Copy</button> <span class="muted small">local only, never published</span></div>` : ""}<div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${l.mileage ? `<strong class="hdr-miles">${num(l.mileage)} mi</strong>` : "mileage unknown"} · ${(() => { const o = ownersText(l); return `<strong class="hdr-owners" title="${esc(o.tip)}">${esc(o.text)}</strong>`; })()} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>
         <div class="row" style="gap:18px">
           <div><div class="price">${money(l.sold_price || l.price)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${A?.costs?.price_basis === "expected_hammer" ? ` · early bid; expected to sell ~${money(A.costs.price)}` : l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
           ${S ? `<div class="dial" style="--pct:${S.total}"><span>${S.total}</span><small>/100</small></div>`
