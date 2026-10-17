@@ -32,10 +32,10 @@ DEFAULT_STATE: dict[str, Any] = {
     "curiosity_over_price": 40000,
     "current_vehicles": [
         {"name": "2018 Lexus RX 350", "role": "household utility, working well"},
-        {"name": "2011 BMW 335i (E90, N55, auto)", "role": "finite life; recurring coolant leak; front suspension due"},
     ],
     "active_exclusions": ["Lexus SC430", "Honda CR-Z", "Lexus GS350", "BMW Z4", "Saturn"],   # Miata and IS350 reopened by Jason 2026-10-17
-    "deprioritized": ["turbo BMW like the 335i", "Land Rover LR4", "second Lexus SUV unless the capability itself is wanted"],
+    "deprioritized": ["turbo BMW like the 335i", "Land Rover LR4", "second Lexus SUV unless the capability itself is wanted",
+                     "Lexus IS models: automatic only, or the slower IS 250 manual (passed on 2026-10-17)"],
     "high_mileage_rule": "A high-mileage car that is not a Toyota or Lexus needs a particularly convincing case: "
                          "documented major renewal, not merely a low price. Mileage is a yellow flag to be answered "
                          "with invoices, never a reject on its own.",
