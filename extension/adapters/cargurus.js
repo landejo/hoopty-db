@@ -1,6 +1,7 @@
-// CarGurus: saved-cars page (/Cars/myAccount/saved-listings, with a "Sold cars"
-// tab at /saved-listings/sold) + listing detail pages (/details/<id>).
-// Verified against the live DOM 2026-09-04.
+// CarGurus: saved-cars page (/Cars/myAccount/saved-listings, with a "Sold" tab at
+// /saved-listings/sold) + listing detail pages (/details/<id>). Verified 2026-09-04.
+// 2026-10-17: saved cars moved to a /hub/saved overview (a carousel preview); its
+// "View all" opens the full list in place, and the tabs now read "Saved" / "Sold".
 (function () {
   const S = window.__scout;
   const LISTING = /cargurus\.com\/details\/(\d+)/i;
@@ -32,21 +33,25 @@
 
   window.__scoutAdapter = {
     site: "cargurus",
-    isSavedPage: () => /myAccount\/saved-listings|mySaved\.action/i.test(location.href),
+    isSavedPage: () => /myAccount\/saved-listings|mySaved\.action|\/hub\/saved\b/i.test(location.href),
     isDetailPage: () => !!idOf(location.href),
     async collectSaved() {
+      // The hub only previews a few saved cars: open the full list first.
+      const viewAll = document.querySelector('a[data-testid=view-all-link][href*="saved-listings"]');
+      if (/\/hub\/saved\b/.test(location.pathname) && viewAll) { viewAll.click(); await S.sleep(4000); }
       const onSold = /\/sold\b/.test(location.pathname);
-      const tabBtn = (label) => Array.from(document.querySelectorAll("button")).find((b) => S.text(b).toLowerCase() === label);
+      // Tab labels were "Saved cars" / "Sold cars"; now "Saved" / "Sold".
+      const tabBtn = (label) => Array.from(document.querySelectorAll("button, [role=tab]")).find((b) => [label, label + " cars"].includes(S.text(b).trim().toLowerCase()));
       let items = [];
       // Saved tab first, then the Sold tab (those become market comps).
-      if (onSold && tabBtn("saved cars")) { tabBtn("saved cars").click(); await S.sleep(2500); }
+      if (onSold && tabBtn("saved")) { tabBtn("saved").click(); await S.sleep(2500); }
       await S.autoScroll(15, 1200);
       items = items.concat(collectTiles(false));
-      const sold = tabBtn("sold cars");
+      const sold = tabBtn("sold");
       if (sold) {
         sold.click(); await S.sleep(3000); await S.autoScroll(15, 1200);
         items = items.concat(collectTiles(true));
-        const back = tabBtn("saved cars"); if (back) back.click();
+        const back = tabBtn("saved"); if (back) back.click();
       }
       const seen = new Set();
       return items.filter((i) => !seen.has(i.site_id) && seen.add(i.site_id));
