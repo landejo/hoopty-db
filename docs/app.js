@@ -327,7 +327,6 @@
       if (inc.length && !inc.includes(st)) return false;
       if ((f.statuses || {})[st] === "exclude") return false;
       if (f.analyzed && !l.assessment) return false;
-      if (f.next && nextStepOf(l)?.action !== f.next) return false;
       const px = l.sold_price || l.price;
       if (f.max_price && px && px > Number(f.max_price)) return false;
       if (f.max_mileage && l.mileage && l.mileage > Number(f.max_mileage)) return false;
@@ -338,6 +337,13 @@
       }
       return true;
     });
+    // The next-step filter looks at the folded card, so it matches the chip shown.
+    return arrange(rows).filter((l) => !f.next || nextStepOf(l)?.action === f.next);
+  }
+
+  // Sort, then fold VIN twins into one card per car.
+  function arrange(rows) {
+    const f = state.filters;
     const sorters = {
       // Assessed listings (deep AI read) always rank above merely-preliminary
       // ones — the two rubrics only correlate r=0.20, so mixing them by raw
@@ -396,7 +402,7 @@
     const analyzed = cands.filter((l) => l.assessment).length;
     const comps = L.filter((l) => l.role === "comp").length;
     const inPlay = cands.filter((l) => ["Interested", "Contacted", "PPI Scheduled", "Offer Made"].includes(l.status)).length;
-    const contact = cands.filter((l) => nextStepOf(l)?.action === "Contact now").length;
+    const contact = arrange(cands.slice()).filter((l) => nextStepOf(l)?.action === "Contact now").length;   // per card, as the chips
     const ignored = L.filter((l) => l.role === "ignored").length;
     const curious = L.filter((l) => l.role === "curiosity" && (l.availability === "active" || l.availability === "pending")).length;
     app.appendChild(h(`
