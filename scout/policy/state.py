@@ -34,7 +34,7 @@ DEFAULT_STATE: dict[str, Any] = {
         {"name": "2018 Lexus RX 350", "role": "household utility, working well"},
         {"name": "2011 BMW 335i (E90, N55, auto)", "role": "finite life; recurring coolant leak; front suspension due"},
     ],
-    "active_exclusions": ["Lexus SC430", "Mazda Miata", "Mazda MX-5", "Honda CR-Z", "Lexus IS350", "Lexus GS350", "BMW Z4", "Saturn"],
+    "active_exclusions": ["Lexus SC430", "Honda CR-Z", "Lexus GS350", "BMW Z4", "Saturn"],   # Miata and IS350 reopened by Jason 2026-10-17
     "deprioritized": ["turbo BMW like the 335i", "Land Rover LR4", "second Lexus SUV unless the capability itself is wanted"],
     "high_mileage_rule": "A high-mileage car that is not a Toyota or Lexus needs a particularly convincing case: "
                          "documented major renewal, not merely a low price. Mileage is a yellow flag to be answered "
@@ -96,7 +96,7 @@ def load_state(path=None) -> dict[str, Any]:
             stored["_migrations"] = []
         if "exclusions_v2" not in stored.get("_migrations", []):
             # Union the stored list with default exclusions, preserving order
-            default_exclusions = ["BMW Z4", "Saturn", "Mazda MX-5"]
+            default_exclusions = ["BMW Z4", "Saturn"]
             stored_list = stored.get("active_exclusions", [])
             # Merge, keeping stored items first, then adding any defaults not already in the list
             merged = list(stored_list)

@@ -199,7 +199,7 @@ def test_documented_local_beats_exciting_remote():
 
 # Explicit exclusion -> Do not pursue.
 def test_excluded_model_is_do_not_pursue():
-    l = _listing(make="Mazda", model="MX-5 Miata", year=2008, engine_liters=2.0)
+    l = _listing(make="Lexus", model="SC430", year=2008, engine_liters=4.3)
     a = assess(l, _profile("z3_30i"), _ev(critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}), STATE)
     assert a.verdict == "Do not pursue"
 
