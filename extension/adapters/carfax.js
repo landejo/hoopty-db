@@ -10,7 +10,7 @@
   // (the largest size the CDN serves; 1280x960 fails). The listing id seen most is
   // this car's, not a "similar cars" tile.
   function listingPhotos(cap = 40) {
-    const re = /carfax-img\.vast\.com\/carfax\/v2\/(\d+)\/(\d+)\//g;
+    const re = /carfax-img\.vast\.com\/carfax\/v2\/(-?\d+)\/(\d+)\//g;   // ids can be negative
     const byId = new Map();
     const srcs = [...document.images].map((i) => i.currentSrc || i.src).join(" ") + " " + document.documentElement.innerHTML;
     let m;
