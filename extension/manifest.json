@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Hoopty-Matic",
-  "version": "0.4.9",
-  "description": "Sync saved vehicle listings (Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, Bring a Trailer) to the local Hoopty-Matic workbench.",
+  "version": "0.5.0",
+  "description": "Sync saved vehicle listings (Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, Bring a Trailer, CARFAX) to the local Hoopty-Matic workbench.",
   "permissions": [
     "activeTab",
     "tabs",
@@ -116,7 +116,8 @@
       ],
       "js": [
         "common.js",
-        "adapters/document.js"
+        "adapters/document.js",
+        "adapters/carfax.js"
       ],
       "run_at": "document_idle"
     },

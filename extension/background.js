@@ -294,7 +294,8 @@ const ENGINE_URLS = {
   facebook_marketplace: (q) => `https://www.facebook.com/marketplace/search/?query=${enc(q)}`,
 };
 const DETAIL_PATTERNS = [/facebook\.com\/marketplace\/item\/\d+/, /cargurus\.com\/details\/\d+/, /cars\.com\/vehicledetail\//,
-  /autotrader\.com\/cars-for-sale\/vehicle\/\d+/, /carsandbids\.com\/auctions\//, /bringatrailer\.com\/listing\//];
+  /autotrader\.com\/cars-for-sale\/vehicle\/\d+/, /carsandbids\.com\/auctions\//, /bringatrailer\.com\/listing\//,
+  /carfax\.com\/vehicle\/[A-HJ-NPR-Z0-9]{17}/];
 const MAX_DEEPEN = 8;
 
 async function searchPage(url, settleMs) {

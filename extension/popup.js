@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const DEFAULT_API = "http://127.0.0.1:8765";
 const SITE_NAMES = { facebook: "Facebook Marketplace", cargurus: "CarGurus", carscom: "Cars.com", autotrader: "Autotrader",
-                     carsandbids: "Cars & Bids", bat: "Bring a Trailer" };
+                     carsandbids: "Cars & Bids", bat: "Bring a Trailer", carfax: "CARFAX" };
 const siteName = (k) => SITE_NAMES[k] || k || "";
 // "Bring a Trailer sync", "Availability check", "Investigation"
 function runLabel(st) {
@@ -53,7 +53,7 @@ async function init() {
   page = resp && resp.ok ? resp : null;
   if (!page) {
     $("site-label").textContent = "Unsupported page";
-    if (health) setStatus("Open a saved-listings page on Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, or Bring a Trailer (reload it if you just installed the extension).", "warning");
+    if (health) setStatus("Open a saved-listings page on Facebook Marketplace, CarGurus, Cars.com, Autotrader, Cars & Bids, Bring a Trailer, or CARFAX (reload it if you just installed the extension).", "warning");
   } else {
     $("site-label").textContent = `${siteName(page.site)} · ${page.saved ? "saved list" : page.detail ? "listing page" : "other page"}`;
     if (health) {

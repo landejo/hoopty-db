@@ -57,6 +57,7 @@ DEFAULT_STATE: dict[str, Any] = {
         "cargurus": {"pct": 0.0, "min": 0, "max": 0},
         "carscom": {"pct": 0.0, "min": 0, "max": 0},
         "autotrader": {"pct": 0.0, "min": 0, "max": 0},
+        "carfax": {"pct": 0.0, "min": 0, "max": 0},
     },
     "transport_by_locality_band": {"5": 0, "4": 400, "3": 900, "2": 1400, "1": 1900, "unknown": 1200},
     "tax_rate": 0.0925,
