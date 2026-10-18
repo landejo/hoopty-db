@@ -18,6 +18,7 @@ from typing import Any
 from scout import db
 from scout.config import DOCS_DIR, ROOT, SITE_DATA_DIR, SITES
 from scout.policy import POLICY_VERSION
+from scout.policy.fit import fit_score
 from scout.market import is_sale, sale_price
 from scout.scoring import market_stats, price_percentile
 
@@ -143,6 +144,7 @@ def build_export() -> dict[str, Any]:
             l["timeline"] = timelines[l["vehicle_id"]]
         a = assessments.get(l["id"])
         l["assessment"] = scrub_assessment(a) if a else None
+        l["fit"] = fit_score(l, a)
         l["last_error"] = errors.get(l["id"])
         l["documents"] = docs.get(l["id"], [])   # metadata only; document text stays local
         l["history"] = [

@@ -10,10 +10,10 @@
   const STATUSES = ["New", "Interested", "Contacted", "PPI Scheduled", "Offer Made", "Purchased", "Pass"];
   const TOP_N = 15;   // tier size for "Re-assess next tier" (server: TIER_SIZE)
 
-  const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "pursue", role: "candidate", view: "cards", max_price: "", max_mileage: "", max_age: "", statuses: {} }),
+  const state = { data: null, local: false, filters: load("filters", { profiles: [], site: "", avail: "active", status: "", analyzed: false, sort: "fit", role: "candidate", view: "cards", max_price: "", max_mileage: "", max_age: "", statuses: {} }),
                   q: "", compare: load("compare", []), theme: load("theme", null) };
 
-  function load(k, d) { try { const v = localStorage.getItem("scout." + k); const out = v ? JSON.parse(v) : d; if (k === "filters" && out && !Array.isArray(out.profiles)) out.profiles = out.profile ? [out.profile] : []; if (k === "filters" && out && typeof out.statuses !== "object") out.statuses = out.status ? { [out.status]: "include" } : {}; if (k === "filters" && out) out.statuses = Object.fromEntries(Object.entries(out.statuses).filter(([st]) => STATUSES.includes(st))); return out; } catch (e) { return d; } }
+  function load(k, d) { try { const v = localStorage.getItem("scout." + k); const out = v ? JSON.parse(v) : d; if (k === "filters" && out && !Array.isArray(out.profiles)) out.profiles = out.profile ? [out.profile] : []; if (k === "filters" && out && typeof out.statuses !== "object") out.statuses = out.status ? { [out.status]: "include" } : {}; if (k === "filters" && out) out.statuses = Object.fromEntries(Object.entries(out.statuses).filter(([st]) => STATUSES.includes(st))); if (k === "filters" && out && out.sort === "pursue" && !localStorage.getItem("scout.fitDefault")) { out.sort = "fit"; localStorage.setItem("scout.fitDefault", "1"); } return out; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem("scout." + k, JSON.stringify(v)); } catch (e) {} }
 
   // ---------- theme ----------
@@ -175,6 +175,11 @@
   function siteName(k) { return (state.data.sites || {})[k] || k; }
   function siteChip(k) { const c = { facebook: "teal", cargurus: "olive", carscom: "mustard", autotrader: "slate", carsandbids: "orange", bat: "rose" }[k] || ""; return `<span class="chip ${c}">${esc(siteName(k))}</span>`; }
   function scoreOf(l) { return l.assessment?.score?.total ?? null; }
+  // Fit (policy/fit.py): how good a candidate the car looks on what is knowable now, 0-100.
+  function fitOf(l) { return l.fit?.total ?? null; }
+  const FIT_LABELS = { value: "Value vs walk-away", history: "Owners, accidents, title", records: "Records", mileage: "Mileage", spec: "Spec & gearbox", condition: "Condition evidence", distance: "Distance" };
+  function fitTip(l) { const f = l.fit; return f ? Object.keys(FIT_LABELS).filter((k) => k in f.parts).map((k) => `${FIT_LABELS[k]} ${Math.round(f.parts[k])}/${f.max[k]}: ${f.notes[k]}`).join("\n") : ""; }
+  function fitBadge(l) { const v = fitOf(l); return `<span class="badge fit ${v >= 75 ? "hi" : v >= 60 ? "mid" : "lo"}" title="Fit ${v}/100\n${esc(fitTip(l))}">${v}</span><b class="score-tag" title="System Assessment score /100 (evidence so far; drives the verdict)">S ${scoreOf(l)}</b>`; }
   function verdictOf(l) { return l.assessment?.verdict || null; }   // the System Assessment's verdict
   const CALL_TONE = { Interested: "olive", Contacted: "teal", "PPI Scheduled": "teal", "Offer Made": "teal", Purchased: "olive", Pass: "rose" };
   function callOf(l) { const s = l.status || "New"; return s === "New" ? null : s; }
@@ -373,13 +378,20 @@
         if (bs != null) return 1;
         return (calibrated(b) ?? -1) - (calibrated(a) ?? -1);
       },
+      fit: (a, b) => {
+        const af = fitOf(a), bf = fitOf(b);
+        if (af != null && bf != null) return (bf - af) || ((scoreOf(b) ?? 0) - (scoreOf(a) ?? 0));
+        if (af != null) return -1;
+        if (bf != null) return 1;
+        return (calibrated(b) ?? -1) - (calibrated(a) ?? -1);
+      },
       price: (a, b) => (a.price ?? 9e9) - (b.price ?? 9e9),
       price_desc: (a, b) => (b.price ?? -1) - (a.price ?? -1),
       mileage: (a, b) => (a.mileage ?? 9e9) - (b.mileage ?? 9e9),
       newest: (a, b) => (b.listing_date || b.first_seen || "").localeCompare(a.listing_date || a.first_seen || ""),
       year: (a, b) => (b.year ?? 0) - (a.year ?? 0),
     };
-    rows.sort(sorters[f.sort] || sorters.pursue);
+    rows.sort(sorters[f.sort] || sorters.fit);
     rows.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     // One card per car: listings sharing a vehicle (same VIN) fold into the
     // best-ranked one, which carries the other venues as `also_on`.
@@ -395,7 +407,7 @@
     return out;
   }
 
-  const SORTS = [["pursue", "Pursue next"], ["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]];
+  const SORTS = [["fit", "Best fit"], ["pursue", "Pursue next"], ["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]];
   function renderBoard(app) {
     const L = state.data.listings;
     const cands = L.filter((l) => l.role === "candidate" && l.availability === "active");
@@ -522,7 +534,7 @@
       if (!rows.length) return list.appendChild(h(`<div class="empty"><h2>Nothing matches</h2><p>Loosen the filters or sync more listings.</p></div>`));
       if (f.view === "table") return list.appendChild(tableView(rows));
       const grid = h(`<div class="grid"></div>`);
-      const ranked = f.sort === "score" || f.sort === "pursue";
+      const ranked = f.sort === "score" || f.sort === "pursue" || f.sort === "fit";
       let dividerDone = false;
       rows.forEach((l, i) => {
         // Assessed cars always rank above preliminary estimates (different rubrics); say so where the switch happens.
@@ -565,7 +577,7 @@
     // 15 at a time; the server remembers which cars this cycle has done.
     const ranking = () => {
       const saved = state.filters;
-      state.filters = { ...saved, role: "candidate", avail: "active", profiles: [], site: "", statuses: {}, analyzed: false, max_price: "", max_mileage: "", max_age: "", sort: "pursue" };
+      state.filters = { ...saved, role: "candidate", avail: "active", profiles: [], site: "", statuses: {}, analyzed: false, max_price: "", max_mileage: "", max_age: "", sort: "fit" };
       const q = state.q; state.q = "";
       try { return filtered().filter((l) => l.profile_key); } finally { state.filters = saved; state.q = q; }
     };
@@ -642,7 +654,7 @@
     const el = h(`
       <article class="card ${l.role}" data-id="${l.id}" tabindex="0" role="link" aria-label="${esc(title(l))}">
         <div class="photo">${p ? `<img loading="lazy" referrerpolicy="no-referrer" src="${esc(p)}" alt="">` : `<div class="nophoto">⌁</div>`}
-          <span class="score">${badge(l)}${scoreOf(l) == null && prelimOf(l) != null ? `<b class="score-tag">prelim</b>` : ""}${upsideTag(l)}</span><span class="site">${sourceLink(l, "src on-photo") || siteChip(l.site)}</span></div>
+          <span class="score">${fitOf(l) != null ? fitBadge(l) : badge(l)}${scoreOf(l) == null && prelimOf(l) != null ? `<b class="score-tag">prelim</b>` : ""}${upsideTag(l)}</span><span class="site">${sourceLink(l, "src on-photo") || siteChip(l.site)}</span></div>
         <div class="body">
           <div class="title">${esc(title(l))}${(() => { const r = rankOf(l); return r ? ` <span class="chip" title="rank among active candidates in this profile">#${r.rank} of ${r.of}</span>` : ""; })()}</div>
           <div class="price">${l.role === "comp" && (l.sold_price || l.price) ? money(l.sold_price || l.price) + `<small>${l.availability === "sold" ? "sold" : esc(l.price_kind || "")}</small>` : money(l.price) + (l.price_kind && l.price_kind !== "asking" ? `<small>${esc(l.price_kind.replace("_", " "))}</small>` : "")}</div>
@@ -1000,6 +1012,9 @@
     if (hist.length >= 2) sparkline($("#spark", hp), hist.map((s) => ({ x: new Date(s.t).getTime(), y: s.price }))); else $("#spark", hp).remove();
 
     if (l.profile_key) {
+      if (l.fit) side.appendChild(h(`<div class="panel accent-teal fit-panel"><h3>Fit <span class="mono">${l.fit.total}</span><span class="muted small">/100</span></h3>
+        <p class="small muted" style="margin-top:0">How good a candidate this looks on what is knowable now. The System Assessment score (${scoreOf(l) ?? "—"}) still drives the verdict.</p>
+        <div class="kv">${Object.keys(FIT_LABELS).filter((k) => k in l.fit.parts).map((k) => `<span class="k">${esc(FIT_LABELS[k])}</span><span><span class="mono">${Math.round(l.fit.parts[k])}/${l.fit.max[k]}</span> <span class="muted small">${esc(l.fit.notes[k])}</span></span>`).join("")}</div></div>`));
       side.appendChild(h(`<div class="panel accent-walnut"><h3>Market context</h3><div class="kv">
         <span class="k">Sold comps</span><span class="mono">${market.sold_count ?? 0}${market.sold_median ? " · median " + money(market.sold_median) : ""}</span>
         <span class="k">Active peers</span><span class="mono">${peers.length}${market.asking_median ? " · median " + money(market.asking_median) : ""}</span>

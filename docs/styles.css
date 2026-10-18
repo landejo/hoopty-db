@@ -186,6 +186,7 @@ html[data-theme="dark"] .chip.olive { color: #C2D6A6; } html[data-theme="dark"] 
 .badge { display: inline-grid; place-items: center; min-width: 44px; height: 32px; padding: 0 8px; border-radius: 999px; font-family: var(--mono); font-weight: 700; font-size: 15px; color: #10131A; background: #FFD66B; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
 .badge.hi { background: #7BE0A6; } .badge.mid { background: #FFD66B; } .badge.lo { background: #FFA99A; } .badge.none { background: var(--chip-slate); color: var(--muted); font-weight: 500; font-size: 12px; }
 .badge.prelim { border: 2px dashed rgba(16,19,26,.3); font-weight: 600; }
+.badge.fit + .score-tag { margin-left: 4px; }
 .pill-status { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 4px 10px; font-size: 12px; }
 
 /* Buttons */

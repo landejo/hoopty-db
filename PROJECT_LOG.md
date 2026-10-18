@@ -516,3 +516,22 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 - `market.fair_value` now skips role=ignored (commit a06c2e8; unit 303). Also moved: #436 128i,
   the GX470s and the Caymans slightly (each had one ignored sale in its pool).
 - 86/BRZ fair now ~$15–21k from 13 sales (was $11.7–15.8k from 3); walk-aways $18.0–19.4k.
+
+## 2026-10-18 — Fit score; CARFAX sync; Cars & Bids ended fix; VIN-bearing listing links
+
+- **Fit score** (scout/policy/fit.py, POLICY_CHANGES.md): a 0–100 rank beside the assessment
+  score, which bunched at 41–64. Board sorts by Fit by default; detail page shows the parts.
+  No verdict or gate changed. tests/test_fit.py.
+- **CARFAX** followed cars + listing pages (extension 0.5.1; negative photo ids). 8 cars synced.
+- **Cars & Bids**: a live auction is no longer filed as ended on the AI's word (#514 twice);
+  watch-list titles read from .auction-title (extension 0.4.9).
+- **Export**: CARFAX and Autotrader private-seller links keep their VIN (it is the address);
+  every other VIN still stripped. #463's stored link was saved as "[VIN]" and can't be rebuilt.
+- Data: #482/#499 Pass (sold to someone else); NC Miata comps #523–526; #408 restored after an
+  accidental overwrite (backup scout_pre-nc-comps_2026-10-18.db).
+
+### System State Summary
+- Server needs a restart for the Fit score to appear on the board.
+- Uncommitted from another session: scout/config.py, scout/market.py (bmwcca), scout/profiles.py,
+  tests/test_policy_1_9.py.
+- Dead code noted, not removed: preferences.EXCLUDED_MODELS (unused; still lists miata/is350).

@@ -4,6 +4,26 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## Fit score (2026-10-18; beside policy 1.9.2, no verdict change)
+
+Jason, 2026-10-18: "the scoring range seems less useful than it could be ... rarely does
+anything get above 60 and the spread of cars I would actually consider is pretty narrow."
+Measured: 39 active cars scored 41-64 (sd 5.2); 37 were at the listing stage, where the
+rubric's "5 = typical" anchor puts nearly every category at about half its points, so
+the total mostly tracks how far the evidence has got. Documentation is not a flat hit:
+across 186 assessed cars it ran 2-23/25 and its cap never fired; strong records are
+just rare in listings (8 cars at 18+).
+
+1. **Fit (0-100)** ranks cars on what is knowable now, each part across its full range
+   (`scout/policy/fit.py`): value vs the walk-away 25 (15% under = full, at = 60%,
+   30% over = 0; a budget-only walk-away is held to 60%), owners/accidents/title 20,
+   records 10 and condition 7 (the assessment's ratings stretched from their real
+   listing-stage range), mileage 15, spec + manual 15, distance 8.
+2. **It changes no verdict, gate, walk-away or next step.** The assessment score still
+   drives the verdict and says when evidence is missing.
+3. **The board sorts by Fit by default** ("Best fit"); cards show Fit with the assessment
+   score as "S nn". On the active board Fit runs 44-81 (sd ~10).
+
 ## 1.9.2 (2026-10-01)
 
 Jason, 2026-10-01: "for the Porsche models, we de-emphasize having/not having borescope
