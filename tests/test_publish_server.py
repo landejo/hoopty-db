@@ -46,8 +46,12 @@ def test_redact_public_strips_vin_phone_email():
     }
     out = redact_public(export)
     l = out["listings"][0]
-    assert "5TDZA23A15S123456" not in json.dumps(out)
-    assert "[VIN]" in l["url"] and "[VIN]" in l["timeline"][0]["url"]
+    # The bare private-seller listing link keeps its VIN (it is the address; Jason
+    # 2026-10-18); every other copy of the VIN is stripped.
+    url = "https://www.autotrader.com/marketplace/buy/5TDZA23A15S123456"
+    assert l["url"] == url and l["timeline"][0]["url"] == url
+    rest = {k: v for k, v in l.items() if k not in ("url", "timeline")}
+    assert "5TDZA23A15S123456" not in json.dumps(rest)
     assert "[phone]" in l["raw"]["time_left"]
     assert "[email]" in l["notes"] and "[VIN]" in l["notes"]
     assert "[VIN]" in l["assessment"]["evidence"]["rationale"] and "[phone]" in l["assessment"]["evidence"]["rationale"]
@@ -207,3 +211,5 @@ def test_carfax_listing_link_keeps_its_vin_but_text_does_not():
     assert "JM1NDAM79H0104490" not in out["notes"] and "JM1NDAM79H0104490" not in out["other"]
     assert find_leaks(out) == []
     assert find_leaks({"notes": "VIN JM1NDAM79H0104490"}) == ["$.notes"]
+    at = "https://www.autotrader.com/marketplace/buy/WBSCK9347YLC92617"
+    assert redact_public({"url": at})["url"] == at

@@ -65,14 +65,15 @@ def scrub_listing(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-# A CARFAX listing link is carfax.com/vehicle/<VIN>: the VIN is the address, and the
-# page itself shows it publicly, so the bare link keeps it (Jason, 2026-10-18).
+# A CARFAX listing link is carfax.com/vehicle/<VIN>, and an Autotrader private-seller
+# link is autotrader.com/marketplace/buy/<VIN>: the VIN is the address and the page
+# itself shows it publicly, so the bare link keeps it (Jason, 2026-10-18).
 # VINs anywhere else (text, notes, other URLs) are still stripped.
-CARFAX_LISTING_URL_RE = re.compile(r"https://www\.carfax\.com/vehicle/[A-HJ-NPR-Z0-9]{17}/?")
+VIN_LISTING_URL_RE = re.compile(r"https://www\.(?:carfax\.com/vehicle|autotrader\.com/marketplace/buy)/[A-HJ-NPR-Z0-9]{17}/?")
 
 
 def _vin_allowed(s: str) -> bool:
-    return bool(CARFAX_LISTING_URL_RE.fullmatch(s))
+    return bool(VIN_LISTING_URL_RE.fullmatch(s))
 
 
 def _redact_str(s: str) -> str:
