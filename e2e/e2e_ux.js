@@ -65,13 +65,19 @@ const openDetail = async (page, l) => {
   await page.click('#f-next button[data-v=""]');
   await page.waitForTimeout(300);
 
-  // "Best score" is exactly the badge number, highest first; preliminary cards come after a divider.
+  // "Best score" is exactly the assessment score, highest first; preliminary cards come after a divider.
+  // A card with a Fit badge shows the assessment score as its "S nn" tag (2026-10-18).
   await page.selectOption("#f-sort", "score");
   await page.waitForTimeout(400);
-  const seq = await page.$$eval("#list .grid > *", (els) => els.map((e) => e.classList.contains("grid-divider") ? "|" : (e.querySelector(".badge:not(.prelim)") ? Number(e.querySelector(".badge").textContent) : "p")));
+  const seq = await page.$$eval("#list .grid > *", (els) => els.map((e) => {
+    if (e.classList.contains("grid-divider")) return "|";
+    const s = e.querySelector(".badge.fit + .score-tag");
+    if (s) return Number(s.textContent.replace(/\D/g, ""));
+    return e.querySelector(".badge:not(.prelim)") ? Number(e.querySelector(".badge").textContent) : "p";
+  }));
   const assessedSeq = seq.slice(0, seq.indexOf("p") < 0 ? seq.length : seq.indexOf("p")).filter((x) => typeof x === "number");
   const desc = assessedSeq.every((v, i) => i === 0 || assessedSeq[i - 1] >= v);
-  check("Best score sorts by the badge number, highest first", desc && assessedSeq.length > 5, assessedSeq.slice(0, 12).join(" "));
+  check("Best score sorts by the assessment score, highest first", desc && assessedSeq.length > 5, assessedSeq.slice(0, 12).join(" "));
   check("a divider separates assessed from preliminary cards", !seq.includes("p") || seq[seq.indexOf("p") - 1] === "|", seq.slice(Math.max(0, seq.indexOf("p") - 2), seq.indexOf("p") + 1).join(" "));
   await page.selectOption("#f-sort", "pursue");
   await page.waitForTimeout(300);
