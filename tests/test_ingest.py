@@ -370,3 +370,24 @@ def test_facebook_feed_thumbnails_are_not_car_photos():
     feed_small = "https://scontent-sjc3-1.xx.fbcdn.net/v/t39.84726-6/783673546_1093883892980510_677158706730998009_n.jpg?stp=c0.208.526.526a_dst-jpg_p526x395_tt6"
     other_site = "https://automanager.blob.core.windows.net/wmphotos/025137/x/9db0c505e6_800.jpg?stp=c0.0.1.1a_"
     assert clean_photos([own, feed, feed_small, other_site]) == [own, other_site]
+
+
+def test_model_cannot_end_an_auction_the_page_shows_live(monkeypatch):
+    """2026-10-18: a C&B Miata with "Time Left 1 Day" was filed as an ended comp because
+    the normalizer said "ended"; on an auction site that was trusted without the page."""
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    import scout.ai.normalize as nz
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": True, "year": 2015, "make": "Mazda", "model": "MX-5 Miata", "availability": "ended", "prelim_summary": "x"})
+    monkeypatch.setattr("scout.vin.decode_vin", lambda *a, **k: None)
+    live = "2015 Mazda MX-5 Miata Grand Touring\nTime Left\n1 Day\nHigh Bid\n$13,450\nBids\n18\n" + "lots of text " * 20
+    url = "https://carsandbids.com/auctions/live1/2015-mazda-mx-5-miata"
+    ing.ingest_items("carsandbids", [_item(url, title="2015 Mazda MX-5 Miata", price="$13,450", text=live)], run_ai=True)
+    row = db.get_listing_by_url(url)
+    assert row["availability"] == "active" and row["role"] == "candidate"
+    # A page that does show the result still lets the model's "ended" through.
+    done = "2015 Mazda MX-5 Miata Grand Touring\nBid to $13,450 on 10/19/26\n" + "lots of text " * 20
+    url2 = "https://carsandbids.com/auctions/done1/2015-mazda-mx-5-miata"
+    ing.ingest_items("carsandbids", [_item(url2, title="2015 Mazda MX-5 Miata", price="$13,450", text=done)], run_ai=True)
+    assert db.get_listing_by_url(url2)["role"] == "comp"

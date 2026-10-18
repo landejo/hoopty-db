@@ -341,8 +341,11 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
     # The model reading "sold" in the text beats the scraper's "active" but never the reverse.
     # Off the auction sites it needs the page's own status to agree: a seller's
     # "I will take the ad down when it's sold" is not a sale (#71, #97, 2026-09-29).
+    # On an auction site it must not contradict a page that shows the auction live
+    # ("Time Left 1 Day": a C&B Miata filed as ended, 2026-10-18).
     site = (db.get_listing(lid) or {}).get("site") or ""
     if norm.get("availability") in {"sold", "ended"} and scraper_availability == "active" \
+            and not page_shows_live(site, raw_text) \
             and (site in AUCTION_SITES or page_shows_sale(site, raw_text)):
         updates["availability"] = norm["availability"]
         updates["role"] = "comp"

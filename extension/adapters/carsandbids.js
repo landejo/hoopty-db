@@ -21,9 +21,12 @@
         // pulled in 71, incl. a Ford GT and an SLR, against 2 watched + 20 watched results).
         if (!/\bWatched\b/.test(cardText)) continue;
         const img = li.querySelector("img");
+        // The first link is the photo, whose text is the "Time Left ... Bid $x" overlay (#513, 2026-10-18).
+        const titleEl = li.querySelector(".auction-title a, .auction-title");
+        const title = titleEl ? S.text(titleEl).replace(/\s*\bWatched\b\s*$/, "") : "";
         items.push({
           site: "carsandbids", site_id: m[1], url: `https://carsandbids.com/auctions/${m[1]}/${m[2]}`,
-          title: S.text(a) || cardText.split("\n")[0], price_text: S.priceIn(cardText), card_text: cardText,
+          title: title || cardText.split("\n")[0], price_text: S.priceIn(cardText), card_text: cardText,
           thumb: img ? img.currentSrc || img.src : null,
           sold: /\bsold for\b/i.test(cardText), ended: /\b(bid to|ended)\b/i.test(cardText) && !/\bsold for\b/i.test(cardText),
         });
