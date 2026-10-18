@@ -196,3 +196,14 @@ def test_second_seller_reply_does_not_delete_the_first():
         c.post(f"/api/listings/{lid}/documents", json={"kind": "carfax", "text": "new report " * 30, "title": "Carfax v2"})
     titles = [d["title"] for d in db.list_documents(lid)]
     assert titles == ["Seller reply 1", "Seller reply 2", "Buyers guide page", "Carfax v2"]   # a re-captured Carfax still replaces
+
+
+def test_carfax_listing_link_keeps_its_vin_but_text_does_not():
+    """A CARFAX listing URL is the VIN, so a bare link keeps it; the VIN in any text is still stripped."""
+    url = "https://www.carfax.com/vehicle/JM1NDAM79H0104490"
+    out = redact_public({"url": url, "notes": f"see {url} for JM1NDAM79H0104490",
+                         "other": "https://example.com/JM1NDAM79H0104490"})
+    assert out["url"] == url
+    assert "JM1NDAM79H0104490" not in out["notes"] and "JM1NDAM79H0104490" not in out["other"]
+    assert find_leaks(out) == []
+    assert find_leaks({"notes": "VIN JM1NDAM79H0104490"}) == ["$.notes"]

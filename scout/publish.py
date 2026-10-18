@@ -65,7 +65,19 @@ def scrub_listing(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# A CARFAX listing link is carfax.com/vehicle/<VIN>: the VIN is the address, and the
+# page itself shows it publicly, so the bare link keeps it (Jason, 2026-10-18).
+# VINs anywhere else (text, notes, other URLs) are still stripped.
+CARFAX_LISTING_URL_RE = re.compile(r"https://www\.carfax\.com/vehicle/[A-HJ-NPR-Z0-9]{17}/?")
+
+
+def _vin_allowed(s: str) -> bool:
+    return bool(CARFAX_LISTING_URL_RE.fullmatch(s))
+
+
 def _redact_str(s: str) -> str:
+    if _vin_allowed(s):
+        return s
     return EMAIL_RE.sub("[email]", PHONE_RE.sub("[phone]", VIN_RE.sub("[VIN]", s)))
 
 
@@ -93,7 +105,7 @@ def find_leaks(obj: Any, path: str = "$") -> list[str]:
         for i, v in enumerate(obj):
             leaks += find_leaks(v, f"{path}[{i}]")
     elif isinstance(obj, str):
-        if VIN_RE.search(obj) or PHONE_RE.search(obj) or EMAIL_RE.search(obj):
+        if (VIN_RE.search(obj) and not _vin_allowed(obj)) or PHONE_RE.search(obj) or EMAIL_RE.search(obj):
             leaks.append(path)
     return leaks
 
