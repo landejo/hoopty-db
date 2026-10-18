@@ -69,8 +69,45 @@ def _mileage_factor(listing_miles: int, comp_miles: int) -> float:
     return max(0.70, min(1.35, factor))
 
 
-def _adjusted_prices(listing: dict[str, Any], rows: list[dict[str, Any]], realized: bool = False) -> list[float]:
+# Model year (2026-10-18): a comp from another year is moved to the listing's year at a
+# per-year rate learned from the model's own sales (log price vs year, after mileage),
+# or a modest default when there are too few. Before, years only chose the pool, so a
+# 2015 Miata priced from 2008-2011 sales got no credit for being newer.
+DEFAULT_YEAR_RATE = 0.03
+YEAR_RATE_BOUNDS = (-0.03, 0.08)      # a collectible older year can be worth more; cap the noise
+YEAR_FACTOR_BOUNDS = (0.70, 1.40)
+YEAR_RATE_MIN_SALES, YEAR_RATE_MIN_YEARS = 6, 3
+
+
+def year_rate(listing: dict[str, Any], sales: list[dict[str, Any]]) -> tuple[float, str]:
+    """(rate per year, "learned from n sales" | "default")."""
     l_miles = listing.get("mileage")
+    pts = []
+    for r in sales:
+        price, yr = sale_price(r), r.get("year")
+        if not price or not yr:
+            continue
+        if l_miles and r.get("mileage"):
+            price = price * _mileage_factor(int(l_miles), int(r["mileage"]))
+        pts.append((int(yr), math.log(price)))
+    if len(pts) < YEAR_RATE_MIN_SALES or len({y for y, _ in pts}) < YEAR_RATE_MIN_YEARS:
+        return DEFAULT_YEAR_RATE, "default"
+    my = statistics.mean(y for y, _ in pts)
+    mp = statistics.mean(v for _, v in pts)
+    var = sum((y - my) ** 2 for y, _ in pts)
+    slope = sum((y - my) * (v - mp) for y, v in pts) / var if var else 0.0
+    rate = max(YEAR_RATE_BOUNDS[0], min(YEAR_RATE_BOUNDS[1], math.exp(slope) - 1))
+    return rate, f"learned from {len(pts)} sales"
+
+
+def _year_factor(listing_year: int, comp_year: int, rate: float) -> float:
+    return max(YEAR_FACTOR_BOUNDS[0], min(YEAR_FACTOR_BOUNDS[1], (1 + rate) ** (listing_year - comp_year)))
+
+
+def _adjusted_prices(listing: dict[str, Any], rows: list[dict[str, Any]], realized: bool = False,
+                     year_rate_: float | None = None) -> list[float]:
+    l_miles = listing.get("mileage")
+    l_year = listing.get("year")
     out = []
     for r in rows:
         price = sale_price(r)
@@ -78,6 +115,8 @@ def _adjusted_prices(listing: dict[str, Any], rows: list[dict[str, Any]], realiz
             continue
         if realized:
             price = price * realized_factor(r)
+        if year_rate_ is not None and l_year and r.get("year"):
+            price = price * _year_factor(int(l_year), int(r["year"]), year_rate_)
         c_miles = r.get("mileage")
         if l_miles and c_miles:
             out.append(price * _mileage_factor(int(l_miles), int(c_miles)))
@@ -184,7 +223,8 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
             if seg_failed:
                 failed_high_bid_max = max(r["price"] for r in seg_failed)
         recent = _recency_filter(segmented, now)
-        adj = sorted(p * discount for p in _adjusted_prices(listing, recent, realized=basis == "sold"))
+        rate, rate_src = year_rate(listing, sold_all)
+        adj = sorted(p * discount for p in _adjusted_prices(listing, recent, realized=basis == "sold", year_rate_=rate))
         if not adj:
             return None
         n = len(adj)
@@ -197,10 +237,12 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
         years = sorted(r["year"] for r in segmented if r.get("year"))
         yr_span = f"{years[0]}–{years[-1]}" if years else "unknown years"
         klass = f"{bc}-class" if bc else "any body"
-        note_bits = [f"{n} {'sales' if basis == 'sold' else 'asking prices'}", klass, yr_span, "mileage-adjusted"]
+        yr_note = (f"year-adjusted {rate:+.1%}/yr ({rate_src})"
+                   if listing.get("year") and any(r.get("year") and r["year"] != listing["year"] for r in recent) else None)
+        note_bits = [f"{n} {'sales' if basis == 'sold' else 'asking prices'}", klass, yr_span, "mileage-adjusted"] + ([yr_note] if yr_note else [])
         return {
             "mid": int(round(mid)), "low": int(round(low)), "high": int(round(high)), "n": n,
-            "basis": basis, "relaxed": relaxed, "note": ", ".join(note_bits),
+            "basis": basis, "relaxed": relaxed, "note": ", ".join(note_bits), "year_rate": round(rate, 4),
         }
 
     result = build(sold_all, "sold", 1.0)

@@ -118,3 +118,22 @@ def test_z3_m_coupe_and_roadster_get_different_fair_values():
     fv_coupe = fair_value(listing_coupe, rows)
     fv_roadster = fair_value(_row(id=2, model="Z3 M roadster", year=2000), rows)
     assert fv_coupe["mid"] > fv_roadster["mid"] * 1.3
+
+
+def test_fair_value_moves_comps_to_the_listing_year():
+    """2026-10-18: a 2015 Miata priced from 2008 sales got no credit for being newer."""
+    from scout.market import DEFAULT_YEAR_RATE, year_rate
+    comps = [_row(id=i, year=2008, mileage=40000, price_kind="sold", availability="sold", sold_price=p)
+             for i, p in enumerate([15000, 16000, 17000, 18000], 1)]
+    car = _row(id=99, year=2015, mileage=40000)
+    same = _row(id=98, year=2008, mileage=40000)
+    newer = fair_value(car, comps, now=date(2026, 10, 18))
+    base = fair_value(same, comps, now=date(2026, 10, 18))
+    assert newer["mid"] > base["mid"] * 1.15 and "year-adjusted" in newer["note"]
+    assert "year-adjusted" not in base["note"]
+    # Too few sales to learn a rate: the default; enough across years: learned and bounded.
+    assert year_rate(car, comps) == (DEFAULT_YEAR_RATE, "default")
+    spread = [_row(id=i, year=y, mileage=40000, price_kind="sold", availability="sold", sold_price=int(10000 * 1.05 ** (y - 2010)))
+              for i, y in enumerate([2010, 2011, 2012, 2013, 2014, 2015], 1)]
+    rate, src = year_rate(car, spread)
+    assert abs(rate - 0.05) < 0.005 and src.startswith("learned")
