@@ -535,3 +535,11 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 - Uncommitted from another session: scout/config.py, scout/market.py (bmwcca), scout/profiles.py,
   tests/test_policy_1_9.py.
 - Dead code noted, not removed: preferences.EXCLUDED_MODELS (unused; still lists miata/is350).
+
+## 2026-10-19 — Roof-aware Miata fair value (a7db284)
+- `scout/market.py`: `roof_type()` (rf / hardtop / soft / None). A car is valued against same-roof comps when there are >= 3; otherwise other-roof comps are scaled by a roof premium (learned when >= 3 soft and >= 3 fixed-roof sales, else +12% default, bounds 1.0-1.35). Non-RF NDs count as soft tops.
+- Effect: #515 (2017 RF) fair $18.4-20.7k -> $20.6-23.2k, walk-away $18,683 -> $21,165 (default premium, no RF sales in the pool yet). ND soft tops unchanged. #537 (Mesa NC, insurance total loss) set to Pass.
+
+### System State Summary
+- Tests: 316 passed. Uncommitted, other session: scout/config.py, scout/market.py (bmwcca line), scout/profiles.py, tests/test_policy_1_9.py.
+- Open: no RF sales comps (premium is a default); NC soft tops without "soft top" wording read as roof unknown and are valued against the hardtop-heavy NC pool; #109 status vs reason mismatch unconfirmed.
