@@ -13,6 +13,24 @@
   const urlFor = (id) => /^\d+$/.test(id)
     ? `https://www.autotrader.com/cars-for-sale/vehicle/${id}`
     : `https://www.autotrader.com/marketplace/buy/${id}`;
+  const AT_IMG = /autotrader|images\.autotrader|kbb|coxautoinc/;
+  function galleryPhotos(cap = 40) {
+    const big = (u) => u.replace(/([?&])width=\d+/, "$1width=1024").replace(/([?&])height=\d+/, "$1height=768");
+    const slider = document.querySelector('[data-cmp="mediaSlider"]');
+    const fromSlider = slider ? [...slider.querySelectorAll("img")].map((i) => i.currentSrc || i.src || i.getAttribute("data-src") || "") : [];
+    const pick = fromSlider.length ? fromSlider
+      : [...document.images].filter((i) => !i.closest('[data-cmp="inventoryImage"], [data-cmp="itemCard"]')).map((i) => i.currentSrc || i.src || "");
+    const seen = new Set(), out = [];
+    for (const u of pick) {
+      if (!/^https?:/.test(u) || !AT_IMG.test(u)) continue;
+      const k = u.split("?")[0];
+      if (seen.has(k)) continue;
+      seen.add(k); out.push(big(u));
+      if (out.length >= cap) break;
+    }
+    return out;
+  }
+
   window.__scoutAdapter = {
     site: "autotrader",
     isSavedPage: () => /\/account\/cars/i.test(location.pathname),
@@ -33,10 +51,13 @@
       }
       return out;
     },
+    // Only this car's gallery (data-cmp="mediaSlider"), at 1024x768. The page also renders
+    // the dealer's other cars (data-cmp="inventoryImage" in "itemCard"s, 408x306): 20 of
+    // #487's 22 photos were those, 2026-10-18.
     async scrapeDetail() {
       await S.sleep(1200);
       await S.expandAll(["See more", "Show more", "Read more", "View full description", "Show full description", "See all features"]);
-      const d = S.genericDetail({ photos: S.photos(300, 40, (src) => /autotrader|images\.autotrader|kbb|coxautoinc/.test(src)) });
+      const d = S.genericDetail({ photos: galleryPhotos() });
       if (/no longer available|this vehicle (is|has been) sold|listing (is )?unavailable/i.test(d.text.slice(0, 2500))) d.status_text = "No longer available\n" + d.status_text;
       return d;
     },
