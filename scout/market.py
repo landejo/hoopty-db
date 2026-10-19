@@ -245,6 +245,13 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
         nonlocal failed_high_bid_max
         if len(pool_rows) < 2:
             return None
+        # Same roof first, before the year window narrows the pool (2026-10-19: 26 RF
+        # sales crowded the 8 soft-top sales out of a soft-top car's ±3 years).
+        lroof = roof_type(listing)
+        roof_of = {id(r): roof_type(r) for r in pool_rows}
+        same_roof = [r for r in pool_rows if roof_of[id(r)] == lroof] if lroof else []
+        if len(same_roof) >= ROOF_MIN_SAME:
+            pool_rows = same_roof
         segmented, relaxed, level = _relax(pool_rows, listing)
         if failed_all:
             years, need_body, need_trans = level
@@ -256,25 +263,23 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
         priced = [(r, _adjusted_prices(listing, [r], realized=basis == "sold", year_rate_=rate)) for r in recent]
         priced = [(r, p[0]) for r, p in priced if p]
         roof_note = None
-        lroof = roof_type(listing)
-        if lroof and priced:
-            roofs = [(roof_type(r), p) for r, p in priced]
-            same = [p for rf, p in roofs if rf == lroof]
-            if len(same) >= ROOF_MIN_SAME:
-                priced = [(r, p) for (r, p), (rf, _) in zip(priced, roofs) if rf == lroof]
-                roof_note = f"same roof ({lroof})"
-            elif any(rf and rf != lroof for rf, _ in roofs):
-                prem = dict(ROOF_PREMIUM_DEFAULT)
-                soft = [p for rf, p in roofs if rf == "soft"]
-                fixed = [p for rf, p in roofs if rf in ("hardtop", "rf")]
-                src = "default"
-                if len(soft) >= ROOF_MIN_SAME and len(fixed) >= ROOF_MIN_SAME:
-                    ratio = statistics.median(fixed) / statistics.median(soft)
-                    learned = max(ROOF_PREMIUM_BOUNDS[0], min(ROOF_PREMIUM_BOUNDS[1], ratio))
-                    prem.update(hardtop=learned, rf=learned)
-                    src = "learned"
-                priced = [(r, p * prem[lroof] / prem[rf]) if rf else (r, p) for (r, p), (rf, _) in zip(priced, roofs)]
-                roof_note = f"roof-adjusted to {lroof} ({prem[lroof] / prem['soft'] - 1:+.0%} vs soft top, {src})"
+        if lroof and len(same_roof) >= ROOF_MIN_SAME:
+            roof_note = f"same roof ({lroof})"
+        elif lroof and any(roof_of[id(r)] not in (None, lroof) for r, _ in priced):
+            # Too few sales with this roof: move the others by a roof premium, learned from
+            # every sale in the pool (adjusted to this car's year and miles) when it can be.
+            prem = dict(ROOF_PREMIUM_DEFAULT)
+            src = "default"
+            every = [(roof_of[id(r)], _adjusted_prices(listing, [r], realized=basis == "sold", year_rate_=rate)) for r in pool_rows]
+            soft = [p[0] for rf, p in every if p and rf == "soft"]
+            fixed = [p[0] for rf, p in every if p and rf in ("hardtop", "rf")]
+            if len(soft) >= ROOF_MIN_SAME and len(fixed) >= ROOF_MIN_SAME:
+                ratio = statistics.median(fixed) / statistics.median(soft)
+                prem.update(hardtop=max(ROOF_PREMIUM_BOUNDS[0], min(ROOF_PREMIUM_BOUNDS[1], ratio)))
+                prem["rf"] = prem["hardtop"]
+                src = f"learned from {len(soft)} soft, {len(fixed)} fixed-roof sales"
+            priced = [(r, p * prem[lroof] / prem[roof_of[id(r)]]) if roof_of[id(r)] else (r, p) for r, p in priced]
+            roof_note = f"roof-adjusted to {lroof} ({prem['rf'] - 1:+.0%} fixed roof vs soft top, {src})"
         adj = sorted(p * discount for _, p in priced)
         if not adj:
             return None

@@ -157,3 +157,14 @@ def test_fair_value_compares_like_roofs():
             for i, p in enumerate([23000, 24000, 25000], 1)]
     same = fair_value(rf, soft + hard, now=date(2026, 10, 19))
     assert "same roof (rf)" in same["note"] and same["n"] == 3
+
+
+def test_many_fixed_roof_sales_do_not_crowd_out_soft_tops():
+    """2026-10-19: 26 RF sales left a soft-top car's ±3 years with 1 soft sale; it was priced off RFs."""
+    soft = [_row(id=i, year=y, mileage=40000, model="MX-5 Miata soft top", price_kind="sold", availability="sold", sold_price=18000)
+            for i, y in enumerate([2016, 2022, 2023, 2024], 1)]
+    rf = [_row(id=10 + i, year=2017, mileage=40000, model="MX-5 Miata RF", price_kind="sold", availability="sold", sold_price=24000)
+          for i in range(10)]
+    car = _row(id=99, year=2017, mileage=40000, model="MX-5 Miata soft top")
+    fv = fair_value(car, soft + rf, now=date(2026, 10, 19))
+    assert "same roof (soft)" in fv["note"] and fv["n"] == 4
