@@ -391,3 +391,13 @@ def test_model_cannot_end_an_auction_the_page_shows_live(monkeypatch):
     url2 = "https://carsandbids.com/auctions/done1/2015-mazda-mx-5-miata"
     ing.ingest_items("carsandbids", [_item(url2, title="2015 Mazda MX-5 Miata", price="$13,450", text=done)], run_ai=True)
     assert db.get_listing_by_url(url2)["role"] == "comp"
+
+
+def test_a_description_saying_ended_does_not_end_a_live_auction():
+    """#514, 2026-10-18: "Production ended in 2015." in the description made a live C&B auction ended."""
+    live = ("2015 Mazda MX-5 Miata Grand Touring\nTime Left\n1 Day\nHigh Bid\n$13,450\n"
+            "The NC generation added a power-folding hardtop. Production ended in 2015.\n")
+    assert detect_availability({"price_text": "$13,450", "detail": {"status_text": live}}, "carsandbids") == "active"
+    done = "2015 Mazda MX-5 Miata Grand Touring\nBid to $13,450 on 10/19/26\nProduction ended in 2015.\n"
+    assert detect_availability({"price_text": "$13,450", "detail": {"status_text": done}}, "carsandbids") == "ended"
+    assert detect_availability({"price_text": "Bid to $30,000"}, "bat") == "ended"

@@ -65,6 +65,9 @@ SOLD_RE = re.compile(r"\b(sold|sold for|no longer available|this listing has end
 PAGE_SOLD_RE = re.compile(r"\b(sold for|no longer available|this listing has ended|listing ended|(has been|was|is) sold)\b|^\s*sold\s*$", re.I | re.M)
 PENDING_RE = re.compile(r"\b(pending|sale pending|deposit taken|deposit received|on hold)\b", re.I)
 ENDED_RE = re.compile(r"\b(bid to|reserve not met|auction ended|ended)\b", re.I)
+# In page text a bare "ended" is not about the auction: "Production ended in 2015." in a
+# C&B description filed a live Miata as ended (#514, 2026-10-18). Only result wording counts.
+PAGE_ENDED_RE = re.compile(r"\bbid to \$|\breserve not met\b|\bauction (has )?ended\b|^\s*ended\b", re.I | re.M)
 PRICE_RE = re.compile(r"\$\s?(?:([\d,]{3,})|(\d+(?:\.\d+)?)\s?[kK]\b)")
 
 
@@ -96,7 +99,8 @@ def detect_availability(item: dict[str, Any], site: str) -> str:
         return "sold"
     if item.get("pending") is True or PENDING_RE.search(head):
         return "pending"
-    if site in AUCTION_SITES and ENDED_RE.search(head):
+    if site in AUCTION_SITES and (ENDED_RE.search(card) or PAGE_ENDED_RE.search(status_text)) \
+            and not page_shows_live(site, status_text):
         return "ended"
     return "active"
 
