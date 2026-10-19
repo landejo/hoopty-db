@@ -543,3 +543,12 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 ### System State Summary
 - Tests: 316 passed. Uncommitted, other session: scout/config.py, scout/market.py (bmwcca line), scout/profiles.py, tests/test_policy_1_9.py.
 - Open: no RF sales comps (premium is a default); NC soft tops without "soft top" wording read as roof unknown and are valued against the hardtop-heavy NC pool; #109 status vs reason mismatch unconfirmed.
+
+## 2026-10-19 — RF sales comps (79a4ef7)
+- Added 26 sold ND RF manual comps (12 BaT, 14 Cars & Bids; sold Mar 2024 to Sep 2026). Excluded: 30th Anniversary, turbo/supercharged, heavily modified, automatics, bid-to/no-sale, a 166k replacement-engine car, and a duplicate relist. Backup: data/backups/scout_pre-rf-comps_2026-10-19.db.
+- Fix: same-roof sales are now picked from the whole generation before the year window (the RF sales had crowded soft tops out of soft-top cars' windows). Roof premium is learned from the whole pool.
+- Result: #515 fair $18,424-20,739 on 15 RF sales, walk-away $18,739 (was $21,165 on the +12% default). Implied RF premium vs ND soft top, year- and mileage-adjusted: +1.9% (26 RF vs 8 soft sales).
+
+### System State Summary
+- Tests: 317 passed. Other session's uncommitted edits untouched (config.py, market.py bmwcca line, profiles.py, test_policy_1_9.py).
+- Open: the +12% default premium is now known to be high for ND RF; it is used only when a roof has < 3 sales (NC soft tops). Only 8 ND soft-top sales; more would firm up the +1.9%.
