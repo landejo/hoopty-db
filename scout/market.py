@@ -3,6 +3,7 @@ adjustment, and asking-price fallback. No AI; pure functions over listing rows."
 from __future__ import annotations
 
 import math
+import re
 import statistics
 from datetime import date, timedelta
 from typing import Any
@@ -102,6 +103,34 @@ def year_rate(listing: dict[str, Any], sales: list[dict[str, Any]]) -> tuple[flo
 
 def _year_factor(listing_year: int, comp_year: int, rate: float) -> float:
     return max(YEAR_FACTOR_BOUNDS[0], min(YEAR_FACTOR_BOUNDS[1], (1 + rate) ** (listing_year - comp_year)))
+
+
+# Roof (2026-10-19): a Miata RF or NC power hardtop was valued against soft tops and the
+# reverse. A car is valued against its own roof when there are >= ROOF_MIN_SAME such comps;
+# otherwise the other roofs' comps are moved by a roof premium, learned from the pool when
+# soft and fixed roofs each have >= ROOF_MIN_SAME, else the default (an estimate).
+ROOF_MIN_SAME = 3
+ROOF_PREMIUM_DEFAULT = {"soft": 1.0, "hardtop": 1.12, "rf": 1.12}
+ROOF_PREMIUM_BOUNDS = (1.0, 1.35)
+_RF_RE = re.compile(r"\bRF\b|retractable fastback")
+_HARDTOP_RE = re.compile(r"\bPRHT\b|power[- ]retractable hard ?top|retractable hard ?top|hard ?top convertible|convertible hard ?top", re.I)
+_SOFT_RE = re.compile(r"\bsoft[- ]?top\b|\bcloth (convertible )?top\b|z-fold", re.I)
+
+
+def roof_type(r: dict[str, Any]) -> str | None:
+    """"rf" | "hardtop" | "soft" | None, from the title/model/trim/body first, then the page text."""
+    head = " ".join(str(r.get(k) or "") for k in ("title", "model", "trim", "body_style"))
+    for text in (head, (r.get("raw_text") or "")[:1500]):
+        if _RF_RE.search(text):
+            return "rf"
+        if _HARDTOP_RE.search(text):
+            return "hardtop"
+        if _SOFT_RE.search(text):
+            return "soft"
+    # An ND Miata is a soft top or an RF; listings rarely say "soft top" (#486-490).
+    if r.get("profile_key") == "mazda_mx_5_miata_nd":
+        return "soft"
+    return None
 
 
 def _adjusted_prices(listing: dict[str, Any], rows: list[dict[str, Any]], realized: bool = False,
@@ -224,7 +253,29 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
                 failed_high_bid_max = max(r["price"] for r in seg_failed)
         recent = _recency_filter(segmented, now)
         rate, rate_src = year_rate(listing, sold_all)
-        adj = sorted(p * discount for p in _adjusted_prices(listing, recent, realized=basis == "sold", year_rate_=rate))
+        priced = [(r, _adjusted_prices(listing, [r], realized=basis == "sold", year_rate_=rate)) for r in recent]
+        priced = [(r, p[0]) for r, p in priced if p]
+        roof_note = None
+        lroof = roof_type(listing)
+        if lroof and priced:
+            roofs = [(roof_type(r), p) for r, p in priced]
+            same = [p for rf, p in roofs if rf == lroof]
+            if len(same) >= ROOF_MIN_SAME:
+                priced = [(r, p) for (r, p), (rf, _) in zip(priced, roofs) if rf == lroof]
+                roof_note = f"same roof ({lroof})"
+            elif any(rf and rf != lroof for rf, _ in roofs):
+                prem = dict(ROOF_PREMIUM_DEFAULT)
+                soft = [p for rf, p in roofs if rf == "soft"]
+                fixed = [p for rf, p in roofs if rf in ("hardtop", "rf")]
+                src = "default"
+                if len(soft) >= ROOF_MIN_SAME and len(fixed) >= ROOF_MIN_SAME:
+                    ratio = statistics.median(fixed) / statistics.median(soft)
+                    learned = max(ROOF_PREMIUM_BOUNDS[0], min(ROOF_PREMIUM_BOUNDS[1], ratio))
+                    prem.update(hardtop=learned, rf=learned)
+                    src = "learned"
+                priced = [(r, p * prem[lroof] / prem[rf]) if rf else (r, p) for (r, p), (rf, _) in zip(priced, roofs)]
+                roof_note = f"roof-adjusted to {lroof} ({prem[lroof] / prem['soft'] - 1:+.0%} vs soft top, {src})"
+        adj = sorted(p * discount for _, p in priced)
         if not adj:
             return None
         n = len(adj)
@@ -239,7 +290,7 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
         klass = f"{bc}-class" if bc else "any body"
         yr_note = (f"year-adjusted {rate:+.1%}/yr ({rate_src})"
                    if listing.get("year") and any(r.get("year") and r["year"] != listing["year"] for r in recent) else None)
-        note_bits = [f"{n} {'sales' if basis == 'sold' else 'asking prices'}", klass, yr_span, "mileage-adjusted"] + ([yr_note] if yr_note else [])
+        note_bits = [f"{n} {'sales' if basis == 'sold' else 'asking prices'}", klass, yr_span, "mileage-adjusted"] + ([yr_note] if yr_note else []) + ([roof_note] if roof_note else [])
         return {
             "mid": int(round(mid)), "low": int(round(low)), "high": int(round(high)), "n": n,
             "basis": basis, "relaxed": relaxed, "note": ", ".join(note_bits), "year_rate": round(rate, 4),

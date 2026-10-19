@@ -137,3 +137,23 @@ def test_fair_value_moves_comps_to_the_listing_year():
               for i, y in enumerate([2010, 2011, 2012, 2013, 2014, 2015], 1)]
     rate, src = year_rate(car, spread)
     assert abs(rate - 0.05) < 0.005 and src.startswith("learned")
+
+
+def test_fair_value_compares_like_roofs():
+    """2026-10-19: an RF or NC power hardtop was valued against soft tops and the reverse."""
+    from scout.market import roof_type
+    assert roof_type({"title": "2017 Mazda MX-5 Miata RF Grand Touring"}) == "rf"
+    assert roof_type({"title": "2014 Mazda MX-5 Miata Grand Touring", "raw_text": "2D Convertible PRHT Grand Touring"}) == "hardtop"
+    assert roof_type({"title": "2012 Mazda MX-5 Miata", "raw_text": "classic cloth Z-fold convertible top"}) == "soft"
+    assert roof_type({"title": "2016 Mazda MX-5 Miata Sport", "profile_key": "mazda_mx_5_miata_nd"}) == "soft"
+    assert roof_type({"title": "2001 BMW Z3 3.0i"}) is None
+    soft = [_row(id=i, year=2017, mileage=40000, model="MX-5 Miata soft top", price_kind="sold", availability="sold", sold_price=p)
+            for i, p in enumerate([18000, 19000, 20000, 21000], 1)]
+    rf = _row(id=99, year=2017, mileage=40000, model="MX-5 Miata RF")
+    plain = _row(id=98, year=2017, mileage=40000, model="MX-5 Miata soft top")
+    a, b = fair_value(rf, soft, now=date(2026, 10, 19)), fair_value(plain, soft, now=date(2026, 10, 19))
+    assert a["mid"] > b["mid"] * 1.10 and "roof-adjusted to rf" in a["note"]
+    hard = [_row(id=10 + i, year=2017, mileage=40000, model="MX-5 Miata RF", price_kind="sold", availability="sold", sold_price=p)
+            for i, p in enumerate([23000, 24000, 25000], 1)]
+    same = fair_value(rf, soft + hard, now=date(2026, 10, 19))
+    assert "same roof (rf)" in same["note"] and same["n"] == 3
