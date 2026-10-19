@@ -171,6 +171,19 @@
     const atLeast = /at least/i.test(v) && m;
     return { text: `${n}${atLeast ? "+" : ""} owner${n === 1 && !atLeast ? "" : "s"}`, tip: v || "listing field" };
   }
+  // Live auction countdown for cards and the listing page. auction_end is stored either
+  // with an offset (BaT) or as the site's local Pacific time without one (C&B), which
+  // the browser reads as local time.
+  function auctionLeft(l) {
+    if (!["bat", "carsandbids"].includes(l.site) || !["active", "pending"].includes(l.availability) || !l.auction_end) return "";
+    const end = new Date(l.auction_end), ms = end - Date.now();
+    if (isNaN(ms)) return "";
+    const when = end.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    if (ms <= 0) return `<span class="ends over" title="Scheduled end ${esc(when)}; result not synced yet">ended?</span>`;
+    const m = Math.floor(ms / 60000), d = Math.floor(m / 1440), hh = Math.floor((m % 1440) / 60), mm = m % 60;
+    const txt = d >= 2 ? `${d}d left` : d === 1 ? `1d ${hh}h left` : hh >= 1 ? `${hh}h ${mm}m left` : `${mm}m left`;
+    return `<span class="ends ${ms < 3 * 3600e3 ? "soon" : ms < 24 * 3600e3 ? "today" : ""}" title="Auction ends ${esc(when)}">⏱ ${txt}</span>`;
+  }
   function listedAge(l) { return l.listing_date ? ago(l.listing_date) : l.first_seen ? "seen " + ago(l.first_seen) : "—"; }
   function siteName(k) { return (state.data.sites || {})[k] || k; }
   function siteChip(k) { const c = { facebook: "teal", cargurus: "olive", carscom: "mustard", autotrader: "slate", carsandbids: "orange", bat: "rose" }[k] || ""; return `<span class="chip ${c}">${esc(siteName(k))}</span>`; }
@@ -657,7 +670,7 @@
           <span class="score">${fitOf(l) != null ? fitBadge(l) : badge(l)}${scoreOf(l) == null && prelimOf(l) != null ? `<b class="score-tag">prelim</b>` : ""}${upsideTag(l)}</span><span class="site">${sourceLink(l, "src on-photo") || siteChip(l.site)}</span></div>
         <div class="body">
           <div class="title">${esc(title(l))}${(() => { const r = rankOf(l); return r ? ` <span class="chip" title="rank among active candidates in this profile">#${r.rank} of ${r.of}</span>` : ""; })()}</div>
-          <div class="price">${l.role === "comp" && (l.sold_price || l.price) ? money(l.sold_price || l.price) + `<small>${l.availability === "sold" ? "sold" : esc(l.price_kind || "")}</small>` : money(l.price) + (l.price_kind && l.price_kind !== "asking" ? `<small>${esc(l.price_kind.replace("_", " "))}</small>` : "")}</div>
+          <div class="price">${l.role === "comp" && (l.sold_price || l.price) ? money(l.sold_price || l.price) + `<small>${l.availability === "sold" ? "sold" : esc(l.price_kind || "")}</small>` : money(l.price) + (l.price_kind && l.price_kind !== "asking" ? `<small>${esc(l.price_kind.replace("_", " "))}</small>` : "") + auctionLeft(l)}</div>
           ${l.role === "candidate" ? walkaway(l) : ""}
           <div class="meta"><span class="mono">${l.mileage ? num(l.mileage) + " mi" : "— mi"}</span><span>${esc(l.location || "—")}</span><span>${listedAge(l)}</span>${l.transmission ? `<span>${esc(l.transmission)}</span>` : ""}</div>
           ${l.assessment?.headline ? `<div class="headline" title="${esc(l.assessment.headline)}">${esc(l.assessment.headline)}</div>` : ""}
@@ -800,7 +813,7 @@
       <div class="headline">
         <div><h1>${esc(title(l))}</h1>${l.vin ? `<div class="vin-line"><span class="muted small">VIN</span> <span class="mono vin">${esc(l.vin)}</span> <button class="btn sm ghost" id="copy-vin" title="Copy the VIN">Copy</button> <span class="muted small">local only, never published</span></div>` : ""}<div class="muted">${esc([l.year, l.make, l.model, l.generation ? "(" + l.generation + ")" : "", l.trim].filter(Boolean).join(" "))} · ${l.mileage ? `<strong class="hdr-miles">${num(l.mileage)} mi</strong>` : "mileage unknown"} · ${(() => { const o = ownersText(l); return `<strong class="hdr-owners" title="${esc(o.tip)}">${esc(o.text)}</strong>`; })()} · ${esc(l.location || "location unknown")} · ${listedAge(l)}${prof ? ` · <a href="#/profiles">${esc(prof.label)}</a>${prof.verified ? "" : " <span class='chip mustard'>unverified profile</span>"}` : ""}</div></div>
         <div class="row" style="gap:18px">
-          <div><div class="price">${money(l.sold_price || l.price)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${A?.costs?.price_basis === "expected_hammer" ? ` · early bid; expected to sell ~${money(A.costs.price)}` : l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
+          <div><div class="price">${money(l.sold_price || l.price)}${auctionLeft(l)}</div><div class="muted small">${esc(l.price_kind ? l.price_kind.replace("_", " ") : "asking")}${A?.costs?.price_basis === "expected_hammer" ? ` · early bid; expected to sell ~${money(A.costs.price)}` : l.price_pct_vs_sold != null ? ` · pricier than ${l.price_pct_vs_sold}% of sold comps` : ""}</div></div>
           ${l.fit ? `<div class="dial fit ${l.fit.total >= 75 ? "hi" : l.fit.total >= 60 ? "mid" : "lo"}" style="--pct:${l.fit.total}" title="Fit ${l.fit.total}/100: how good a candidate this looks on what is knowable now (the Fit panel below has the parts)\n${esc(fitTip(l))}"><span>${l.fit.total}</span><small>Fit</small></div>${S ? `<div class="dial sm" style="--pct:${S.total}" title="System Assessment score ${S.total}/100: the evidence so far; it drives the verdict"><span>${S.total}</span><small>Score</small></div>` : ""}`
               : S ? `<div class="dial" style="--pct:${S.total}"><span>${S.total}</span><small>/100</small></div>`
               : prelimOf(l) != null ? `<div class="dial prelim" style="--pct:${Math.round(calibrated(l))}"><span>${state.data.calibration?.offset != null ? "≈" : ""}${Math.round(calibrated(l))}</span><small>prelim</small></div>` : ""}
