@@ -93,8 +93,17 @@ def compute_headline(verdict: str, reason: str, score: Score, gates: list[Gate],
 
     if verdict == "Maybe / verify":
         questions = f"{open_n} question{'s' if open_n != 1 else ''} open."
+        # Once documents are in, a model-critical item still missing counts as "observed" for the
+        # verdict, but it is not a finding on the car: a missing coolant receipt read as
+        # "observed: Receipt or clear photo ..." (#514, 2026-10-18). Lead with a real finding.
+        missing_reasons = {g.reason for g in gates if g.key.startswith("critical_missing:")}
+        found = [o for o in observed if o not in missing_reasons]
+        if found:
+            return _clip(f"{verdict} — observed: {found[0]}" + (f"; {questions}" if open_n else "."))
         if observed:
-            return _clip(f"{verdict} — observed: {observed[0]}" + (f"; {questions}" if open_n else "."))
+            label = observed[0].split(": ", 1)[0]
+            more = len(observed) - 1
+            return _clip(f"{verdict} — still unproven: {_short_label(label)}" + (f" (+{more} more)." if more else "."))
         if open_n and "nothing observed wrong" not in reason:
             return _clip(f"{verdict} — {questions}")
 

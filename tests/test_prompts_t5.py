@@ -101,3 +101,18 @@ def test_low_score_without_observed_problem_is_low_priority_maybe():
     h = compute_headline("Maybe / verify", r, _score(total=42), gates,
                          {"document": [{"key": "cooling_history", "label": "Cooling", "status": "missing"}], "inspection": [], "observed": []}, 50)
     assert h.startswith("Maybe / verify — score 42/100, weakest on") and "low priority, 1 open" in h
+
+
+def test_headline_does_not_call_a_missing_document_observed():
+    """#514, 2026-10-18: at the docs stage a still-missing receipt is 'observed' for the verdict,
+    but the headline must not present it as a finding on the car."""
+    from scout.policy.engine import compute_headline
+    from scout.policy.schema import Gate, Score
+    miss = Gate(kind="conditional", key="critical_missing:cooling", reason="Coolant tank receipt: missing (none provided)")
+    found = Gate(kind="conditional", key="accident_without_repair_docs", reason="Accident history without repair records and measurements")
+    sc = Score(documentation=15, condition=15, price_value=9, mission_fit=12, logistics=5, emotional_spec_fit=8, total=64, caps_applied=[])
+    only_missing = compute_headline("Maybe / verify", "Score 64/100", sc, [miss], {"document": [], "inspection": [], "observed": [miss.reason]}, 70)
+    assert "observed" not in only_missing and "still unproven: Coolant tank receipt" in only_missing
+    both = compute_headline("Maybe / verify", "Score 64/100", sc, [miss, found],
+                            {"document": [], "inspection": [], "observed": [miss.reason, found.reason]}, 70)
+    assert "observed: Accident history" in both
