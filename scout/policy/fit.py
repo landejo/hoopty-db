@@ -77,7 +77,7 @@ def accident_points(status: str, value: str) -> tuple[int, str]:
     serious = [m for m in _SERIOUS_RE.finditer(t) if not re.search(r"\bno\b[^.;]{0,30}$", t[:m.start()])]
     if serious:
         return 0, "serious accident on record"
-    if _CLEAN_RE.search(t) and not re.search(r"\b(minor|moderate) (damage|collision|accident)|damage reported \d|accidents? reported on|reports '", t):
+    if _CLEAN_RE.search(t) and not re.search(r"\b(minor|moderate)[- ](damage|collision|accident)|damage reported \d|accidents? reported on|reports '", t):
         return 8, "no accidents reported"
     if re.search(r"no major (accidents?|damage)", t):
         return 4, "seller hedges ('no major accidents')"

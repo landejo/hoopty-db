@@ -65,6 +65,9 @@ def test_accident_wording_from_real_listings():
     # "no structural damage or airbag deployment" is not a serious accident (#253).
     assert accident_points("verified", "Damage reported 03/24/2020; no structural damage or airbag deployment reported")[0] == 2
     assert accident_points("claimed", "Front-end collision leading to a total-loss branding")[0] == 0
+    # Hyphenated "minor-damage" beside a conflicting "none reported" is still minor (#570).
+    assert accident_points("claimed", "Two minor-damage events in 2016 reported to CARFAX (dealer text); "
+                                      "the Autotrader summary says none reported")[0] == 3
 
 
 def test_fit_spreads_cars_the_assessment_score_bunches():
