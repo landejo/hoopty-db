@@ -68,13 +68,25 @@ _SELLER_NONE_RE = re.compile(r"no (significant|major) damage|no significant dama
 _SERIOUS_RE = re.compile(r"structural|frame damage|airbag|total[- ]loss|salvage|rebuilt")
 
 
+def _negated(before: str) -> bool:
+    """A "no" shortly before, or one that heads a list running up to it: "No accident,
+    damage, structural damage or airbag deployment reported" negates "airbag" (#515)."""
+    m = re.search(r"\bno\b([^.;]{0,80})$", before)
+    if not m:
+        return False
+    gap = m.group(1)
+    if len(gap) <= 30:
+        return True
+    return bool(re.search(r",|\bor\b", gap)) and not re.search(r"\b(until|then|but|except|however|before|after|when|later)\b", gap)
+
+
 def accident_points(status: str, value: str) -> tuple[int, str]:
     """0-8: none reported (history report) 8, the seller's word only 6, unknown 4,
     minor 3, an accident 2, serious (structural, airbag, total loss) 0."""
     t = (value or "").lower()
     if status == "unknown" or not t or t in {"unknown", "none claimed", "not stated"}:
         return 4, "accident record unknown"
-    serious = [m for m in _SERIOUS_RE.finditer(t) if not re.search(r"\bno\b[^.;]{0,30}$", t[:m.start()])]
+    serious = [m for m in _SERIOUS_RE.finditer(t) if not _negated(t[:m.start()])]
     if serious:
         return 0, "serious accident on record"
     if _CLEAN_RE.search(t) and not re.search(r"\b(minor|moderate)[- ](damage|collision|accident)|damage reported \d|accidents? reported on|reports '", t):
