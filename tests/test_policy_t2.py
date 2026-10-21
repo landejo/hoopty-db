@@ -430,7 +430,7 @@ class TestExclusionsMigration:
     """Test the migration logic for exclusions in state.py."""
 
     def test_migration_adds_default_exclusions(self):
-        """Stored state without _migrations marker gets Z4/Saturn added (the MX-5 was reopened 2026-10-17)."""
+        """Stored state without _migrations marker gets Saturn added (the MX-5 was reopened 2026-10-17, the Z4 2026-10-20)."""
         reset_state()
         save_state({
             "active_exclusions": ["Lexus SC430"],
@@ -441,7 +441,7 @@ class TestExclusionsMigration:
         # Should now have the defaults added
         exclusions = state.get("active_exclusions", [])
         assert "Lexus SC430" in exclusions
-        assert "BMW Z4" in exclusions
+        assert "BMW Z4" not in exclusions
         assert "Saturn" in exclusions
         assert "Mazda MX-5" not in exclusions
         assert "_migrations" in state
