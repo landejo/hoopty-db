@@ -441,9 +441,10 @@ def test_mission_guidance_quotes_the_live_budget_not_a_hardcoded_ceiling():
     assert "$27,000" in g and "$29,000" in g and "$15" not in g
 
 
-def test_z4_and_saturn_are_excluded():
+def test_saturn_is_excluded_and_the_z4_reopened():
+    """Jason reopened the Z4 2026-10-20."""
     from scout.policy.gates import is_excluded
     from scout.policy.state import DEFAULT_STATE
     exclusions = DEFAULT_STATE.get("active_exclusions", [])
-    assert is_excluded("BMW", "Z4 3.0i", exclusions) and is_excluded("Saturn", "Sky Redline", exclusions)
+    assert is_excluded("Saturn", "Sky Redline", exclusions) and not is_excluded("BMW", "Z4 3.0i", exclusions)
     assert not is_excluded("BMW", "Z3 3.0i", exclusions)
