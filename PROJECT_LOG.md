@@ -552,3 +552,14 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 ### System State Summary
 - Tests: 317 passed. Other session's uncommitted edits untouched (config.py, market.py bmwcca line, profiles.py, test_policy_1_9.py).
 - Open: the +12% default premium is now known to be high for ND RF; it is used only when a roof has < 3 sales (NC soft tops). Only 8 ND soft-top sales; more would firm up the +1.9%.
+
+## 2026-10-20 to 2026-10-22 — Sweep, Z4 reopen, Fit fixes, shortlist
+- Commits: 62b53d1 / 24e8062 (Fit accident parsing: hyphenated "minor-damage"; a "no" heading a list), 70f0830 / f7e4ad1 (BMW Z4 reopened; tests updated). Stored policy_state exclusions updated to match.
+- Tracker adds: #569 (total loss, Pass), #570 (MD NC, Pass), #577 2008 Miata GT (BaT, Carfax doc), #579 BaT Z4 3.0i (sold $18,750), #596 128i conv, #597 Torrance Z4 3.0si (Pass), #607 Z4 3.0si Coupe, #630 / #631 gray RF Clubs. Comps added: 16 Z4 3.0i, 9 Z4 3.0si roadster, 4 Z4 coupe 3.0si manual (BaT).
+- Status changes per Jason: Sport-trim NDs, Z3s over 60k (except #307 restored), #109, #519, #461 context, #572 passed.
+
+### System State Summary
+- Tests: 317 passed. Other session's uncommitted edits untouched (config.py, market.py bmwcca line, profiles.py, test_policy_1_9.py).
+- Server restart pending so the board picks up the roof valuation, Fit fixes and Z4 reopen.
+- Open: nc-miata-hardtop-watch scheduled task has never run; no Wrangler/E93/981 comps in tracker.
+- Shortlist and offer numbers are in memory (second-car-status-2026-10-22).
