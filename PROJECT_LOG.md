@@ -563,3 +563,15 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 - Server restart pending so the board picks up the roof valuation, Fit fixes and Z4 reopen.
 - Open: nc-miata-hardtop-watch scheduled task has never run; no Wrangler/E93/981 comps in tracker.
 - Shortlist and offer numbers are in memory (second-car-status-2026-10-22).
+
+## 2026-10-23 — Free history-report auto-fetch; stale-Reject fix
+- Fix (`scout/stage.py` `documents_read_by`, used by `_rederive_assessment` and `/api/rescore`): a free re-derivation stages only on documents attached at or before the stored assessment ran. Before, attaching any report moved the car to "docs" and turned the old assessment's "missing" items into observed gaps: a clean Carfax flipped #637 from Maybe to Reject. `tests/test_stage.py::test_document_attach_and_delete_rederive_stage` updated to the new rule.
+- Server: `POST /api/history-reports/wanted` (which listing/kind pairs lack a report) and `POST /api/history-reports` (attach a fetched free Carfax/AutoCheck; never replaces one; rejects < 800 chars or a VIN mismatch; queues a full re-assessment, ~$0.25, only for an already-assessed active candidate).
+- Extension 0.5.3: autotrader.js and carfax.js report free report links (`detail.history_report`; Autotrader `/experian?` = free AutoCheck, autocheck.com "Buy" links skipped; CARFAX listing "View FREE CARFAX Report"). background.js fetches wanted reports after each ingest batch and on "Add this listing". document.js reads same-origin iframe[srcdoc] text (Autotrader renders its report there), waits for it, takes a kind hint; now also loaded on autotrader.com.
+- Data today: AutoCheck #648/#646, Carfax #637 (free), Carfax #645/#647 (Jason bought) attached; the five fully re-assessed (~$1.25). #639/#638/#642/#649/#644 Pass per Jason.
+
+### System State Summary
+- Tests: 329 passed (13 new in tests/test_history_reports.py). E2E: new `reports` suite 8/8; popup 4/4, reassess 12/12, startup 5/5. `ux` fails at the scroll-memory check ("reading 'dataset'") on the original code too: pre-existing, not from this change.
+- Modified: scout/stage.py, scout/server.py, tests/test_stage.py, tests/test_history_reports.py (new), extension/{manifest.json, background.js, adapters/autotrader.js, adapters/carfax.js, adapters/document.js}, e2e/e2e_history_reports.js (new), e2e/run.sh. Not committed.
+- Needs: restart the tracker server and reload the extension (0.5.3) in Chrome. Free-report links on Cars.com / CarGurus are not detected (unverified markup).
+- Other session's uncommitted edits untouched (config.py, market.py, profiles.py, test_policy_1_9.py).
