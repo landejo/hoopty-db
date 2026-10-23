@@ -356,7 +356,14 @@
       return true;
     });
     // The next-step filter looks at the folded card, so it matches the chip shown.
-    return arrange(rows).filter((l) => !f.next || nextStepOf(l)?.action === f.next);
+    return arrange(rows).filter((l) => (!f.next || nextStepOf(l)?.action === f.next)
+      && (!f.report || (f.report === "has") === hasHistoryReport(l)));
+  }
+
+  // A Carfax or AutoCheck on this card's car: its own listing or a VIN twin folded into it,
+  // so "Missing" never sends you to buy a report the car already has.
+  function hasHistoryReport(l) {
+    return [l, ...(l.also_on || [])].some((x) => (x.documents || []).some((d) => d.kind === "carfax" || d.kind === "autocheck"));
   }
 
   // Sort, then fold VIN twins into one card per car.
@@ -450,6 +457,7 @@
           <span class="seg wide" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="curiosity" class="${f.role === "curiosity" ? "on" : ""}" title="Followed out of interest, not a serious candidate (over your curiosity line, or set by hand)">Curious</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span></div>
         <div class="rail-sec"><h4>Model <span class="muted small">⌥-click: only this</span></h4><span class="chips stack" id="f-profiles"></span></div>
         <div class="rail-sec"><h4>Next step</h4><span class="seg wide" id="f-next">${["", "Contact now", "Watch", "Skip"].map((k) => `<button data-v="${k}" class="${(f.next || "") === k ? "on" : ""}">${k ? k.replace(" now", "") : "Any"}</button>`).join("")}</span></div>
+        <div class="rail-sec"><h4>History report <span class="muted small">Carfax / AutoCheck</span></h4><span class="seg wide" id="f-report">${[["", "Any"], ["has", "Has one"], ["missing", "Missing"]].map(([k, v]) => `<button data-v="${k}" class="${(f.report || "") === k ? "on" : ""}">${v}</button>`).join("")}</span></div>
         <div class="rail-sec"><h4>Your call <span class="muted small">click: only · again: hide</span></h4><span class="chips" id="f-statuses"></span></div>
         <div class="rail-sec"><h4>Where</h4>
           <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
@@ -496,6 +504,7 @@
     bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp" || f.role === "ignored") f.avail = ""; if (f.role === "candidate" || f.role === "curiosity") f.avail = f.avail || "active"; save("filters", f); route(); }));
     bar.querySelectorAll("#view button").forEach((b) => (b.onclick = () => { f.view = b.dataset.v; save("filters", f); route(); }));
     bar.querySelectorAll("#f-next button").forEach((b) => (b.onclick = () => { f.next = b.dataset.v; bar.querySelectorAll("#f-next button").forEach((x) => x.classList.toggle("on", x === b)); rerender(); }));
+    bar.querySelectorAll("#f-report button").forEach((b) => (b.onclick = () => { f.report = b.dataset.v; bar.querySelectorAll("#f-report button").forEach((x) => x.classList.toggle("on", x === b)); rerender(); }));
     $("#f-site", bar).onchange = (e) => { f.site = e.target.value; rerender(); };
     $("#f-avail", bar).onchange = (e) => { f.avail = e.target.value; rerender(); };
     const bindStatusChips = () => {
@@ -590,7 +599,7 @@
     // 15 at a time; the server remembers which cars this cycle has done.
     const ranking = () => {
       const saved = state.filters;
-      state.filters = { ...saved, role: "candidate", avail: "active", profiles: [], site: "", statuses: {}, analyzed: false, max_price: "", max_mileage: "", max_age: "", sort: "fit" };
+      state.filters = { ...saved, role: "candidate", avail: "active", profiles: [], site: "", statuses: {}, analyzed: false, max_price: "", max_mileage: "", max_age: "", report: "", sort: "fit" };
       const q = state.q; state.q = "";
       try { return filtered().filter((l) => l.profile_key); } finally { state.filters = saved; state.q = q; }
     };

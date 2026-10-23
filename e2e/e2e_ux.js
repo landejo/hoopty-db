@@ -65,6 +65,17 @@ const openDetail = async (page, l) => {
   await page.click('#f-next button[data-v=""]');
   await page.waitForTimeout(300);
 
+  // History report filter: Has + Missing split the board; Missing never shows a Carfax/AutoCheck chip.
+  const reportCards = async (v) => {
+    await page.click(`#f-report button[data-v="${v}"]`);
+    await page.waitForTimeout(300);
+    return page.$$eval(".card", (cs) => cs.map((c) => /Carfax|AutoCheck/.test([...c.querySelectorAll(".body .chip.olive")].map((x) => x.textContent).join(" "))));
+  };
+  const anyN = (await reportCards("")).length, has = await reportCards("has"), missing = await reportCards("missing");
+  check("History report filter splits the board into has + missing", has.length > 0 && has.length + missing.length === anyN, `${has.length} has + ${missing.length} missing = ${anyN}`);
+  check("Missing shows no card with a report chip", missing.every((x) => !x), `${missing.filter(Boolean).length} with a chip`);
+  await reportCards("");
+
   // "Best score" is exactly the assessment score, highest first; preliminary cards come after a divider.
   // A card with a Fit badge shows the assessment score as its "S nn" tag (2026-10-18).
   await page.selectOption("#f-sort", "score");
