@@ -575,3 +575,10 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 - Modified: scout/stage.py, scout/server.py, tests/test_stage.py, tests/test_history_reports.py (new), extension/{manifest.json, background.js, adapters/autotrader.js, adapters/carfax.js, adapters/document.js}, e2e/e2e_history_reports.js (new), e2e/run.sh. Not committed.
 - Needs: restart the tracker server and reload the extension (0.5.3) in Chrome. Free-report links on Cars.com / CarGurus are not detected (unverified markup).
 - Other session's uncommitted edits untouched (config.py, market.py, profiles.py, test_policy_1_9.py).
+
+## 2026-10-23 — Board: History report filter
+- `docs/app.js`: rail section "History report" (Any / Has one / Missing). Counts a Carfax or AutoCheck on the card's own listing or a folded VIN twin; applied after folding, like Next step; the Re-assess tier ranking ignores it. No card changes.
+- `e2e/e2e_ux.js`: two checks (Has + Missing = Any; Missing shows no report chip). Live board: 13 has / 61 missing of 74.
+
+### System State Summary
+- Not committed. The ux suite still stops at the old scroll-memory check here; the fix is ad1537a on claude/competent-maxwell-d4d8b1 (not merged).
