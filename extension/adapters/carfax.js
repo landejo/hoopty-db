@@ -23,6 +23,12 @@
     return [...best[1]].sort((a, b) => a - b).slice(0, cap)
       .map((n) => `https://carfax-img.vast.com/carfax/v2/${best[0]}/${n}/1024x768`);
   }
+  // The dealer's free report: "View FREE CARFAX Report" -> /vehiclehistory/ccl/<token>.
+  // Verified 2026-10-23 on #637.
+  function freeHistoryReport() {
+    const a = [...document.querySelectorAll('a[href*="/vehiclehistory/"]')].find((el) => /\bfree\b/i.test(el.textContent));
+    return a ? { kind: "carfax", url: a.href } : null;
+  }
   const GONE_RE = /no longer available|this vehicle has (been )?sold|vehicle is no longer listed|listing (has )?expired/i;
 
   window.__scoutAdapter = {
@@ -57,7 +63,8 @@
       await S.sleep(1000);
       await S.expandAll(["Show more", "See more", "Read more", "View all features", "Show all features"]);
       const d = S.genericDetail({ photos: listingPhotos() });
-      const mi = d.text.match(/([\d,]+)\s*mi\b/);
+      d.history_report = freeHistoryReport();
+      const mi =d.text.match(/([\d,]+)\s*mi\b/);
       if (mi) d.mileage_text = mi[1];
       if (GONE_RE.test(d.text.slice(0, 2000))) d.status_text = "Sold\n" + d.status_text;
       return d;

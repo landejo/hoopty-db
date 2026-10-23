@@ -152,6 +152,51 @@ async function scrapeUrl(url) {
   }
 }
 
+// Read a history-report page (Carfax / AutoCheck) in a background tab via document.js.
+async function captureReport(url, kind) {
+  const tab = await chrome.tabs.create({ url, active: false });
+  await trackTab(tab.id);
+  try {
+    await waitForLoad(tab.id);
+    await sleep(1500);
+    const resp = await sendToTab(tab.id, { type: "capture_document", kind, waitMs: 12000 });
+    return resp.ok ? resp : { error: resp.error };
+  } finally {
+    try { await chrome.tabs.remove(tab.id); } catch (e) {}
+    await untrackTab(tab.id);
+  }
+}
+
+// Free reports the scraped listing pages linked ({listing_url, kind, url, title}): once
+// the listings are on the server, ask which reports it still lacks, then read and
+// attach each. The adapters only report free links, so nothing here is ever bought.
+async function fetchHistoryReports(found) {
+  if (!found.length) return 0;
+  let wanted;
+  try {
+    wanted = (await post("/api/history-reports/wanted", { items: found.map((f) => ({ listing_url: f.listing_url, kind: f.kind })) })).wanted || [];
+  } catch (e) { log("History-report check failed: " + e.message); return 0; }
+  const want = new Set(wanted.map((w) => w.listing_url + "|" + w.kind));
+  let attached = 0;
+  for (const f of found) {
+    if (cancel) break;
+    if (!want.has(f.listing_url + "|" + f.kind)) continue;
+    try {
+      const doc = await captureReport(f.url, f.kind);
+      if (doc.error) { log(`! free ${f.kind} report for ${f.title || f.listing_url}: ${doc.error}`); continue; }
+      const res = await post("/api/history-reports", { listing_url: f.listing_url, kind: f.kind, text: doc.text, url: f.url, title: doc.title });
+      if (res.skipped) continue;
+      attached++;
+      log(`Attached the free ${f.kind} report: ${f.title || f.listing_url}` + (res.reassess_queued ? " (re-assessing)" : ""));
+    } catch (e) { log(`! free ${f.kind} report for ${f.title || f.listing_url}: ${e.message}`); }
+    await sleep(jitter());
+  }
+  return attached;
+}
+
+const reportOf = (it) => (it.detail && it.detail.history_report && !it.detail.error && !it.detail.blocked)
+  ? Object.assign({ listing_url: it.url, title: it.title }, it.detail.history_report) : null;
+
 async function post(path, body) {
   const api = await getApi();
   const r = await fetch(api + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -166,7 +211,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
   const lock = await acquireRunLock("sync");
   if (!lock.ok) return lock;
   await chrome.storage.session.set({ log: [] });
-  const totals = { created: 0, updated: 0, normalized: 0, queued_ai: 0, comps: 0, candidates: 0, profiles_created: 0, skipped_sold: 0, blocked: 0, errors: [] };
+  const totals = { created: 0, updated: 0, normalized: 0, queued_ai: 0, comps: 0, candidates: 0, profiles_created: 0, skipped_sold: 0, blocked: 0, reports: 0, errors: [] };
   try {
     await setProgress({ state: "collecting", done: 0, total: 0, message: "Scrolling the saved list…" });
     const ping = await sendToTab(tabId, { type: "ping" });
@@ -208,7 +253,9 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
       for (const k of Object.keys(totals)) if (typeof res[k] === "number") totals[k] += res[k];
       if (Array.isArray(res.errors)) totals.errors.push(...res.errors);
       log(`Server: +${res.created} new, ${res.updated} updated` + (res.queued_ai ? `, ${res.queued_ai} queued for AI read` : ""));
+      const reports = batch.map(reportOf).filter(Boolean);
       batch = [];
+      totals.reports += await fetchHistoryReports(reports);
     };
 
     for (let i = 0; i < items.length; i++) {
@@ -236,7 +283,7 @@ async function runSync({ tabId, includeSold, scrapeDetails, onlyNew }) {
       catch (e) { log("Removal pass failed: " + e.message); }
     }
     await setProgress({ state: "done", message: "Sync complete.", totals });
-    log(`Done. ${totals.candidates} candidate(s), ${totals.comps} comp(s).` + (totals.queued_ai ? ` Server is still reading ${totals.queued_ai} with AI in the background.` : ""));
+    log(`Done. ${totals.candidates} candidate(s), ${totals.comps} comp(s).` + (totals.reports ? ` ${totals.reports} free history report(s) attached.` : "") + (totals.queued_ai ? ` Server is still reading ${totals.queued_ai} with AI in the background.` : ""));
     return { ok: true, totals };
   } catch (e) {
     await setProgress({ state: "error", message: e.message });
@@ -258,6 +305,8 @@ async function addCurrent({ tabId, url }) {
                  sold: SOLD_RE.test(statusHead), ended: ENDED_RE.test(statusHead) && !SOLD_RE.test(statusHead) };
   try {
     const res = await post("/api/ingest", { site: ping.site, items: [item], include_sold: true, defer_ai: false });
+    const report = reportOf(item);
+    if (report) res.reports = await fetchHistoryReports([report]);
     return { ok: true, res };
   } catch (e) { return { ok: false, error: e.message }; }
 }

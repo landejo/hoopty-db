@@ -9,7 +9,7 @@ import threading
 import time
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -23,7 +23,7 @@ from scout.publish import build_export, git_publish, write_export
 from scout.policy import POLICY_VERSION
 from scout.policy.preferences import MISSIONS
 from scout.policy.state import load_state, reset_state, save_state
-from scout.stage import stage_for
+from scout.stage import documents_read_by, stage_for
 
 app = FastAPI(title="Hoopty-Matic")
 
@@ -135,8 +135,9 @@ def task_status() -> dict[str, Any]:
 def _rederive_assessment(listing_id: int) -> None:
     """Re-run the deterministic policy engine (free, no AI) on a listing's latest
     stored assessment so stage/verdict/priority stay current after something
-    that changes stage_for()'s inputs (a status change, a document attached or
-    removed). No-op if the listing has never been assessed."""
+    that changes stage_for()'s inputs (a status change, a document it read being
+    removed). A document attached after the assessment ran doesn't count until a
+    re-assessment reads it (documents_read_by). No-op if never assessed."""
     a = db.latest_assessment(listing_id)
     row = db.get_listing(listing_id)
     if not a or not row:
@@ -148,7 +149,7 @@ def _rederive_assessment(listing_id: int) -> None:
     from scout.policy.engine import rescore_assessment
     state = load_state()
     fair = market.fair_value(row, db.list_listings(profile_key=market.comp_keys(prof["key"])))
-    stage = stage_for(row, db.list_documents(listing_id))
+    stage = stage_for(row, documents_read_by(a, db.list_documents(listing_id)))
     d = rescore_assessment(row, prof, a, state, fair=fair, stage=stage)
     if d:
         db.add_assessment(listing_id, d)
@@ -965,7 +966,7 @@ def rescore(assessments: bool = True) -> dict[str, Any]:
             if not (row and prof):
                 continue
             fair = market.fair_value(row, db.list_listings(profile_key=market.comp_keys(prof["key"])))
-            stage = stage_for(row, db.list_documents(lid))
+            stage = stage_for(row, documents_read_by(a, db.list_documents(lid)))
             d = rescore_assessment(row, prof, a, state, fair=fair, stage=stage)
             if d:
                 db.add_assessment(lid, d)
@@ -1025,6 +1026,81 @@ def add_document(listing_id: int, payload: DocumentPayload) -> dict[str, Any]:
     _rederive_assessment(listing_id)
     return {"ok": True, "document_id": doc_id, "kind": payload.kind, "chars": len(payload.text),
             "note": "Re-assess this listing to fold the document into its verdict."}
+
+
+# ---------- free history reports, fetched by the extension during a sync ----------
+# A listing page that links a free Carfax / AutoCheck report (the dealer paid for it)
+# tells the extension; it asks which reports the tracker still lacks, opens each in a
+# background tab, and posts the text here. Paid ("Buy") links are never followed.
+HISTORY_REPORT_KINDS = ("carfax", "autocheck")
+MIN_REPORT_CHARS = 800   # less is a page that didn't render (Autotrader's report loads late)
+
+
+class HistoryReportRef(BaseModel):
+    listing_url: str
+    kind: str
+
+
+class HistoryReportsWanted(BaseModel):
+    items: list[HistoryReportRef]
+
+
+class HistoryReportPayload(BaseModel):
+    listing_url: str
+    kind: str
+    text: str
+    url: str = ""
+    title: str = ""
+
+
+@app.post("/api/history-reports/wanted")
+def history_reports_wanted(payload: HistoryReportsWanted) -> dict[str, Any]:
+    """Which of these (listing, report kind) pairs the tracker doesn't have yet, so the
+    extension only opens reports it will attach."""
+    wanted = []
+    for ref in payload.items:
+        row = db.get_listing_by_url(ref.listing_url)
+        if not row or ref.kind not in HISTORY_REPORT_KINDS:
+            continue
+        if not any(d["kind"] == ref.kind for d in db.list_documents(row["id"])):
+            wanted.append({"listing_url": ref.listing_url, "kind": ref.kind})
+    return {"wanted": wanted}
+
+
+async def _reassess_after_report(listing_id: int) -> None:
+    try:
+        await assess_listing(listing_id)
+    except HTTPException as e:
+        db.log_event("assess_error", listing_id, f"after a fetched history report: {e.detail}")
+
+
+@app.post("/api/history-reports")
+def add_history_report(payload: HistoryReportPayload, background: BackgroundTasks) -> dict[str, Any]:
+    """Attach a fetched free report. Never replaces one already attached. If the car
+    was assessed before, queue a full re-assessment (~$0.25) so the report is read
+    rather than just counted; new cars get theirs in the normal first assessment."""
+    row = db.get_listing_by_url(payload.listing_url)
+    if not row:
+        raise HTTPException(404, "not found")
+    if payload.kind not in HISTORY_REPORT_KINDS:
+        raise HTTPException(400, f"kind must be one of {HISTORY_REPORT_KINDS}")
+    text = (payload.text or "").strip()
+    if len(text) < MIN_REPORT_CHARS:
+        raise HTTPException(422, f"report text is only {len(text)} chars; the page probably didn't render")
+    vin = (row.get("vin") or "").upper()
+    if vin and vin not in text.upper():
+        raise HTTPException(422, f"report doesn't mention this car's VIN {vin}")
+    if any(d["kind"] == payload.kind for d in db.list_documents(row["id"])):
+        return {"ok": True, "skipped": f"{payload.kind} report already attached"}
+    doc_id = db.add_document(row["id"], payload.kind, text, payload.title or f"{payload.kind} (free, auto-fetched)",
+                             "auto-fetched free report", payload.url, row.get("vin"))
+    db.log_event("document_added", row["id"], f"{payload.kind} {len(text)} chars (auto-fetched)")
+    _rederive_assessment(row["id"])
+    reassess = (CONFIG.ai_enabled and db.latest_assessment(row["id"]) is not None
+                and row["role"] == "candidate" and row["availability"] in ("active", "pending"))
+    if reassess:
+        background.add_task(_reassess_after_report, row["id"])
+    return {"ok": True, "document_id": doc_id, "kind": payload.kind, "chars": len(text), "reassess_queued": reassess}
 
 
 @app.get("/api/listings/{listing_id}/documents")

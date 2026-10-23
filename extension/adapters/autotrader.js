@@ -30,6 +30,13 @@
     }
     return out;
   }
+  // A free history report the dealer paid for: "View the Free Vehicle History Report"
+  // links to /cars-for-sale/vehicle/<id>/experian?... (AutoCheck). A buy-only listing
+  // links autocheck.com instead, which this skips. Verified 2026-10-23 (#648 free, #645 buy-only).
+  function freeHistoryReport() {
+    const a = document.querySelector('a[href*="/experian?"]');
+    return a ? { kind: "autocheck", url: a.href } : null;
+  }
 
   window.__scoutAdapter = {
     site: "autotrader",
@@ -58,6 +65,7 @@
       await S.sleep(1200);
       await S.expandAll(["See more", "Show more", "Read more", "View full description", "Show full description", "See all features"]);
       const d = S.genericDetail({ photos: galleryPhotos() });
+      d.history_report = freeHistoryReport();
       if (/no longer available|this vehicle (is|has been) sold|listing (is )?unavailable/i.test(d.text.slice(0, 2500))) d.status_text = "No longer available\n" + d.status_text;
       return d;
     },

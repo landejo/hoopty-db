@@ -8,8 +8,8 @@
 #   - AI: off, or (reassess suite) the real Anthropic SDK pointed at
 #     fake_anthropic.py, which replays a stored assessment: no paid calls.
 #
-# Usage: e2e/run.sh [startup] [ux] [replay] [reassess] [published] [popup] [saved] [availability]
-#   default: startup ux replay reassess published popup saved. `saved` checks the Facebook saved-list collector on a virtualized grid. `availability` drives the real extension in
+# Usage: e2e/run.sh [startup] [ux] [replay] [reassess] [published] [popup] [saved] [reports] [availability]
+#   default: startup ux replay reassess published popup saved reports. `saved` checks the Facebook saved-list collector on a virtualized grid. `reports` checks free history-report links and report capture in the content scripts. `availability` drives the real extension in
 #   Chromium against the live listing sites (~10 min; sites that block
 #   automated browsers come back "unclear", which is the expected, safe result).
 set -euo pipefail
@@ -18,7 +18,7 @@ E2E=$ROOT/e2e
 PY=$ROOT/.venv/bin/python
 PORT=8766
 FAKE_PORT=8799
-SUITES=${*:-startup ux replay reassess published popup saved}
+SUITES=${*:-startup ux replay reassess published popup saved reports}
 SB=${SANDBOX:-$(mktemp -d -t hoopty-e2e)}
 export SANDBOX=$SB
 echo "sandbox: $SB"
@@ -81,6 +81,7 @@ for suite in $SUITES; do
     availability) start_server; (cd "$E2E" && node e2e_availability.js) || FAILED=1 ;;
     popup)        (cd "$E2E" && node e2e_popup.js) || FAILED=1; continue ;;
     saved)        (cd "$E2E" && node e2e_saved_list.js) || FAILED=1; continue ;;
+    reports)      (cd "$E2E" && node e2e_history_reports.js) || FAILED=1; continue ;;
     startup)      # Pretend the copy predates the current policy, so the boot-time update always runs.
                   sqlite3 "$SB/scout.db" "UPDATE assessments SET assessment_json=json_remove(json_set(assessment_json,'\$.policy_version','0.0-e2e'),'\$.next_step','\$.merit')"
                   RESCORE_DELAY=8 start_server; (cd "$E2E" && node e2e_startup_board.js) || FAILED=1

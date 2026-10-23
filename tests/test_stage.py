@@ -313,6 +313,11 @@ def test_document_attach_and_delete_rederive_stage():
                                              "critical_evidence": [], "seller_questions": []}})
         r = c.post(f"/api/listings/{lid}/documents", json={"kind": "carfax", "text": "clean history"})
         doc_id = r.json()["document_id"]
+        # Attached after the assessment ran: nothing has read it, so the stage holds.
+        assert db.latest_assessment(lid)["stage"] == "listing"
+        a = db.latest_assessment(lid)
+        db.add_assessment(lid, a | {"assessed_at": "2099-01-01T00:00:00+00:00"})   # a run that read it
+        c.patch(f"/api/listings/{lid}", json={"status": "New"})   # any re-derivation
         assert db.latest_assessment(lid)["stage"] == "docs"
         c.delete(f"/api/documents/{doc_id}")
         assert db.latest_assessment(lid)["stage"] == "listing"
