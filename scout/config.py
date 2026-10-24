@@ -76,6 +76,7 @@ SITES = {
     "bayluxuryautos": "Bay Luxury Autos",
     "carfax": "CARFAX",
     "pca": "PCA Mart",
+    "porschefinder": "Porsche Finder",
 }
 AUCTION_SITES = {"carsandbids", "bat"}
 

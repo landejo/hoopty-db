@@ -357,10 +357,24 @@
       }
       return true;
     });
+    if (f.drive) rows = rows.filter(drivableHome);
     // The next-step filter looks at the folded card, so it matches the chip shown.
     return arrange(rows).filter((l) => (!f.next || nextStepOf(l)?.action === f.next)
       && (!f.report || (f.report === "has") === hasHistoryReport(l)));
   }
+
+  // Fly out and drive it home in two days or less from Carmel: about 1,200 road miles at
+  // ~600 a day. By state: Seattle ~850, Boise ~650, Albuquerque ~1,000. Left out as
+  // borderline: CO (Denver ~1,300), WY, MT, TX. A location without a state doesn't count.
+  const DRIVE_HOME_STATES = new Set(["CA", "NV", "OR", "WA", "AZ", "UT", "ID", "NM"]);
+  const STATE_NAMES = { california: "CA", nevada: "NV", oregon: "OR", washington: "WA", arizona: "AZ", utah: "UT", idaho: "ID", "new mexico": "NM" };
+  function stateOf(location) {
+    const s = (location || "").trim();
+    const m = s.match(/,\s*([A-Z]{2})\b/);
+    if (m) return m[1];
+    return STATE_NAMES[s.toLowerCase()] || null;
+  }
+  function drivableHome(l) { return DRIVE_HOME_STATES.has(stateOf(l.location)); }
 
   // A Carfax or AutoCheck on this card's car: its own listing or a VIN twin folded into it,
   // so "Missing" never sends you to buy a report the car already has.
@@ -508,7 +522,8 @@
         <div class="rail-sec"><h4>Your call <span class="muted small">click: only · again: hide</span></h4><span class="chips" id="f-statuses"></span></div>
         <div class="rail-sec"><h4>Where</h4>
           <select id="f-site"><option value="">All sites</option>${sites.map(([k, v]) => `<option value="${k}" ${f.site === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
-          <select id="f-avail"><option value="">Any availability</option>${["active", "pending", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select></div>
+          <select id="f-avail"><option value="">Any availability</option>${["active", "pending", "sold", "ended", "removed", "withdrawn"].map((a) => `<option ${f.avail === a ? "selected" : ""}>${a}</option>`).join("")}</select>
+          <label class="check" title="Fly out and drive home in two days or less (~1,200 miles): CA, NV, OR, WA, AZ, UT, ID, NM"><input type="checkbox" id="f-drive" ${f.drive ? "checked" : ""}> Drivable home (≤ 2 days)</label></div>
         <div class="rail-sec"><h4>Limits</h4>
           <label title="Hide listings priced above this">Max price <input type="number" class="num" id="f-max-price" min="0" step="500" placeholder="$" value="${esc(f.max_price)}"></label>
           <label title="Hide listings with more miles than this">Max miles <input type="number" class="num" id="f-max-mileage" min="0" step="5000" placeholder="mi" value="${esc(f.max_mileage)}"></label>
@@ -563,6 +578,7 @@
     bar.querySelectorAll("#f-report button").forEach((b) => (b.onclick = () => { f.report = b.dataset.v; bar.querySelectorAll("#f-report button").forEach((x) => x.classList.toggle("on", x === b)); rerender(); }));
     $("#f-site", bar).onchange = (e) => { f.site = e.target.value; rerender(); };
     $("#f-avail", bar).onchange = (e) => { f.avail = e.target.value; rerender(); };
+    $("#f-drive", bar).onchange = (e) => { f.drive = e.target.checked; rerender(); };
     const bindStatusChips = () => {
       const box = $("#f-statuses", bar);
       const saved = f.statuses; f.statuses = {};
@@ -655,7 +671,7 @@
     // 15 at a time; the server remembers which cars this cycle has done.
     const ranking = () => {
       const saved = state.filters;
-      state.filters = { ...saved, role: "candidate", avail: "active", profiles: [], site: "", statuses: {}, analyzed: false, max_price: "", max_mileage: "", max_age: "", report: "", sort: "fit" };
+      state.filters = { ...saved, role: "candidate", avail: "active", profiles: [], site: "", statuses: {}, analyzed: false, max_price: "", max_mileage: "", max_age: "", report: "", drive: false, sort: "fit" };
       const q = state.q; state.q = "";
       try { return filtered().filter((l) => l.profile_key); } finally { state.filters = saved; state.q = q; }
     };

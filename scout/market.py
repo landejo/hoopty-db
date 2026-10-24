@@ -11,7 +11,7 @@ from typing import Any
 _ENDED_SALE_KINDS = {"sold", "asking"}   # price_kind values that still count as a sale when availability=ended
 # 1.9.0: a sold or delisted classified ad shows its last asking price, not what it sold for
 # (BaT and Cars & Bids hammers are transaction prices).
-_CLASSIFIED_SITES = {"facebook", "cargurus", "carscom", "autotrader", "bmwcca", "pca", "carfax"}
+_CLASSIFIED_SITES = {"facebook", "cargurus", "carscom", "autotrader", "bmwcca", "pca", "porschefinder", "carfax"}
 LAST_ASK_DISCOUNT = 0.93
 
 # Badge-engineered twins are one market: a BRZ, an 86 and an FR-S are the same

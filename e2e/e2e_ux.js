@@ -102,6 +102,21 @@ const openDetail = async (page, l) => {
   await page.waitForTimeout(200);
   for (const name of famBtns) { await page.click(`#f-families button:has-text("${name}")`); await page.waitForTimeout(200); }   // back to all models
 
+  // Drivable home: only cars in states within two days' drive of Carmel.
+  const allN = await page.$$eval(".card", (cs) => cs.length);
+  await page.check("#f-drive");
+  await page.waitForTimeout(300);
+  const driveLocs = await page.evaluate(async () => {
+    const d = await (await fetch("/api/export")).json();
+    const loc = Object.fromEntries(d.listings.map((l) => [String(l.id), l.location || ""]));
+    return [...document.querySelectorAll(".card")].map((c) => loc[c.dataset.id]);
+  });
+  const okState = (s) => /,\s*(CA|NV|OR|WA|AZ|UT|ID|NM)\b/.test(s) || /^(california|nevada|oregon|washington|arizona|utah|idaho|new mexico)$/i.test(s.trim());
+  check("drivable-home filter keeps only CA, NV, OR, WA, AZ, UT, ID, NM cars", driveLocs.length > 0 && driveLocs.length < allN && driveLocs.every(okState),
+        `${driveLocs.length} of ${allN}; ${[...new Set(driveLocs.map((s) => (s.match(/,\s*([A-Z]{2})/) || [])[1] || s))].join(" ")}`);
+  await page.uncheck("#f-drive");
+  await page.waitForTimeout(300);
+
   // Photo mode: cards' lead photos in board order; ← → change car, ↑ ↓ that car's photos, Esc leaves.
   const leads = await page.$$eval(".card .photo img", (ims) => ims.slice(0, 2).map((i) => i.getAttribute("src")));
   await page.click("#slideshow");

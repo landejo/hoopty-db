@@ -624,3 +624,20 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 
 ### System State Summary
 - Still uncommitted (other session): scout/profiles.py, tests/test_policy_1_9.py (seed-only re-profiling).
+
+## 2026-10-23 — 996.1 Carrera Cabriolet comps; #662 Porsche Reno 996 cab
+- Data: backup data/backups/scout_pre-996-comps_2026-10-23.db, then 103 sold 996.1 (1999-2001) Carrera Cabriolet 6-speed comps added under porsche_911_carrera_996_1 (98 BaT via its listings-filter feed + result pages, 5 Cars & Bids; sold 2024-10..2026-10; excluded Carrera 4, Tiptronic, 3.8L/supercharged swaps, sub-$12k project sales, reserve-not-met). Fair for #662 (2000, 128.9k): $18.4-23.7k vs $34,989 ask.
+- #662 2000 911 Carrera Cabriolet, Porsche Reno, $35,599 with fees, 2 owners, free CARFAX attached (damage reported 05/10/2010, no detail). Site "porschefinder" added to SITES and _CLASSIFIED_SITES (uncommitted).
+- Scheduled tasks bmw-z4-z3-manual-watch and nc-miata-hardtop-watch disabled at Jason's request (not deleted).
+
+### System State Summary
+- Uncommitted: scout/config.py + scout/market.py (porschefinder), PROJECT_LOG.md. Other session: scout/profiles.py, tests/test_policy_1_9.py.
+- Added 996 candidates #766 (2001 Cab, Dream Motorworks IL, $23,643, 101.8k), #767 (2001 Coupe, Classic Chevrolet OK, $27,698, 99.5k), #768 (1999 Cab, BaT live, ends 10/26, 83k; listing cites a May 2007 accident on its Carfax), #769 (1999 Coupe, BaT live, NJ dealer, Montana title, ends 10/29, 89k). None offers a free history report.
+- 964 comp pool cleaned: #437 Singer ($863,500) set ignored; #319 (2001 996 Carrera Cabriolet) moved to porsche_911_carrera_996_1; #273 (1989 930 Turbo slant-nose cab, $226,505) moved to porsche_911_carrera_g_series_930. The 964 profile now has no comps; #658 values on budget alone (Reject: expected hammer $63,500 vs $29,631 walk-away). 17 unassessed candidates assessed at Opus 5.5 medium (~$4.25).
+
+## 2026-10-23 — Board: Drivable home (≤ 2 days) filter
+- `docs/app.js` (`DRIVE_HOME_STATES`, `stateOf`, `drivableHome`): a checkbox in the rail's Where section keeps cars whose location's state is within about two days' drive of Carmel (~1,200 road miles at ~600/day): CA, NV, OR, WA, AZ, UT, ID, NM. Borderline and left out: CO (Denver ~1,300), WY, MT, TX. Locations without a state are excluded. The re-assess tier ranking ignores it; photo mode follows it.
+- `e2e/e2e_ux.js`: one check. Live board: 33 of 82 cars.
+
+### System State Summary
+- Not committed: docs/app.js, e2e/e2e_ux.js, PROJECT_LOG.md, and scout/config.py + scout/market.py (porschefinder). Other session: scout/profiles.py, tests/test_policy_1_9.py.
