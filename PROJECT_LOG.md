@@ -601,3 +601,12 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 
 ### System State Summary
 - Not committed: docs/app.js, docs/styles.css, e2e/e2e_ux.js, PROJECT_LOG.md.
+
+## 2026-10-23 — CARFAX photos saved without their white padding
+- CARFAX's image CDN (carfax-img.vast.com) serves fixed sizes only and pads a smaller photo onto a white 1024x768 canvas (#516: 640x360 inside; 640x360 / 1024x576 / 1280x720 / 1600x900 / 1920x1080 all return 403).
+- `scout/ai/photos.py`: CDN photos are cropped to their non-white content when saved (`_trim_white`; tolerance 18, never below 20% of the image); `trim_saved` crops copies saved earlier. `scout/server.py` photo worker runs it each pass. `docs/app.js`: CARFAX photo links carry `&v=2` so browsers drop week-cached padded copies; the broken-photo fallback reads `u` up to the next `&`.
+- Data: backed up 206 saved CARFAX copies to data/backups/photo_cache_carfax_pre-trim_2026-10-23.tar, then cropped 85 (all 38 of #516's). The other 119 run to the edge (unpadded) and were left alone.
+
+### System State Summary
+- Tests: 340 passed (4 new in tests/test_photo_cache.py). ux e2e photo checks pass; it still stops at the old scroll check (fix on claude/competent-maxwell-d4d8b1, not merged).
+- Not committed: scout/ai/photos.py, scout/server.py, docs/app.js, tests/test_photo_cache.py, PROJECT_LOG.md.
