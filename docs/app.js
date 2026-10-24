@@ -216,7 +216,7 @@
     if (budgetOnly(c)) return `<span class="walk budget" title="Fewer than 3 comparable sales, so the tracker cannot say what this car is worth. This is only the most your ${esc(missionLabel(l.assessment?.mission))} budget allows after tax, fees and transport; it says nothing about value.">budget limit ${money(c.max_price)} · too few sales to value</span>`;
     return `<span class="walk ${over > 0.05 ? "over" : over > 0 ? "near" : ""}" title="Walk-away price, set by ${c.max_price_basis === "value" ? "what this car is worth (top of its fair range, less known work and open questions)" : "your budget for this mission"}${expected ? `. Compared with the expected final price ${money(c.price)}, not the early bid` : ""}">walk-away ${money(c.max_price)}${expected ? ` · expected ~${money(c.price)}` : ""}${over > 0 ? ` · ${Math.round(over * 100)}% over${expected ? " expected" : ""}` : ""}</span>`;
   }
-  function budgetOnly(c) { return c?.max_price_basis === "budget" && c.fair_n != null && c.fair_n < 3; }
+  function budgetOnly(c) { return c?.max_price_basis === "budget" && (c.fair_n ?? 0) < 3; }
   function verdictTone(v) { return { "Pursue": "olive", "Pursue conditionally": "olive", "Maybe / verify": "mustard", "Reject": "rose", "Do not pursue": "rose" }[v] || ""; }
   const MISSIONS = ["enthusiast_bridge", "pragmatic_bridge", "future_keeper", "utility_capability"];
   const missionLabel = (m) => ({ enthusiast_bridge: "enthusiast bridge", pragmatic_bridge: "pragmatic bridge", future_keeper: "future keeper", utility_capability: "utility / capability" }[m] || m || "—");
@@ -1107,7 +1107,7 @@
         ${C.fair_mid ? `<span class="k">Market fair value</span><span class="mono">${money(C.fair_low)}–${money(C.fair_high)} <span class="muted">mid ${money(C.fair_mid)}</span></span>` : ""}
         ${l.carfax_value ? `<span class="k muted" title="CARFAX's own estimate, read from its listing page or report. Dealer-retail oriented; for reference, nothing scores on it.">Carfax Value · reference</span><span class="mono muted">${money(l.carfax_value)}</span>` : ""}
         <span class="k">Recommended offer</span><span class="mono">${money(C.offer_low)}–${money(C.offer_high)}</span>
-        <span class="k"><b>${budgetOnly(C) ? "Budget limit (not a value)" : "Walk-away (max price / hammer)"}</b></span><span class="mono"><b>${money(C.max_price)}</b>${budgetOnly(C) ? ` <span class="muted">only ${C.fair_n} comparable sale(s): too few to value the car</span>` : C.max_price_basis ? ` <span class="muted">set by ${C.max_price_basis === "value" ? "value" : "budget"}</span>` : ""}</span>
+        <span class="k"><b>${budgetOnly(C) ? "Budget limit (not a value)" : "Walk-away (max price / hammer)"}</b></span><span class="mono"><b>${money(C.max_price)}</b>${budgetOnly(C) ? ` <span class="muted">only ${C.fair_n ?? 0} comparable sale(s): too few to value the car</span>` : C.max_price_basis ? ` <span class="muted">set by ${C.max_price_basis === "value" ? "value" : "budget"}</span>` : ""}</span>
         ${C.max_price_budget ? `<span class="k muted">Budget allows</span><span class="mono muted">${money(C.max_price_budget)}</span>` : ""}
         ${C.max_price_value != null ? `<span class="k muted">Car is worth up to</span><span class="mono muted">${money(C.max_price_value)}</span>` : ""}</div>
         ${C.notes?.length ? `<ul class="list small" style="margin-top:8px">${C.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}</div>`));

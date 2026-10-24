@@ -117,6 +117,13 @@ const openDetail = async (page, l) => {
   await page.uncheck("#f-drive");
   await page.waitForTimeout(300);
 
+  // A budget-capped car with fewer than 3 comps, none included, shows the budget limit, not "% over".
+  const exp = await api(page, "/api/export");
+  const thin = new Set((exp.listings || exp).filter((l) => l.assessment?.costs?.max_price_basis === "budget" && (l.assessment.costs.fair_n ?? 0) < 3).map((l) => String(l.id)));
+  const thinWalks = (await page.$$eval(".card", (cs) => cs.map((c) => ({ id: c.dataset.id, walk: c.querySelector(".walk")?.textContent || "" })))).filter((c) => thin.has(c.id) && c.walk);
+  check("cars with too few comps (none included) show the budget limit, not % over", thinWalks.length > 0 && thinWalks.every((c) => /too few sales to value/.test(c.walk) && !/% over/.test(c.walk)),
+        `${thinWalks.length} cards; e.g. ${thinWalks[0]?.walk}`);
+
   // Photo mode: cards' lead photos in board order; ← → change car, ↑ ↓ that car's photos, Esc leaves.
   const leads = await page.$$eval(".card .photo img", (ims) => ims.slice(0, 2).map((i) => i.getAttribute("src")));
   await page.click("#slideshow");

@@ -641,3 +641,13 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 
 ### System State Summary
 - Not committed: docs/app.js, e2e/e2e_ux.js, PROJECT_LOG.md, and scout/config.py + scout/market.py (porschefinder). Other session: scout/profiles.py, tests/test_policy_1_9.py.
+
+## 2026-10-24 — Base 981 Boxster comps; #651 re-derived
+- Commit 92c0d16: drivable-home filter + porschefinder site.
+- Data: backup data/backups/scout_pre-981comps_2026-10-24.db, then 5 sold base 981 Boxster BaT comps added under porsche_boxster_981 (#770-774, 2026-07..09; 1 manual, 4 PDK; #35 was already there). #770's listing says 3.4-liter on a base-Boxster VIN; kept as listed.
+- #651 (2014 Boxster, C&B, 65.5k, manual) re-derived: fair hammer $34.6-39.6k (mid $37.8k, 6 sales); value walk-away $37,442, but the enthusiast-bridge budget caps it at $32,344. Expected hammer is still the model's $33,000.
+- #654 (1987 928 S4, BaT): "82% over expected" = model-estimated $28,000 hammer vs a $15,363 budget walk-away; no 928 comps. The board's budget-only label (`budgetOnly` in docs/app.js) missed the fair_n = null case.
+- Fix: `budgetOnly` treats a missing comp count as 0, so a budget-capped car with no usable comps shows "budget limit · too few sales to value" (card, listing page) instead of "% over expected"; the detail line reads "only 0 comparable sale(s)". e2e_ux check added (5 cards in the sandbox). Live: #654 now shows "budget limit $15,363 · too few sales to value".
+
+### System State Summary
+- Uncommitted: docs/app.js, e2e/e2e_ux.js, PROJECT_LOG.md. Other session: scout/profiles.py, tests/test_policy_1_9.py.
