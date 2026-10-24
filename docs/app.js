@@ -427,6 +427,51 @@
     return out;
   }
 
+  // Photo mode: the board's cars in board order, full screen, photo only.
+  // ← / → step between cars (starting on each car's lead photo), ↑ / ↓ cycle that car's
+  // photos, Esc (or leaving full screen) closes. Clicking the left / right third steps cars.
+  function openSlideshow(rows) {
+    rows = rows.filter((l) => photo(l));
+    if (!rows.length) return toast("No photos to show");
+    const box = h(`<div class="slideshow" tabindex="-1"><img alt=""></div>`);
+    const img = $("img", box);
+    let car = 0, pic = 0, photos = [];
+    const show = async () => {
+      const l = rows[car];
+      photos = [photo(l)];
+      img.src = photos[0];
+      try {
+        await ensureDetail(l);
+        if (rows[car] !== l) return;   // stepped on while loading
+        const all = (l.photos && l.photos.length ? l.photos : l.thumb ? [l.thumb] : []).map(photoSrc);
+        if (all.length) photos = all;
+      } catch (e) {}   // published board without a detail file: the lead photo alone
+      if (pic) img.src = photos[pic % photos.length];
+      const ahead = rows[(car + 1) % rows.length];   // warm the next car's lead photo
+      if (ahead) new Image().src = photo(ahead);
+    };
+    const close = () => {
+      window.removeEventListener("keydown", onKey, true);
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      box.remove();
+    };
+    const stepCar = (d) => { car = (car + d + rows.length) % rows.length; pic = 0; show(); };
+    const stepPic = (d) => { if (photos.length < 2) return; pic = (pic + d + photos.length) % photos.length; img.src = photos[pic]; };
+    function onKey(e) {
+      const act = { ArrowRight: () => stepCar(1), ArrowLeft: () => stepCar(-1), ArrowDown: () => stepPic(1), ArrowUp: () => stepPic(-1), Escape: close }[e.key];
+      if (!act) return;
+      e.preventDefault(); e.stopPropagation();
+      act();
+    }
+    box.onclick = (e) => { const x = e.clientX / innerWidth; if (x < 1 / 3) stepCar(-1); else if (x > 2 / 3) stepCar(1); };
+    box.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) close(); });
+    window.addEventListener("keydown", onKey, true);
+    document.body.appendChild(box);
+    box.focus();
+    if (box.requestFullscreen) box.requestFullscreen().catch(() => {});   // refused: the overlay still covers the window
+    show();
+  }
+
   const SORTS = [["fit", "Best fit"], ["pursue", "Pursue next"], ["score", "Best score"], ["price", "Price ↑"], ["price_desc", "Price ↓"], ["mileage", "Mileage ↑"], ["newest", "Newest listed"], ["year", "Year ↓"]];
   function renderBoard(app) {
     const L = state.data.listings;
@@ -474,6 +519,7 @@
           <div><h2 id="count"></h2><div class="muted small" id="count-note"></div></div>
           <div class="row">
             <label class="sortby">Sort <select id="f-sort">${SORTS.map(([k, v]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${v}</option>`).join("")}</select></label>
+            <button class="btn sm" id="slideshow" title="Photos full screen: ← → change car, ↑ ↓ that car's photos, Esc to leave">Photos ⛶</button>
             <span class="seg" id="view"><button data-v="cards" class="${f.view === "cards" ? "on" : ""}">Cards</button><button data-v="table" class="${f.view === "table" ? "on" : ""}">Table</button></span>
           </div>
         </div>
@@ -503,6 +549,7 @@
     const rerender = () => { save("filters", f); bindChips(); bindStatusChips(); renderList(); };
     bar.querySelectorAll("#role button").forEach((b) => (b.onclick = () => { f.role = b.dataset.v; if (f.role === "comp" || f.role === "ignored") f.avail = ""; if (f.role === "candidate" || f.role === "curiosity") f.avail = f.avail || "active"; save("filters", f); route(); }));
     bar.querySelectorAll("#view button").forEach((b) => (b.onclick = () => { f.view = b.dataset.v; save("filters", f); route(); }));
+    $("#slideshow", bar).onclick = () => openSlideshow(filtered());
     bar.querySelectorAll("#f-next button").forEach((b) => (b.onclick = () => { f.next = b.dataset.v; bar.querySelectorAll("#f-next button").forEach((x) => x.classList.toggle("on", x === b)); rerender(); }));
     bar.querySelectorAll("#f-report button").forEach((b) => (b.onclick = () => { f.report = b.dataset.v; bar.querySelectorAll("#f-report button").forEach((x) => x.classList.toggle("on", x === b)); rerender(); }));
     $("#f-site", bar).onchange = (e) => { f.site = e.target.value; rerender(); };

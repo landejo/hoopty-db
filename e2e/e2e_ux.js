@@ -76,6 +76,30 @@ const openDetail = async (page, l) => {
   check("Missing shows no card with a report chip", missing.every((x) => !x), `${missing.filter(Boolean).length} with a chip`);
   await reportCards("");
 
+  // Photo mode: cards' lead photos in board order; ← → change car, ↑ ↓ that car's photos, Esc leaves.
+  const leads = await page.$$eval(".card .photo img", (ims) => ims.slice(0, 2).map((i) => i.getAttribute("src")));
+  await page.click("#slideshow");
+  await page.waitForSelector(".slideshow img");
+  const shown = () => page.$eval(".slideshow img", (i) => i.getAttribute("src"));
+  const first = await shown();
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(300);
+  const second = await shown();
+  check("photo mode opens on the first card's lead photo and → steps to the next car", first === leads[0] && second === leads[1], `${first === leads[0]} / ${second === leads[1]}`);
+  await page.waitForTimeout(300);   // the car's full photo list
+  await page.keyboard.press("ArrowDown");
+  await page.waitForTimeout(200);
+  const down = await shown();
+  await page.keyboard.press("ArrowUp");
+  await page.waitForTimeout(200);
+  check("↓ shows another photo of the same car and ↑ comes back", down !== second && (await shown()) === second, `${down !== second ? "changed" : "same (one photo?)"}`);
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForTimeout(200);
+  check("← steps back a car", (await shown()) === leads[0]);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  check("Esc closes photo mode and leaves the board as it was", !(await page.$(".slideshow")) && !!(await page.$("#slideshow")) && !/#\/l\//.test(page.url()));
+
   // "Best score" is exactly the assessment score, highest first; preliminary cards come after a divider.
   // A card with a Fit badge shows the assessment score as its "S nn" tag (2026-10-18).
   await page.selectOption("#f-sort", "score");
