@@ -361,3 +361,7 @@ html[data-theme="dark"] .stepper li.done { color: #C2D6A6; }
 /* Photo mode: the board's lead photos full screen, nothing else (← → cars, ↑ ↓ photos). */
 .slideshow { position: fixed; inset: 0; z-index: 1000; background: #000; display: flex; align-items: center; justify-content: center; cursor: pointer; outline: none; }
 .slideshow img { max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; user-select: none; }
+
+/* Model families (rail): one chip selects a whole group of model profiles. */
+#f-families { margin-bottom: 8px; }
+#f-families:empty { display: none; }

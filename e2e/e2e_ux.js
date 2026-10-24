@@ -76,6 +76,32 @@ const openDetail = async (page, l) => {
   check("Missing shows no card with a report chip", missing.every((x) => !x), `${missing.filter(Boolean).length} with a chip`);
   await reportCards("");
 
+  // Model families: Z3 family + 1 / 3 Series + Porsche together; photo mode steps through just those.
+  const famBtns = await page.$$eval("#f-families button", (bs) => bs.map((b) => b.textContent.replace(/\s*\d+$/, "").trim()));
+  for (const name of famBtns) {
+    await page.click(`#f-families button:has-text("${name}")`);
+    await page.waitForTimeout(250);
+  }
+  // Judged by each card's model profile (titles vary: an M Roadster can be "1998 BMW M RWD").
+  const famProfiles = await page.evaluate(async () => {
+    const d = await (await fetch("/api/export")).json();
+    const make = Object.fromEntries(d.profiles.map((p) => [p.key, p.make || ""]));
+    const byId = Object.fromEntries(d.listings.map((l) => [String(l.id), l.profile_key || ""]));
+    return [...document.querySelectorAll(".card")].map((c) => [byId[c.dataset.id], make[byId[c.dataset.id]]]);
+  });
+  const famOnly = famProfiles.every(([k, mk]) => /^(z3_|bmw_z3|bmw_1\d\di|bmw_3\d\d|bmw_m3_)/.test(k) || /^porsche/i.test(mk));
+  check("family chips show only those families, no Z4", famBtns.includes("BMW Z3 family") && famProfiles.length > 0 && famOnly,
+        `${famBtns.join(", ")} → ${famProfiles.length} cards; ${[...new Set(famProfiles.map(([k]) => k))].join(" ")}`);
+  const famIds = await page.$$eval(".card", (cs) => cs.filter((c) => c.querySelector(".photo img")).map((c) => c.dataset.id));
+  await page.click("#slideshow");
+  await page.waitForSelector(".slideshow img");
+  const steps = [];
+  for (let i = 0; i < famIds.length; i++) { steps.push(await page.$eval(".slideshow img", (im) => im.getAttribute("src"))); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(150); }
+  check("photo mode steps through exactly the filtered cars, then wraps", new Set(steps).size === famIds.length && (await page.$eval(".slideshow img", (im) => im.getAttribute("src"))) === steps[0], `${steps.length} cars`);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  for (const name of famBtns) { await page.click(`#f-families button:has-text("${name}")`); await page.waitForTimeout(200); }   // back to all models
+
   // Photo mode: cards' lead photos in board order; ← → change car, ↑ ↓ that car's photos, Esc leaves.
   const leads = await page.$$eval(".card .photo img", (ims) => ims.slice(0, 2).map((i) => i.getAttribute("src")));
   await page.click("#slideshow");

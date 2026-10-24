@@ -502,7 +502,7 @@
         <summary title="Show or hide the filters"><span class="rail-title">Filters</span><span class="rail-toggle" aria-hidden="true"></span></summary>
         <div class="rail-sec"><h4>Show</h4>
           <span class="seg wide" id="role"><button data-v="candidate" class="${f.role === "candidate" ? "on" : ""}">Candidates</button><button data-v="curiosity" class="${f.role === "curiosity" ? "on" : ""}" title="Followed out of interest, not a serious candidate (over your curiosity line, or set by hand)">Curious</button><button data-v="comp" class="${f.role === "comp" ? "on" : ""}">Comps</button><button data-v="ignored" class="${f.role === "ignored" ? "on" : ""}">Ignored</button><button data-v="" class="${f.role === "" ? "on" : ""}">All</button></span></div>
-        <div class="rail-sec"><h4>Model <span class="muted small">⌥-click: only this</span></h4><span class="chips stack" id="f-profiles"></span></div>
+        <div class="rail-sec"><h4>Model <span class="muted small">⌥-click: only this</span></h4><span class="chips" id="f-families"></span><span class="chips stack" id="f-profiles"></span></div>
         <div class="rail-sec"><h4>Next step</h4><span class="seg wide" id="f-next">${["", "Contact now", "Watch", "Skip"].map((k) => `<button data-v="${k}" class="${(f.next || "") === k ? "on" : ""}">${k ? k.replace(" now", "") : "Any"}</button>`).join("")}</span></div>
         <div class="rail-sec"><h4>History report <span class="muted small">Carfax / AutoCheck</span></h4><span class="seg wide" id="f-report">${[["", "Any"], ["has", "Has one"], ["missing", "Missing"]].map(([k, v]) => `<button data-v="${k}" class="${(f.report || "") === k ? "on" : ""}">${v}</button>`).join("")}</span></div>
         <div class="rail-sec"><h4>Your call <span class="muted small">click: only · again: hide</span></h4><span class="chips" id="f-statuses"></span></div>
@@ -545,6 +545,13 @@
         if (!k) f.profiles = [];
         else if (e.altKey) f.profiles = [k];
         else f.profiles = f.profiles.includes(k) ? f.profiles.filter((x) => x !== k) : f.profiles.concat([k]);
+        rerender();
+      }));
+      const fams = $("#f-families", bar);
+      fams.innerHTML = familyChips(f);
+      fams.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+        const keys = familyKeys(FAMILIES[b.dataset.fam][1]);
+        f.profiles = keys.every((k) => f.profiles.includes(k)) ? f.profiles.filter((k) => !keys.includes(k)) : [...new Set(f.profiles.concat(keys))];
         rerender();
       }));
     };
@@ -694,12 +701,33 @@
     if (state.local) await refreshAfterTask();
   });
 
-  function profileChips(f) {
-    // Counts respect every other filter (role, site, availability, status, limits) so a chip never promises cards it cannot show.
+  // Counts respect every other filter (role, site, availability, status, limits) so a chip never promises cards it cannot show.
+  function profileCounts(f) {
     const saved = f.profiles; f.profiles = [];
     const counts = {};
     for (const l of filtered()) { const k = l.profile_key || "__none__"; counts[k] = (counts[k] || 0) + 1; }
     f.profiles = saved;
+    return counts;
+  }
+  // Families: one click selects every model profile in the group (and again clears them);
+  // they combine with each other and with single models. Jason, 2026-10-23.
+  const FAMILIES = [
+    ["BMW Z3 family", (p) => /^(z3_|bmw_z3)/.test(p.key)],   // Z3 3.0i, M Roadster, M Coupe; not the Z4
+    ["BMW 1 Series", (p) => /^bmw_1\d\di/.test(p.key)],
+    ["BMW 3 Series", (p) => /^bmw_(3\d\d|m3_)/.test(p.key)],
+    ["Porsche", (p) => /^porsche/i.test(p.make || "")],
+  ];
+  function familyKeys(test) { return state.data.profiles.filter(test).map((p) => p.key); }
+  function familyChips(f) {
+    const counts = profileCounts(f);
+    return FAMILIES.map(([label, test], i) => {
+      const keys = familyKeys(test), n = keys.reduce((s, k) => s + (counts[k] || 0), 0);
+      const on = keys.length && keys.every((k) => f.profiles.includes(k));
+      return keys.length ? `<button data-fam="${i}" class="${on ? "on" : ""}">${esc(label)} <span class="n">${n}</span></button>` : "";
+    }).join("");
+  }
+  function profileChips(f) {
+    const counts = profileCounts(f);
     const items = state.data.profiles.filter((p) => counts[p.key]).map((p) => [p.key, shortLabel(p.label), counts[p.key]]);
     if (counts.__none__) items.push(["__none__", "unprofiled", counts.__none__]);
     return items.map(([k, label, n]) => `<button data-k="${esc(k)}" class="${f.profiles.includes(k) ? "on" : ""}">${esc(label)} <span class="n">${n}</span></button>`).join("");
