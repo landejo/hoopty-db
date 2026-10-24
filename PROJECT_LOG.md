@@ -610,3 +610,10 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 ### System State Summary
 - Tests: 340 passed (4 new in tests/test_photo_cache.py). ux e2e photo checks pass; it still stops at the old scroll check (fix on claude/competent-maxwell-d4d8b1, not merged).
 - Not committed: scout/ai/photos.py, scout/server.py, docs/app.js, tests/test_photo_cache.py, PROJECT_LOG.md.
+
+## 2026-10-23 — Board: model family chips
+- `docs/app.js` (`FAMILIES`, `familyChips`, `profileCounts`) + `docs/styles.css`: a row of chips above the Model list. Each selects or clears every model profile in its group, and they combine: BMW Z3 family (`z3_*` / `bmw_z3*`: Z3 3.0i, M Roadster, M Coupe; not the Z4), BMW 1 Series (`bmw_1NNi*`), BMW 3 Series (`bmw_3NN*`, `bmw_m3_*`), Porsche (make). Counts respect the other filters; a family shows even at 0. Photo mode uses the same filtered list.
+- `e2e/e2e_ux.js`: two checks (families show only their profiles, judged by profile key; photo mode steps exactly those cars and wraps). Live board: Z3 family 33, 1 Series 2, 3 Series 0, Porsche 4.
+
+### System State Summary
+- Not committed: docs/app.js, docs/styles.css, e2e/e2e_ux.js, PROJECT_LOG.md.
