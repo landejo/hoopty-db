@@ -4,6 +4,22 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.9.3 (2026-10-23)
+
+Jason, 2026-10-23: "Count the auction buyer's fee in comp values." The tracker's fair
+values ran 8-21% under CARFAX Value on the RFs; part of that was that a BaT or Cars & Bids
+sale counted at the hammer, while the winner paid hammer + fee.
+
+1. **An auction sale counts at hammer + buyer's fee** (`market.realized_price`): 5%,
+   $250 minimum, $7,500 cap, the policy state's fee table, checked against both sites'
+   FAQs 2026-10-23 (BaT charges 10%, capped at $4,000, in some non-car categories).
+   Classified last asks keep the 1.9.0 discount (x0.93).
+2. **An auction car is still valued as a hammer.** Its fair range is converted back
+   (`costs._hammer_for`) before the walk-away and offers are read off it, because its own
+   buyer's fee is already a cost line. A dealer or private car gets the fee-inclusive range.
+3. Effect on the active board: about +5% fair value where the comps are mostly auctions
+   (ND RFs), about +2.5% where half are classified asks (Z3 3.0i), walk-aways alike.
+
 ## Fit score (2026-10-18; beside policy 1.9.2, no verdict change)
 
 Jason, 2026-10-18: "the scoring range seems less useful than it could be ... rarely does

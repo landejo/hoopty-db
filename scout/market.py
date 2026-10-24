@@ -48,10 +48,25 @@ def sale_price(r: dict[str, Any]) -> int | None:
     return r.get("sold_price") or r.get("price")
 
 
-def realized_factor(r: dict[str, Any]) -> float:
-    """1.9.0: an auction hammer counts in full; a classified ad that sold or vanished
-    (Facebook, CarGurus, Cars.com, Autotrader) shows only its last asking price."""
-    return LAST_ASK_DISCOUNT if r.get("site") in _CLASSIFIED_SITES else 1.0
+def auction_fee(site: str | None, hammer: float) -> float:
+    """The buyer's fee the winner paid on top of the hammer, from the fee table in the
+    policy state. BaT and Cars & Bids car auctions: 5%, $250 minimum, $7,500 cap (both
+    FAQs, 2026-10-23; BaT charges 10% capped at $4,000 in some non-car categories)."""
+    from scout.policy.state import DEFAULT_STATE
+    f = DEFAULT_STATE["fees"].get(site or "") or {}
+    if not f.get("pct"):
+        return 0.0
+    return min(max(hammer * f["pct"], f.get("min", 0)), f.get("max", hammer))
+
+
+def realized_price(r: dict[str, Any], price: float) -> float:
+    """1.9.0: a classified ad that sold or vanished (Facebook, CarGurus, Cars.com,
+    Autotrader) shows only its last asking price, so it's discounted. 1.9.3: an auction
+    sale counts at hammer plus buyer's fee, what the winner actually paid, so a dealer's
+    ask is compared with a transaction price rather than the hammer alone."""
+    if r.get("site") in _CLASSIFIED_SITES:
+        return price * LAST_ASK_DISCOUNT
+    return price + auction_fee(r.get("site"), price)
 
 
 def body_class(r: dict[str, Any]) -> str | None:
@@ -143,7 +158,7 @@ def _adjusted_prices(listing: dict[str, Any], rows: list[dict[str, Any]], realiz
         if not price:
             continue
         if realized:
-            price = price * realized_factor(r)
+            price = realized_price(r, price)
         if year_rate_ is not None and l_year and r.get("year"):
             price = price * _year_factor(int(l_year), int(r["year"]), year_rate_)
         c_miles = r.get("mileage")

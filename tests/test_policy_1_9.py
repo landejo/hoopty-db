@@ -189,11 +189,11 @@ def test_comps_whose_transmission_was_never_read_still_count():
     assert fv["n"] == 5 and fv["relaxed"] == []
 
 
-def test_classified_last_asks_count_at_a_discount_and_hammers_in_full():
+def test_classified_last_asks_count_at_a_discount_and_hammers_with_the_buyer_fee():
     listing = {"id": 1, "year": 2001, "model": "Z3 3.0i roadster", "body_style": "Roadster", "transmission": "Manual", "mileage": 60000}
     hammers = fair_value(listing, [_sale(20000) for _ in range(4)])
     asks = fair_value(listing, [_sale(20000, site="cargurus") for _ in range(4)])
-    assert hammers["mid"] == 20000 and asks["mid"] == round(20000 * 0.93)
+    assert hammers["mid"] == 21000 and asks["mid"] == round(20000 * 0.93)   # 1.9.3: hammer + 5% fee
 
 
 def _costs_case(n_comps: int):

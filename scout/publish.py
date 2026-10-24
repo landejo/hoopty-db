@@ -130,8 +130,24 @@ def scrub_assessment(a: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# CARFAX's own value estimate (dealer-retail oriented), read from text the tracker already
+# holds: a carfax.com listing page ("$22,510 CARFAX Value") or an attached Carfax report.
+# Shown beside fair value for reference; nothing scores on it (2026-10-23).
+CARFAX_VALUE_RE = re.compile(r"\$([\d,]{4,9})\s*CARFAX Value|CARFAX Value\s*\$([\d,]{4,9})", re.I)
+
+
+def carfax_value(texts: list[str | None]) -> int | None:
+    for t in texts:
+        m = CARFAX_VALUE_RE.search(t or "")
+        if m:
+            return int((m.group(1) or m.group(2)).replace(",", ""))
+    return None
+
+
 def build_export() -> dict[str, Any]:
-    listings = [scrub_listing(r) for r in db.list_listings()]
+    rows = db.list_listings()
+    listings = [scrub_listing(r) for r in rows]
+    raw_text = {r["id"]: r.get("raw_text") for r in rows}
     snaps = db.all_snapshots()
     assessments = db.latest_assessments_by_vehicle()
     errors = db.last_errors()
@@ -147,6 +163,8 @@ def build_export() -> dict[str, Any]:
         l["fit"] = fit_score(l, a)
         l["last_error"] = errors.get(l["id"])
         l["documents"] = docs.get(l["id"], [])   # metadata only; document text stays local
+        report = [d["text"] for d in db.list_documents(l["id"]) if d["kind"] == "carfax"] if any(d["kind"] == "carfax" for d in l["documents"]) else []
+        l["carfax_value"] = carfax_value([raw_text.get(l["id"])] + report)
         l["history"] = [
             {"t": s["seen_at"], "price": s.get("price"), "kind": s.get("price_kind"),
              "availability": s.get("availability"), "bids": s.get("bid_count")}

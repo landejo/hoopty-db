@@ -37,6 +37,17 @@ def buyer_fee(site: str, price: int, state: dict[str, Any]) -> int:
     return int(min(max(price * f["pct"], f.get("min", 0)), f.get("max", 10**9)))
 
 
+def _hammer_for(paid: int, site: str, state: dict[str, Any]) -> int:
+    """The hammer whose hammer + buyer's fee comes to `paid` (the fee has a floor and a cap)."""
+    h = paid
+    for _ in range(12):
+        h2 = paid - buyer_fee(site, max(h, 0), state)
+        if abs(h2 - h) < 1:
+            break
+        h = h2
+    return max(0, int(h))
+
+
 def transport_cost(location: str | None, state: dict[str, Any]) -> int:
     band = locality_hint(location)
     table = state.get("transport_by_locality_band") or {}
@@ -106,10 +117,15 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
     history = history_value_flag(listing) if fair else None
     if history:
         fair = {**fair, **{k: int(fair[k] * (1 - HISTORY_VALUE_DISCOUNT)) for k in ("low", "mid", "high") if fair.get(k) is not None}}
+    site = listing.get("site") or ""
+    if fair and fair.get("mid") and buyer_fee(site, int(fair["mid"]), state):
+        # 1.9.3: auction comps count at what the winner paid (hammer + fee). This car's
+        # price is a hammer and its own fee is costed below, so value it as a hammer.
+        fair = {**fair, **{k: _hammer_for(int(fair[k]), site, state) for k in ("low", "mid", "high") if fair.get(k) is not None},
+                "note": ((fair.get("note") or "") + "; as a hammer, buyer's fee taken out").lstrip("; ")}
     basis, price, notes = price_basis(listing, evidence, fair, state)
     if history:
         notes.append(f"Fair value cut {HISTORY_VALUE_DISCOUNT:.0%} for {history}: clean-history comps overstate it (a rule of thumb, not measured).")
-    site = listing.get("site") or ""
     fee = buyer_fee(site, price, state)
     transport = transport_cost(listing.get("location"), state)
     imm_lo, imm_hi = evidence.immediate_service_estimate.low, evidence.immediate_service_estimate.high

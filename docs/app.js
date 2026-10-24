@@ -1012,6 +1012,7 @@
         <span class="k muted">Not counted · risk reserve</span><span class="mono muted">${money(C.risk_reserve)}</span>
         ${C.with_catchup_high ? `<span class="k muted">If all of that lands</span><span class="mono muted">${money(C.with_catchup_low)}–${money(C.with_catchup_high)}</span>` : ""}
         ${C.fair_mid ? `<span class="k">Market fair value</span><span class="mono">${money(C.fair_low)}–${money(C.fair_high)} <span class="muted">mid ${money(C.fair_mid)}</span></span>` : ""}
+        ${l.carfax_value ? `<span class="k muted" title="CARFAX's own estimate, read from its listing page or report. Dealer-retail oriented; for reference, nothing scores on it.">Carfax Value · reference</span><span class="mono muted">${money(l.carfax_value)}</span>` : ""}
         <span class="k">Recommended offer</span><span class="mono">${money(C.offer_low)}–${money(C.offer_high)}</span>
         <span class="k"><b>${budgetOnly(C) ? "Budget limit (not a value)" : "Walk-away (max price / hammer)"}</b></span><span class="mono"><b>${money(C.max_price)}</b>${budgetOnly(C) ? ` <span class="muted">only ${C.fair_n} comparable sale(s): too few to value the car</span>` : C.max_price_basis ? ` <span class="muted">set by ${C.max_price_basis === "value" ? "value" : "budget"}</span>` : ""}</span>
         ${C.max_price_budget ? `<span class="k muted">Budget allows</span><span class="mono muted">${money(C.max_price_budget)}</span>` : ""}
