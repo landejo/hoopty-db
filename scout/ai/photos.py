@@ -25,6 +25,14 @@ _CACHE_DIR = DATA_DIR / "photo_cache"
 _FB_NAME_RE = re.compile(r"fbcdn\.net/.*/(\d+_\d+_\d+_n)\.(?:jpg|jpeg|png|webp)", re.I)
 
 
+# CARFAX's image CDN serves only fixed sizes (1024x768 the largest) and pads a smaller
+# photo onto a white canvas rather than enlarging it: #516's are 640x360 inside 1024x768
+# (2026-10-23; other sizes return 403). Saved copies are cropped to the photo itself.
+_CARFAX_CDN_RE = re.compile(r"^https?://carfax-img\.vast\.com/", re.I)
+_WHITE_TOLERANCE = 18      # per-channel distance from pure white still counted as padding
+_MIN_CONTENT_SHARE = 0.2   # never crop to less than this share of the image
+
+
 def cache_key(url: str) -> str:
     m = _FB_NAME_RE.search(url or "")
     return f"fb_{m.group(1)}" if m else hashlib.sha1((url or "").encode("utf-8")).hexdigest()
@@ -57,7 +65,7 @@ def fetch_cached(url: str, max_edge: int = 1568) -> bytes | None:
             raw = r.read(MAX_PHOTO_BYTES + 1)
         if len(raw) > MAX_PHOTO_BYTES or len(raw) < 2000:
             return None
-        data = _process(raw, max_edge)
+        data = _process(raw, max_edge, trim=bool(_CARFAX_CDN_RE.match(url)))
         if data is None:
             return None
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -89,9 +97,50 @@ def photo_blocks(urls: list[str], limit: int = MAX_PHOTOS, max_edge: int = 1568)
     return out
 
 
-def _process(raw: bytes, max_edge: int) -> bytes | None:
+def trim_saved(urls: list[str]) -> int:
+    """Crop the white padding out of CARFAX photos already saved (before 2026-10-23 they
+    were stored padded). Rewrites only copies that have padding; returns how many."""
+    done = 0
+    for url in urls:
+        p = cached_path(url) if _CARFAX_CDN_RE.match(url or "") else None
+        if not p:
+            continue
+        try:
+            raw = p.read_bytes()
+            data = _process(raw, 10**6, trim=True)
+            if data is not None and _size(data) != _size(raw):   # same size: no padding, leave it
+                p.write_bytes(data)
+                done += 1
+        except Exception:
+            continue
+    return done
+
+
+def _size(raw: bytes) -> tuple[int, int]:
+    import io
+
+    from PIL import Image
+    return Image.open(io.BytesIO(raw)).size
+
+
+def _trim_white(img):
+    """The image cropped to its non-white content, or unchanged when there's no white
+    border (or what's left would be implausibly small)."""
+    from PIL import Image, ImageChops
+    diff = ImageChops.difference(img, Image.new("RGB", img.size, (255, 255, 255))).convert("L")
+    box = diff.point(lambda v: 255 if v > _WHITE_TOLERANCE else 0).getbbox()
+    if not box or box == (0, 0, *img.size):
+        return img
+    l, t, r, b = box
+    if (r - l) * (b - t) < _MIN_CONTENT_SHARE * img.size[0] * img.size[1]:
+        return img
+    return img.crop(box)
+
+
+def _process(raw: bytes, max_edge: int, trim: bool = False) -> bytes | None:
     """Downscale to <=max_edge on the long edge (never upscale), convert to
-    RGB, and re-encode as JPEG q85. Returns None on any decode failure."""
+    RGB, and re-encode as JPEG q85. Returns None on any decode failure.
+    trim=True first crops a white border (CARFAX's padded photos)."""
     import io
 
     from PIL import Image  # lazy: heavy dep, only needed here
@@ -103,6 +152,8 @@ def _process(raw: bytes, max_edge: int) -> bytes | None:
         return None
     if img.mode != "RGB":
         img = img.convert("RGB")
+    if trim:
+        img = _trim_white(img)
     w, h = img.size
     long_edge = max(w, h)
     if long_edge > max_edge:

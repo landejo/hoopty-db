@@ -174,10 +174,11 @@ def _photos_to_cache() -> list[str]:
 
 
 def _photo_worker() -> None:
-    from scout.ai.photos import cached_path, fetch_cached
+    from scout.ai.photos import cached_path, fetch_cached, trim_saved
     while True:
         saved = failed = 0
-        for u in _photos_to_cache():
+        urls = _photos_to_cache()
+        for u in urls:
             if cached_path(u):
                 continue
             if fetch_cached(u):
@@ -186,6 +187,9 @@ def _photo_worker() -> None:
                 failed += 1
         if saved or failed:
             db.log_event("photos_cached", None, f"saved {saved} photo(s); {failed} could not be fetched (expired or blocked)")
+        trimmed = trim_saved(urls)   # CARFAX copies saved padded before 2026-10-23
+        if trimmed:
+            db.log_event("photos_cached", None, f"cropped the white padding from {trimmed} saved CARFAX photo(s)")
         _photo_wake.wait(timeout=6 * 3600)
         _photo_wake.clear()
 

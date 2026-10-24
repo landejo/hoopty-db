@@ -262,7 +262,9 @@
   function sourceLink(l, cls = "src") { const u = safeUrl(l.url); return u ? `<a class="${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="Open the listing on ${esc(siteName(l.site))} (new tab)" onclick="event.stopPropagation()">${esc(siteName(l.site))} <span aria-hidden="true">↗</span></a>` : ""; }
   // Locally every photo goes through the server's saved copy (Facebook links expire a
   // few days after a sync); the published board has a small saved card image per car.
-  function photoSrc(url) { return url && state.local ? "/api/photo?u=" + encodeURIComponent(url) : url; }
+  // CARFAX copies were re-saved without their white padding on 2026-10-23; "&v=2" makes
+  // browsers drop the padded versions they cached (photos are cached for a week).
+  function photoSrc(url) { return url && state.local ? "/api/photo?u=" + encodeURIComponent(url) + (/^https?:\/\/carfax-img\.vast\.com\//i.test(url) ? "&v=2" : "") : url; }
   function photo(l) {
     if (!state.local && l.thumb_file) return l.thumb_file;
     return photoSrc((l.photos && l.photos[0]) || l.thumb || null);
@@ -315,7 +317,7 @@
     const im = e.target;
     if (!(im instanceof HTMLImageElement)) return;
     // The saved copy failed (server not restarted yet, or it cannot fetch the photo): try the link itself once.
-    const via = (im.getAttribute("src") || "").match(/^\/api\/photo\?u=(.+)$/);
+    const via = (im.getAttribute("src") || "").match(/^\/api\/photo\?u=([^&]+)/);
     if (via && !im.dataset.direct) { im.dataset.direct = "1"; im.src = decodeURIComponent(via[1]); return; }
     if (im.closest(".gallery .thumbs") || im.closest(".compare")) { im.remove(); return; }
     if (im.closest(".card .photo") || im.closest(".gallery .main")) {

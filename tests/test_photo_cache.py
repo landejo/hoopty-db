@@ -68,3 +68,54 @@ def test_server_starts_with_the_photo_worker_on(monkeypatch):
     with TestClient(server.app) as c:
         assert c.get("/api/health").status_code == 200
     assert started == [1]
+
+
+# ---------- CARFAX padding (2026-10-23): its CDN pads small photos onto a white 1024x768 ----------
+
+CFX = "https://carfax-img.vast.com/carfax/v2/8479222255141981448/1/1024x768"
+
+
+def _padded(w=1024, h=768, inner=(640, 360)):
+    img = Image.new("RGB", (w, h), (255, 255, 255))
+    img.paste(Image.new("RGB", inner, (40, 70, 140)), ((w - inner[0]) // 2, (h - inner[1]) // 2))
+    buf = io.BytesIO(); img.save(buf, format="JPEG", quality=95); return buf.getvalue()
+
+
+class _Resp(io.BytesIO):
+    headers = {"Content-Type": "image/jpeg"}
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+
+
+def _size(data):
+    return Image.open(io.BytesIO(data)).size
+
+
+def test_a_carfax_photo_is_saved_without_its_white_padding(cache, monkeypatch):
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Resp(_padded()))
+    w, h = _size(ph.fetch_cached(CFX))
+    assert abs(w - 640) <= 2 and abs(h - 360) <= 2          # JPEG edges blur a pixel or two
+    assert _size(ph.cached_path(CFX).read_bytes()) == (w, h)
+
+
+def test_other_sites_photos_keep_their_borders(cache, monkeypatch):
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Resp(_padded()))
+    assert _size(ph.fetch_cached("https://images.autotrader.com/x/1.jpg")) == (1024, 768)
+
+
+def test_trim_saved_crops_padded_carfax_copies_only(cache):
+    cache.mkdir()
+    other = "https://images.autotrader.com/x/2.jpg"
+    clean = "https://carfax-img.vast.com/carfax/v2/1/2/1024x768"
+    for u, data in ((CFX, _padded()), (other, _padded()), (clean, _jpeg(1024, 768))):
+        (cache / f"{ph.cache_key(u)}.jpg").write_bytes(data)
+    assert ph.trim_saved([CFX, other, clean, "https://carfax-img.vast.com/never/saved"]) == 1
+    assert _size(ph.cached_path(CFX).read_bytes())[0] <= 642
+    assert _size(ph.cached_path(other).read_bytes()) == (1024, 768)
+    assert _size(ph.cached_path(clean).read_bytes()) == (1024, 768)
+    assert ph.trim_saved([CFX]) == 0                           # already cropped: left alone
+
+
+def test_a_mostly_white_photo_is_not_cropped_to_a_sliver(cache, monkeypatch):
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _Resp(_padded(inner=(200, 150))))
+    assert _size(ph.fetch_cached(CFX)) == (1024, 768)
