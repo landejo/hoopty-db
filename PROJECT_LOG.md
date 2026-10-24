@@ -582,3 +582,15 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 
 ### System State Summary
 - Not committed. The ux suite still stops at the old scroll-memory check here; the fix is ad1537a on claude/competent-maxwell-d4d8b1 (not merged).
+
+## 2026-10-23 — Policy 1.9.3: fee-inclusive auction comps; Carfax Value reference
+- `scout/market.py`: `realized_price` replaces `realized_factor`. An auction sale counts at hammer + buyer's fee (`auction_fee`, from the policy state's fee table: 5%, $250 min, $7,500 cap; both FAQs checked 2026-10-23, BaT uses 10% / $4,000 cap in some non-car categories). Classified last asks keep x0.93.
+- `scout/policy/costs.py`: an auction car's fair range is converted back to a hammer (`_hammer_for`) before walk-away and offers, since its own fee is a cost line. `POLICY_VERSION` 1.9.3; POLICY_CHANGES.md entry.
+- `scout/publish.py` + `docs/app.js`: `carfax_value` read from carfax.com listing text or an attached Carfax report; car page shows "Carfax Value · reference" under Market fair value. Nothing scores on it.
+- Data: #467 MR2 sold_price $16,000 (was its last-seen bid $9,300); #577 marked sold $20,942 and moved to comps.
+- Effect (DB copy, after the startup rescore): #515 walk-away $18,648 -> $19,681, #630 $19,846 -> $20,938, #637 $9,162 -> $10,629, Z3s +$700-900. No verdict changed.
+
+### System State Summary
+- Tests: 336 passed (7 new in tests/test_fee_inclusive_value.py; one 1.9.0 test in tests/test_policy_1_9.py updated to the new rule). E2E: startup 5/5, reassess 12/12, reports 8/8. `published` 11/12: its VIN check flags Autotrader /marketplace/buy/<VIN> links that publish.py has allowed since 6ef0e02 (2026-10-18); pre-existing test mismatch.
+- E2E note: the fake Anthropic server uses port 8799; don't run a side tracker on 8799 during e2e.
+- Needs: restart the tracker server so the 1.9.3 rescore runs on the real DB.
