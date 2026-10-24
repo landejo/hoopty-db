@@ -651,3 +651,11 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 
 ### System State Summary
 - Uncommitted: docs/app.js, e2e/e2e_ux.js, PROJECT_LOG.md. Other session: scout/profiles.py, tests/test_policy_1_9.py.
+
+## 2026-10-24 — e2e suites green
+- ux: scroll-memory check from claude/competent-maxwell-d4d8b1 (ad1537a, e2e_ux.js only) applied here. It then exposed a board quirk: back from a listing, a card with its title on screen but its bottom below the fold was re-centered. `docs/app.js` route(): re-center only when the opened card's title is out of view (top < 60 or > innerHeight - 120), i.e. you stepped past it with ← / →.
+- published: the leak scan in `e2e/e2e_published.js` now skips VINs that are a CARFAX or Autotrader private-seller listing address, which publish keeps on purpose (VIN_LISTING_URL_RE); 102 such links, 0 VINs elsewhere.
+- Result: pytest 340 passed; e2e popup 4/4, published 12/12, reassess 12/12, reports 8/8, saved-list 4/4, startup-board 2/2, startup 3/3, ux 66/66.
+
+### System State Summary
+- Branch feat/opus-5-5-tuning pushed. claude/competent-maxwell-d4d8b1's PROJECT_LOG lines not merged (its e2e fix is now here).

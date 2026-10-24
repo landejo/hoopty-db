@@ -222,7 +222,8 @@ const openDetail = async (page, l) => {
   await page.waitForTimeout(300);
   const y0 = await page.evaluate(() => scrollY);
   const target = await page.evaluate(() => {
-    const c = [...document.querySelectorAll(".card")].find((el) => { const r = el.getBoundingClientRect(); return r.top > 80 && r.bottom < innerHeight; });
+    // A card whose title is on screen; whether one fits entirely depends on how the cards fall.
+    const c = [...document.querySelectorAll(".card")].find((el) => { const r = el.getBoundingClientRect(); return r.top > 80 && r.top < innerHeight - 120; });
     return c.dataset.id;
   });
   await page.click(`.card[data-id="${target}"] .title`);
@@ -251,6 +252,8 @@ const openDetail = async (page, l) => {
   await page.keyboard.press("ArrowLeft");
   await page.waitForTimeout(1500);
   check("rapid → ← ← lands one before where it started", page.url().endsWith(`#/l/${order[2]}`), page.url());
+  // Each step re-fetches the board (~10 MB), so the page can lag the URL: wait until it shows order[2].
+  await page.waitForFunction((n) => document.querySelector(".pager")?.textContent.includes(`3 / ${n}`), order.length, { polling: 250 });
   await page.click('.pager a[aria-label="Next listing"]');
   await page.waitForFunction((id) => location.hash === `#/l/${id}`, order[3], { polling: 250 });
   check("← / → keys and ‹ › step through the board", true, `${order[2]} ⇄ ${order[3]}`);

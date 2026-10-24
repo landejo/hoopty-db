@@ -18,11 +18,13 @@ function walk(dir) { return fs.readdirSync(dir, { withFileTypes: true }).flatMap
   const VIN = /\b(?=[A-HJ-NPR-Z0-9]{17}\b)(?=[A-HJ-NPR-Z0-9]*[0-9])(?=[A-HJ-NPR-Z0-9]*[A-HJ-NPR-Z])[A-HJ-NPR-Z0-9]{17}\b/;
   const PHONE = /(?<!\d)(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}(?!\d)/;
   const EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/;
+  // A CARFAX or Autotrader private-seller link is the VIN itself; publish keeps those (VIN_LISTING_URL_RE).
+  const VIN_URL = /https:\/\/www\.(?:carfax\.com\/vehicle|autotrader\.com\/marketplace\/buy)\/[A-HJ-NPR-Z0-9]{17}\/?/g;
   const files = walk(SITE).filter((f) => f.endsWith(".json"));
   const leaks = [];
   for (const f of files) {
     const t = fs.readFileSync(f, "utf8");
-    for (const [k, re] of [["VIN", VIN], ["phone", PHONE], ["email", EMAIL]]) { const m = t.match(re); if (m) leaks.push(`${path.relative(SITE, f)}: ${k} ${m[0]}`); }
+    for (const [k, re] of [["VIN", VIN], ["phone", PHONE], ["email", EMAIL]]) { const m = (k === "VIN" ? t.replace(VIN_URL, "") : t).match(re); if (m) leaks.push(`${path.relative(SITE, f)}: ${k} ${m[0]}`); }
   }
   check("no VIN, phone or email in any published file", leaks.length === 0, `${files.length} files; ${leaks.slice(0, 3).join(" | ")}`);
   const index = JSON.parse(fs.readFileSync(path.join(SITE, "data", "index.json"), "utf8"));

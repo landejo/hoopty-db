@@ -301,7 +301,7 @@
       if (el) {
         el.focus({ preventScroll: true }); el.classList.add("was-open");
         const r = el.getBoundingClientRect();   // stepped past the old viewport with ← / →: bring it into view
-        if (r.top < 60 || r.bottom > innerHeight) el.scrollIntoView({ block: "center" });
+        if (r.top < 60 || r.top > innerHeight - 120) el.scrollIntoView({ block: "center" });   // title on screen: leave the board where it was
       }
     } else if (!wasBoard) window.scrollTo(0, 0);
   }
