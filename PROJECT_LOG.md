@@ -594,3 +594,10 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 - Tests: 336 passed (7 new in tests/test_fee_inclusive_value.py; one 1.9.0 test in tests/test_policy_1_9.py updated to the new rule). E2E: startup 5/5, reassess 12/12, reports 8/8. `published` 11/12: its VIN check flags Autotrader /marketplace/buy/<VIN> links that publish.py has allowed since 6ef0e02 (2026-10-18); pre-existing test mismatch.
 - E2E note: the fake Anthropic server uses port 8799; don't run a side tracker on 8799 during e2e.
 - Needs: restart the tracker server so the 1.9.3 rescore runs on the real DB.
+
+## 2026-10-23 — Board: photo mode
+- `docs/app.js` `openSlideshow` + `docs/styles.css` `.slideshow`: a "Photos ⛶" button beside Cards/Table opens the board's current cars (filters and sort as shown) full screen, photo only. ← / → change car at any time, landing on its lead photo; ↑ / ↓ cycle that car's photos (full list via ensureDetail on the published board); Esc or leaving full screen closes; clicking the left / right third steps cars. Cars without a photo are skipped.
+- `e2e/e2e_ux.js`: four checks (opens on the first lead photo, → / ←, ↓ / ↑, Esc). Checked live in the browser pane (full screen is refused there; the overlay fills the window instead).
+
+### System State Summary
+- Not committed: docs/app.js, docs/styles.css, e2e/e2e_ux.js, PROJECT_LOG.md.
