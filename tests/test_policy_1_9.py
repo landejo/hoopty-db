@@ -137,6 +137,16 @@ def test_m_sport_packages_and_ad_text_do_not_re_profile():
     assert profile_from_evidence(claimed, _listing(), profiles) is None
 
 
+def test_a_generic_body_reading_never_moves_a_car_to_a_generated_catch_all():
+    db.upsert_profile({"key": "bmw_z3", "label": "BMW Z3 Roadster & Coupe", "make": "BMW", "source": "ai", "verified": False,
+                       "models": ["Z3", "Z3 Roadster", "Z3 Coupe", "Z3 3.0i", "M Roadster"], "years": [1996, 2002],
+                       "weights": {"value": 1.0}})
+    facts = [Fact(key="model", value="Z3 roadster (E36/7)", status="verified", source="photo")]
+    assert profile_from_evidence(facts, _listing(year=2001), db.list_profiles()) is None
+    m = [Fact(key="model", value="Z3 M Roadster", status="inferred", source="photo")]
+    assert profile_from_evidence(m, _listing(), db.list_profiles())["key"] == "z3_m"
+
+
 def test_assessment_re_profiles_the_car_and_a_later_sync_keeps_it(monkeypatch):
     from scout.config import CONFIG
     import scout.ai.assess as assess_mod

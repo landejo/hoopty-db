@@ -82,7 +82,10 @@ def profile_from_evidence(facts: list[Any], listing: dict[str, Any],
                           profiles: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The profile the assessment's own identity facts point to (a verified model or
     trim, or one read from photos or a history report), or None when they do not
-    name one. "Z3 M Roadster (E36/7 M), not a Z3 3.0i" reads as "Z3 M Roadster"."""
+    name one. "Z3 M Roadster (E36/7 M), not a Z3 3.0i" reads as "Z3 M Roadster".
+    Only seed profiles count: a generated catch-all ("bmw_z3": Z3, Z3 Roadster, ...)
+    would take any car whose evidence names just the body (#307, 2026-09-30)."""
+    profiles = [p for p in profiles if p.get("source") == "seed"]
     for f in facts:
         key = getattr(f, "key", None)
         if key not in {"model", "trim"}:
