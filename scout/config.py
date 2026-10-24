@@ -72,8 +72,10 @@ SITES = {
     "carsandbids": "Cars & Bids",
     "bat": "Bring a Trailer",
     "builtforbackroads": "Built for Backroads",
+    "bmwcca": "BMW CCA Classifieds",
     "bayluxuryautos": "Bay Luxury Autos",
     "carfax": "CARFAX",
+    "pca": "PCA Mart",
 }
 AUCTION_SITES = {"carsandbids", "bat"}
 

@@ -39,6 +39,8 @@ def test_auction_fee_has_a_floor_and_a_cap_and_classifieds_pay_none():
 def test_realized_price_adds_the_fee_to_hammers_and_discounts_last_asks():
     assert realized_price({"site": "bat"}, 20000) == 21000
     assert realized_price({"site": "cargurus"}, 20000) == 18600
+    assert realized_price({"site": "bmwcca"}, 20000) == 18600   # club classifieds are last asks too
+    assert realized_price({"site": "pca"}, 20000) == 18600
 
 
 def test_fair_value_from_auction_sales_includes_the_fee():
