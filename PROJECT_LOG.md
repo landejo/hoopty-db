@@ -617,3 +617,10 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 
 ### System State Summary
 - Not committed: docs/app.js, docs/styles.css, e2e/e2e_ux.js, PROJECT_LOG.md.
+
+## 2026-10-23 — PCA Mart site; #653 Cayman S added
+- Commit 9bb0b32: `SITES` gains BMW CCA Classifieds (the other session's line, committed at Jason's request) and PCA Mart; both join `_CLASSIFIED_SITES` (last ask x0.93). Test assertions for both in tests/test_fee_inclusive_value.py.
+- #653 2007 Cayman S, PCA Mart ad 84555, $28,900, 90k, 6-speed, VIN WP0AB298X7U781874, 17 photos; ingested from the shell (the running server needs a restart to accept site "pca" through /api/ingest). Full assessment: Maybe / verify 49, walk-away $27,722, offer $24.5-26.8k, all-in ~$33.1k; open: DME over-rev report, documentation for the claimed service.
+
+### System State Summary
+- Still uncommitted (other session): scout/profiles.py, tests/test_policy_1_9.py (seed-only re-profiling).
