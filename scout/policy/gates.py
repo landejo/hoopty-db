@@ -28,14 +28,17 @@ CONDITIONAL_FLAGS = {
 }
 
 
-def is_excluded(make: str | None, model: str | None, active_exclusions: list[str]) -> str | None:
+def is_excluded(make: str | None, model: str | None, active_exclusions: list[str],
+                trim: str | None = None) -> str | None:
     """Match an exclusion ("Mazda MX-5") against "make model", ignoring case, spaces and
-    hyphens; the model part alone (3+ chars) also matches, so "Miata" catches "MX-5 Miata"."""
+    hyphens; the model part alone (3+ chars) also matches, so "Miata" catches "MX-5 Miata".
+    1.10.0: "make model trim" too, so "Mazda MX-5 Miata Sport" excludes that trim only."""
     norm = lambda s: (s or "").lower().replace("-", "").replace(" ", "")
     full, mdl = norm(f"{make or ''} {model or ''}"), norm(model)
+    with_trim = norm(f"{make or ''} {model or ''} {trim or ''}")
     for ex in active_exclusions or []:
         model_part = norm(ex.split(" ", 1)[1]) if " " in ex.strip() else ""
-        if norm(ex) in full or (len(model_part) >= 3 and model_part in mdl):
+        if norm(ex) in full or norm(ex) in with_trim or (len(model_part) >= 3 and model_part in mdl):
             return ex
     return None
 
@@ -59,7 +62,7 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
     if "mileage_decreased" in ((provenance or {}).get("flags") or []):
         gates.append(Gate(kind="hard", key="odometer_inconsistency", reason="Reported mileage is lower than an earlier same-car listing (odometer inconsistency unresolved)"))
 
-    ex = is_excluded(listing.get("make"), listing.get("model"), state.get("active_exclusions", []))
+    ex = is_excluded(listing.get("make"), listing.get("model"), state.get("active_exclusions", []), listing.get("trim"))
     if ex:
         gates.append(Gate(kind="strategy", key="explicit_exclusion", reason=f"Explicitly excluded model ({ex})"))
     # 1.10.0: a way of filling the gap Jason is not pursuing now (state "inactive_missions").
@@ -236,7 +239,7 @@ def _applies(req: dict[str, Any], listing: dict[str, Any]) -> bool:
 def quick_gates(listing: dict[str, Any], profile: dict[str, Any] | None, mission: str, state: dict[str, Any]) -> list[str]:
     """Sync-time, no-AI flags shown on cards: exclusions, configuration, budget."""
     out = []
-    ex = is_excluded(listing.get("make"), listing.get("model"), state.get("active_exclusions", []))
+    ex = is_excluded(listing.get("make"), listing.get("model"), state.get("active_exclusions", []), listing.get("trim"))
     if ex:
         out.append(f"excluded: {ex}")
     if mission in (state.get("inactive_missions") or []):

@@ -484,3 +484,13 @@ def test_missing_documents_cost_no_reserve_before_contact():
 def test_profile_dealbreakers_reach_the_assessor():
     from scout.ai.assess import _profile_text
     assert "Engine displacement below 3.0L" in _profile_text(_profile("z3_30i"))
+
+
+# 1.10.0 (Jason's filters): a trim can be excluded without excluding the model.
+def test_exclusion_can_name_a_trim():
+    from scout.policy.gates import is_excluded
+    ex = ["Mazda MX-5 Miata Sport", "Toyota 86", "Subaru BRZ", "Scion FR-S"]
+    assert is_excluded("Mazda", "MX-5 Miata", ex, "Sport w/ Interior Package")
+    assert not is_excluded("Mazda", "MX-5 Miata RF", ex, "Grand Touring")
+    assert not is_excluded("Mazda", "MX-5 Miata", ex, "Club")
+    assert is_excluded("Toyota", "86", ex) and is_excluded("Subaru", "BRZ", ex, "Limited") and is_excluded("Scion", "FR-S", ex)
