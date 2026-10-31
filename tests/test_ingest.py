@@ -306,6 +306,28 @@ def test_capture_quality_is_recorded(monkeypatch):
     assert "CAPTURE WARNING" in _capture_warning(db.get_listing_by_url(thin))
 
 
+def test_a_short_club_classified_read_in_full_is_a_complete_capture(monkeypatch):
+    """#596: a BMW CCA ad is ~1,100 chars in full; it was flagged "thin detail capture"."""
+    from scout import ingest as ing
+    from scout.config import CONFIG
+    monkeypatch.setattr(CONFIG, "anthropic_api_key", "test-only-never-called")
+    monkeypatch.setattr("scout.vin.decode_vin", lambda *a, **k: None)
+    import scout.ai.normalize as nz
+    monkeypatch.setattr(nz, "normalize_listing", lambda *a, **k: {"is_vehicle": True, "year": 2012, "make": "BMW", "model": "128i"})
+    ad = "2012 BMW 128i M-Sport Convertible, 6-speed. " + "Garaged, records, new water pump and thermostat. " * 22
+    photos = [f"https://www.bmwcca.org/photo/{i}.jpg" for i in range(6)]
+    item = lambda site, url: {"url": url, "title": "2012 BMW 128i", "detail": {"text": ad, "photos": photos}}
+    club, other = "https://www.bmwcca.org/classified-ads/1/", "https://www.cars.com/vehicledetail/1/"
+    ing.ingest_items("bmwcca", [item("bmwcca", club)], run_ai=True)
+    ing.ingest_items("carscom", [item("carscom", other)], run_ai=True)
+    c = db.get_listing_by_url(club)["normalized"]
+    assert 600 <= c["capture"]["text_chars"] < 1500 and c["capture"]["photos"] == 6
+    assert c["capture"]["complete"] is True and "capture incomplete" not in c["quick_gates"]
+    # The same text on a big listing site is still a thin capture.
+    o = db.get_listing_by_url(other)["normalized"]
+    assert o["capture"]["complete"] is False and o["capture"]["note"] == "thin detail capture"
+
+
 def test_a_listing_added_by_hand_is_never_removed_for_missing_from_a_saved_list():
     """#276, a Facebook group post, was marked removed by two Marketplace syncs (2026-09-28)."""
     post = "https://www.facebook.com/groups/1/permalink/2/"

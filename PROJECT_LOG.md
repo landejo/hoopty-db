@@ -659,3 +659,41 @@ the 2 watched kept (#356 Clio V6, #422). The six 987 Boxster S comps added 2026-
 
 ### System State Summary
 - Branch feat/opus-5-5-tuning pushed. claude/competent-maxwell-d4d8b1's PROJECT_LOG lines not merged (its e2e fix is now here).
+
+## 2026-10-24 — Short club ads are a complete capture
+- `scout/ingest.py`: `SHORT_AD_SITES = {"bmwcca", "pca"}`; for those sites the capture is complete at MIN_CARD_TEXT (600 chars) plus MIN_GOOD_PHOTOS (4) instead of 1,500 chars, so a fully read club ad no longer gets "thin detail capture" / "capture incomplete" (or the assessment's CAPTURE WARNING). Other sites unchanged.
+- `tests/test_ingest.py`: test_a_short_club_classified_read_in_full_is_a_complete_capture (fails without the fix). pytest 341 passed.
+- Data: backup data/backups/scout_pre-shortad-capture_2026-10-24.db; capture flag cleared on #596, #607 (BMW CCA) and #653 (PCA Mart). Their earlier assessments were written with the capture warning; not re-run.
+
+### System State Summary
+- Uncommitted: scout/ingest.py, tests/test_ingest.py, PROJECT_LOG.md. The running server (Jason's) uses the new rule after a restart.
+
+## 2026-10-26 — #786 2012 Boxster S Black Edition added (dream-boxster-watch find)
+- #786 Facebook Marketplace 1134168302527352, Portola Valley CA, $39,500, 43k, 6-speed, Sport Chrono Plus, black/black, VIN WP0CB2A81CS799075, seller is 3rd owner, specialist-serviced (RMG Sunnyvale), clutch at 39.8k. Ingested via /api/ingest (16 photos); profile porsche_boxster_987 (AI), mission future_keeper.
+- Full assessment (Opus 5.5, ~$0.26): Reject / Skip 51, confidence 50. Binding gate is the future_keeper budget: all-in ~$45.1k (incl. $5k risk reserve, $4k tax) vs $42k ceiling; budget walk-away $32,446, offer $29.9-32.4k. No fair value: the 987 Boxster comp pool is 11 cars, all 2005-2008 (987.1).
+- Board check for the watch's other finds: #775 (Meteor Grey) and #776 (Noblesville black) already Pass; #778 (Costa Mesa, blue wrap over silver) still New; set to Pass per Jason the same day (reason: wrap over silver). Future-keeper budget left as is per Jason.
+
+### System State Summary
+- No code changes. Data: #786 row + 1 assessment. Open: no 987.2 Boxster S comps; future_keeper all-in ceiling ($42k) sits below the watch's $42k asking cap.
+
+## 2026-10-26 — Fun-daily-driver scan: 9 manual hot hatches/sedans added (#797-805)
+- Mission per Jason: fun manual daily driver that copes with rain, ~$25k all-in, <=2 owners, no accidents. Autotrader nationwide search (manual, <=$23k) for GTI, Civic Si, Mazda3, WRX, Veloster N, Elantra N, Golf R, Mini Cooper S, Fiesta ST, Focus ST; shortlisted cars within ~400 mi of Carmel, then read each listing's history summary (accident / owner count).
+- Added via /api/ingest (site autotrader, AI normalization deferred): #797 2020 WRX Premium Corona, #798 2020 Civic Si coupe Stockton, #799 2016 Focus ST LA (private), #800 2019 Civic Si coupe Fresno, #801 2021 WRX Costa Mesa, #802 2015 GTI S Roseville, #803 2021 WRX Huntington Beach, #804 2017 GTI S Santa Maria, #805 2022 GTI S LA (private; free AutoCheck: 2 owners). All single owner except #805; all "No Accident or Damage Reported".
+- Profile fix: #797 and #801 were profiled subaru_wrx_sti_va by the AI read; set to subaru_wrx (VIN JF1VA1 = WRX), profile_source user.
+- Dropped on history: accident reported on 2019 GTI Newark, 2020 GTI Las Vegas, 2019/2022/2023 Civic Si (NoHo, Fontana, LV), 2022 WRX Rancho Cordova, 2020 WRX West Covina, 2020 WRX Brentwood, 2017 GTI Autobahn Santa Ana, both Mazda3s (UT, OR). Not added ("Multiple Owners", exact count not checked): 2017 GTI S Fontana, 2018 Civic Si Montclair, 2019 Civic Si Santa Monica/Montclair, 2020 WRX Pleasanton, 2020 WRX Ltd Madera, 2022/2023 WRX Montclair/Oxnard, 2018 GTI SE Valencia/Porter Ranch, Focus STs Fontana/Santa Ana.
+- No full assessments run.
+
+### System State Summary
+- No code changes. Data: 9 listing rows (#797-805), 2 profile overrides. Open: no comps yet for honda_civic_si / subaru_wrx / ford_focus_st / volkswagen_gti_mk8, so walk-aways will lean on budget until comps exist.
+
+## 2026-10-26 — Mini Cooper S (F56, 2014+) widening: #806-807 added, transmission unconfirmed
+- Searched manual F56 Minis on Autotrader (nationwide, <=$25k, <=90k mi), Cars.com (sorted by distance from Carmel) and CarGurus (distance filter not honored; results were NY dealers). R56 skipped.
+- Added via /api/ingest (site carscom): #806 2021 Cooper S Iconic, British Racing Green, 22,382 mi, $22,702, VIN WMWXR5C03M2P42140; #807 2023 Cooper S Signature, Midnight Black, 48,867 mi, $22,121, VIN WMW53DH06P2S73593. Both South Bay MINI, Torrance; Cars.com history: clean title, no accidents, 1 owner, personal use.
+- Transmission conflict on both: Cars.com spec says Manual, dealer notes say 7-speed automatic, and neither appears in Autotrader manual-only results. Set transmission Unknown, note added; ask the dealer first.
+- Profile: both set to mini_cooper_s_f56 (2014-2024). The seed mini_f56_cooper_s covers 2017-2019 only, and the AI read had put #806 there.
+- Dropped: 2019 Cooper S Portland (Autotrader; accident, multiple owners), 2016 JCW Olympia (accident), CarGurus 2015/2017/2019/2022 Cooper S in Massapequa NY (3-5 owners; 2017 also accident; 2015 fleet). Not added: 2019 Cooper S 4-door San Jose ($14,980, 80k; no history summary shown), 2022 Cooper S LA ($16,915, 80k; multiple owners, count unknown).
+- Cars.com began showing a Cloudflare bot check during the photo check; stopped there.
+
+### System State Summary
+- No code changes. Data: #806, #807 rows with VIN, profile and notes set.
+

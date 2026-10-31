@@ -47,6 +47,9 @@ def clean_all_photos() -> int:
 MIN_CARD_TEXT = 600        # below this we only ever saw the saved-list card
 MIN_GOOD_TEXT = 1500       # a real detail page
 MIN_GOOD_PHOTOS = 4        # a real gallery
+# Club and forum classifieds are a short form ad (#596, BMW CCA: the whole ad is ~1,100 chars): read past
+# the card with a gallery, the capture is the full ad.
+SHORT_AD_SITES = {"bmwcca", "pca", "rennlist", "planet9"}
 RENORM_COOLDOWN_HOURS = 12  # text drift alone re-normalizes at most this often
 
 CHALLENGE_RE = re.compile(r"just a moment|verify you are human|verifying you are human|checking your browser|security verification|press and hold|cf-chl|attention required|enable javascript and cookies to continue", re.I)
@@ -435,12 +438,13 @@ def _apply_normalization(lid: int, norm: dict[str, Any], scraper_availability: s
             updates["mission"] = mission
     row_now = db.get_listing(lid) or {}
     chars, nphotos = len(row_now.get("raw_text") or ""), len(row_now.get("photos") or [])
+    good_text = MIN_CARD_TEXT if row_now.get("site") in SHORT_AD_SITES else MIN_GOOD_TEXT
     updates["normalized"]["capture"] = {
         "text_chars": chars, "photos": nphotos,
-        "complete": chars >= MIN_GOOD_TEXT and nphotos >= MIN_GOOD_PHOTOS,
+        "complete": chars >= good_text and nphotos >= MIN_GOOD_PHOTOS,
         "note": ("detail page not captured — only the saved-list card was read" if chars < MIN_CARD_TEXT
                  else "detail text captured but the photo gallery was not" if nphotos < MIN_GOOD_PHOTOS
-                 else "thin detail capture" if chars < MIN_GOOD_TEXT else ""),
+                 else "thin detail capture" if chars < good_text else ""),
     }
     updates["normalized"]["quick_gates"] = quick_gates(merged, prof, mission, state)
     if not updates["normalized"]["capture"]["complete"]:
