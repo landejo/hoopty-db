@@ -70,9 +70,15 @@ def overdue_allowance(listing: dict[str, Any], evidence: EvidenceInterpretation,
     return int(amt)
 
 
-def risk_reserve(profile: dict[str, Any], gates: list[Gate], state: dict[str, Any]) -> int:
+# 1.10.0: before the seller has had a chance to answer, a missing model-critical document is a
+# question to ask, not money off the walk-away (every listing is missing them at first).
+PRE_CONTACT_STAGES = {"listing", "questions"}
+
+
+def risk_reserve(profile: dict[str, Any], gates: list[Gate], state: dict[str, Any], stage: str = "docs") -> int:
     base = int(profile.get("risk_reserve") or state.get("default_risk_reserve", 1500))
-    unresolved = sum(1 for g in gates if g.kind == "conditional")
+    unresolved = sum(1 for g in gates if g.kind == "conditional"
+                     and not (stage in PRE_CONTACT_STAGES and g.key.startswith("critical_missing:")))
     counted = min(unresolved, int(state.get("reserve_max_unresolved_counted", 2)))
     return base + counted * int(state.get("reserve_per_unresolved_conditional", 1000))
 
@@ -113,7 +119,7 @@ def price_basis(listing: dict[str, Any], evidence: EvidenceInterpretation, fair:
 
 def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceInterpretation,
                   gates: list[Gate], state: dict[str, Any], fair: dict[str, Any] | None,
-                  mission: str | None = None) -> CostBreakdown:
+                  mission: str | None = None, stage: str = "docs") -> CostBreakdown:
     history = history_value_flag(listing) if fair else None
     if history:
         fair = {**fair, **{k: int(fair[k] * (1 - HISTORY_VALUE_DISCOUNT)) for k in ("low", "mid", "high") if fair.get(k) is not None}}
@@ -132,7 +138,7 @@ def compute_costs(listing: dict[str, Any], profile: dict[str, Any], evidence: Ev
     kw = evidence.known_work_estimate
     kw_lo, kw_hi = (kw.low, kw.high) if kw else (0, 0)
     overdue = overdue_allowance(listing, evidence, state)
-    reserve = risk_reserve(profile, gates, state)
+    reserve = risk_reserve(profile, gates, state, stage)
     tax = int(price * float(state.get("tax_rate", 0)) + int(state.get("registration_fee", 0)))
     # All-in = what it costs to own the car as listed: price, fee, transport, tax,
     # plus work the listing itself establishes as needed. Generic catch-up and the

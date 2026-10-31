@@ -4,6 +4,42 @@ The guide (`Jason_Car_Assessment_Guide.md`, v1.1) is the source. Where the code
 deliberately departs from its text, the change is recorded here with the reason,
 so the guide can be updated when Jason next revises it.
 
+## 1.10.0 (2026-10-31)
+
+Jason, 2026-10-31, after a scoring audit: "Do they accurately capture my preferences and
+needs?" Measured before: 88 of 111 assessed cars were "Maybe / verify"; the board's top
+three were a GTI he is lukewarm on, a Z3 M auction and a 135is, with the RF he is buying
+sixth. Decisions (his answers): budget numbers kept; live missions are the fun daily and
+the Z3 keeper (no Porsches until 2027-28, no pragmatic automatic, no GX); more than two
+owners or an accident is a heavy penalty, not a reject; RF wishlist in the buyer context.
+
+1. **Distance is a cost, not a cap.** The logistics cap by location band is gone
+   (`LOGISTICS_CAP_BY_BAND`); transport already sits in the all-in and the walk-away.
+   Prelim logistics 10/9/8 (local / California / elsewhere). Fit distance 8 -> 3 points.
+2. **Locality reads the state after the last comma** and treats the Monterey Peninsula
+   (Pacific Grove, Seaside, Marina, Pebble Beach) as home. Fixes "Carmel, IN" and
+   "Oakland, ME" reading as local, "Albany, New York" as the Midwest, Quebec as California.
+3. **More than two owners or a reported accident**: fit total -8 each (`HISTORY_PENALTY`)
+   and mission fit capped at 6 (`HISTORY_FIT_CAP`). Never a reject on its own.
+4. **Inactive missions** (state `inactive_missions`) gate to Do not pursue.
+5. **No pre-contact reserve for missing documents.** At the listing and questions stages a
+   `critical_missing:` item is a question to ask; it no longer takes $1,000 (up to $2,000)
+   off the walk-away. From the docs stage on it counts as before.
+6. **Upkeep in fit (5 points)** from the model's repair reserve ($1,500 full, $4,000 none).
+   Fit points now: value 25, history 20, records 10, mileage 12, spec 18, condition 7,
+   distance 3, upkeep 5. Reserves: ND Miata 3,500 -> 1,200 (it was AI-generated and too
+   high), Z3 3.0i 1,500 -> 2,500, Z3 M 2,500 -> 3,500 (Jason: the Miata's maintenance cost
+   "wins notably" over the BMW).
+7. **Profile dealbreakers reach the assessor** (`assess._profile_text`); before, the
+   YAML's `dealbreaker_rules` (e.g. Z3 "engine below 3.0L") were never sent.
+8. **ND Miata comps split at the 2019 engine change** (`market.ERA_SPLIT_YEAR`): a 2016-2018
+   (155 hp) car is valued against 2016-2018 sales, a 2019+ (181 hp) against 2019+, when
+   each has >= 3. Before, the per-year rate (learned at +4.3%/yr across the step) moved
+   cheap-selling 2019-20 RF auction results down onto 2017s. #813: fair $18.9-21.4k
+   (14 mixed sales) -> $18.8-23.1k (11 ND1 RF sales).
+9. **"Retractable" is an open body** (`market._OPEN_BODY`). Ten RFs listed as "Retractable
+   Fastback" had no body class and fell out of RF comps at the first relax step.
+
 ## 1.9.3 (2026-10-23)
 
 Jason, 2026-10-23: "Count the auction buyer's fee in comp values." The tracker's fair

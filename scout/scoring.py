@@ -1,6 +1,7 @@
 """Scores derived from structured fields. Never overrides the AI verdict."""
 from __future__ import annotations
 
+import re
 import statistics
 from typing import Any
 
@@ -20,32 +21,55 @@ def weighted_score(scores: dict[str, int], weights: dict[str, float]) -> float |
     return round(num / den, 2)
 
 
+# Home is Pacific Grove (Monterey Peninsula); band 5 = a drive Jason can make for a look.
+_LOCAL_CITIES = ["pacific grove", "carmel", "monterey", "pebble beach", "seaside", "marina", "sand city",
+                 "del rey oaks", "salinas", "castroville", "watsonville", "santa cruz", "capitola", "scotts valley",
+                 "gilroy", "morgan hill", "hollister", "san jose", "palo alto", "sunnyvale", "mountain view",
+                 "san francisco", "oakland", "berkeley", "san mateo", "santa clara", "bay area", "fremont"]
+# Places a listing names without a state.
+_CA_PLACES = ["sacramento", "napa", "fresno", "los angeles", "san diego", "orange county", "modesto",
+              "stockton", "tahoe", "santa barbara", "ventura", "california"]
+_STATE_BAND = {
+    "CA": 4, "AZ": 3, "NV": 3, "OR": 3, "WA": 3, "UT": 3,
+    **{s: 2 for s in ("TX CO IL MI OH MN ID NM OK MT WY KS NE MO AR LA GA FL NC SC TN KY AL MS IA SD ND "
+                      "HI AK").split()},
+    **{s: 1 for s in "NY NJ MA CT VT ME PA WI IN NH RI MD DE VA WV DC ON QC".split()},
+}
+_STATE_NAMES = {
+    "california": "CA", "arizona": "AZ", "nevada": "NV", "oregon": "OR", "washington": "WA", "utah": "UT",
+    "texas": "TX", "colorado": "CO", "illinois": "IL", "michigan": "MI", "ohio": "OH", "minnesota": "MN",
+    "idaho": "ID", "new mexico": "NM", "oklahoma": "OK", "montana": "MT", "wyoming": "WY", "kansas": "KS",
+    "nebraska": "NE", "missouri": "MO", "arkansas": "AR", "louisiana": "LA", "georgia": "GA", "florida": "FL",
+    "north carolina": "NC", "south carolina": "SC", "tennessee": "TN", "kentucky": "KY", "alabama": "AL",
+    "mississippi": "MS", "iowa": "IA", "south dakota": "SD", "north dakota": "ND", "hawaii": "HI", "alaska": "AK",
+    "new york": "NY", "new jersey": "NJ", "massachusetts": "MA", "connecticut": "CT", "vermont": "VT",
+    "maine": "ME", "pennsylvania": "PA", "wisconsin": "WI", "indiana": "IN", "new hampshire": "NH",
+    "rhode island": "RI", "maryland": "MD", "delaware": "DE", "virginia": "VA", "west virginia": "WV",
+    "district of columbia": "DC", "ontario": "ON", "quebec": "QC",
+}
+
+
+def _state_of(location: str) -> str | None:
+    """The state named after the last comma ("Costa Mesa, CA 92627", "Albany, New York")."""
+    location = re.sub(r",\s*(canada|usa|united states)\s*$", "", location, flags=re.I)
+    if "," not in location:
+        return None
+    tail = re.sub(r"\s*\d{5}(-\d{4})?\s*$", "", location.rsplit(",", 1)[1]).strip().lower().rstrip(".")
+    if len(tail) == 2 and tail.upper() in _STATE_BAND:
+        return tail.upper()
+    return _STATE_NAMES.get(tail)
+
+
 def locality_hint(location: str | None) -> int | None:
     if not location:
         return None
     s = location.lower()
-    bands = [
-        (5, ["carmel", "monterey", "santa cruz", "san jose", "palo alto", "sunnyvale",
-             "mountain view", "san francisco", "oakland", "berkeley", "san mateo",
-             "santa clara", "bay area", "fremont", "salinas", "gilroy", "morgan hill"]),
-        (4, ["sacramento", "napa", "fresno", "los angeles", "san diego", "orange county",
-             "reno", "modesto", "stockton", "tahoe", "santa barbara", "ventura", ", ca"]),
-        (3, [", az", " arizona", ", nv", " nevada", ", or", " oregon", ", wa",
-             " washington", ", ut", " utah"]),
-        (2, [", tx", " texas", ", co", " colorado", " illinois", ", il", " michigan", ", mi",
-             " ohio", ", oh", " minnesota", ", mn", ", id", ", nm", ", ok", ", mt", ", wy",
-             ", ks", ", ne", ", mo", ", ar", ", la", ", ga", ", fl", ", nc", ", sc", ", tn",
-             ", ky", ", al", ", ms", ", ia", ", sd", ", nd"]),
-        (1, ["new york", ", ny", "new jersey", ", nj", "massachusetts", ", ma", "connecticut", ", ct",
-             "vermont", ", vt", "maine", ", me", "pennsylvania", ", pa", "wisconsin", ", wi",
-             "indiana", ", in", "new hampshire", ", nh", "rhode island", ", ri", ", md", ", de",
-             "virginia", ", va", "west virginia", ", wv", ", dc",
-             "ontario", "quebec"]),
-    ]
-    for score, needles in bands:
-        if any(n in s for n in needles):
-            return score
-    return None
+    state = _state_of(location)
+    if state == "CA" or (state is None and any(c in s for c in _LOCAL_CITIES + _CA_PLACES)):
+        return 5 if any(c in s for c in _LOCAL_CITIES) else 4
+    if state == "NV" and ("reno" in s or "tahoe" in s):
+        return 4
+    return _STATE_BAND.get(state) if state else None
 
 
 def market_stats(comps: list[dict[str, Any]], actives: list[dict[str, Any]]) -> dict[str, Any]:
@@ -167,7 +191,9 @@ def age_penalty(age: int | None, state: dict) -> tuple[int, str]:
 # Haiku rates documentation / condition / spec (0-10); everything else is arithmetic
 # so that similar cars separate on price, budget, configuration and location.
 
-LOGISTICS_BY_BAND = {5: 10, 4: 8, 3: 6, 2: 4, 1: 2, None: 5}
+# 1.10.0: distance is a cost (transport in the all-in), not a red flag; only "can see it
+# yourself" earns a little here.
+LOGISTICS_BY_BAND = {5: 10, 4: 9, 3: 8, 2: 8, 1: 8, None: 8}
 
 
 def _price_value_points(price: int | None, fair_mid: int | None) -> tuple[int, str]:

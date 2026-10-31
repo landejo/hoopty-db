@@ -168,3 +168,28 @@ def test_many_fixed_roof_sales_do_not_crowd_out_soft_tops():
     car = _row(id=99, year=2017, mileage=40000, model="MX-5 Miata soft top")
     fv = fair_value(car, soft + rf, now=date(2026, 10, 19))
     assert "same roof (soft)" in fv["note"] and fv["n"] == 4
+
+
+def test_nd_rf_is_valued_within_its_engine_era():
+    """1.10.0: the 2019 ND2 (181 hp) is a step up from the 2016-2018 ND1 (155 hp), not one more year."""
+    from scout.market import era
+    nd = "mazda_mx_5_miata_nd"
+    assert era({"profile_key": nd, "year": 2017}) == "2016-2018 155 hp" and era({"profile_key": nd, "year": 2019}) == "2019+ 181 hp"
+    assert era({"profile_key": "z3_30i", "year": 2001}) is None
+    nd1 = [_row(id=i, year=2017, mileage=40000, model="MX-5 Miata RF", profile_key=nd, price_kind="sold", availability="sold", sold_price=p)
+           for i, p in enumerate([19000, 20000, 21000], 1)]
+    nd2 = [_row(id=10 + i, year=2019, mileage=40000, model="MX-5 Miata RF", profile_key=nd, price_kind="sold", availability="sold", sold_price=p)
+           for i, p in enumerate([26000, 27000, 28000], 1)]
+    old = fair_value(_row(id=98, year=2017, mileage=40000, model="MX-5 Miata RF", profile_key=nd), nd1 + nd2, now=date(2026, 10, 31))
+    new = fair_value(_row(id=99, year=2019, mileage=40000, model="MX-5 Miata RF", profile_key=nd), nd1 + nd2, now=date(2026, 10, 31))
+    assert old["n"] == 3 and old["mid"] == 20000 and "same engine era (2016-2018 155 hp)" in old["note"]
+    assert new["n"] == 3 and new["mid"] == 27000 and "same engine era (2019+ 181 hp)" in new["note"]
+    # Too few same-era sales: the other era stays in, year-adjusted, and the note says so.
+    thin = fair_value(_row(id=97, year=2019, mileage=40000, model="MX-5 Miata RF", profile_key=nd), nd1 + nd2[:2], now=date(2026, 10, 31))
+    assert "too few 2019+ 181 hp sales" in thin["note"]
+
+
+def test_retractable_fastback_is_an_open_body():
+    # 1.10.0: ten RFs listed as "Retractable Fastback" had no body class and dropped out of RF comps.
+    assert body_class({"body_style": "Retractable Fastback", "model": "MX-5 Miata RF"}) == "open"
+    assert body_class({"body_style": "Retractable Fastback Coupe"}) == "open"

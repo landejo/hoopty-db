@@ -52,7 +52,7 @@ checks:
   - {key: mods_quality, label: "Modifications / suspension quality"}
   - {key: records_major, label: "Documented service history (cooling, VANOS)"}
 mission_default: enthusiast_bridge
-risk_reserve: 1500
+risk_reserve: 2500
 automatic_ok: false
 catchup_notes: >
   Low mileage does not cancel age: tires by date code, cooling plastics, hoses,

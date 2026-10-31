@@ -62,6 +62,10 @@ def evaluate_gates(listing: dict[str, Any], profile: dict[str, Any], evidence: E
     ex = is_excluded(listing.get("make"), listing.get("model"), state.get("active_exclusions", []))
     if ex:
         gates.append(Gate(kind="strategy", key="explicit_exclusion", reason=f"Explicitly excluded model ({ex})"))
+    # 1.10.0: a way of filling the gap Jason is not pursuing now (state "inactive_missions").
+    if mission in (state.get("inactive_missions") or []):
+        gates.append(Gate(kind="strategy", key="mission_inactive",
+                          reason=f"Not pursuing a {mission.replace('_', ' ')} car right now"))
 
     for key, reason in HARD_FLAGS.items():
         if getattr(flags, key) == "yes":
@@ -235,6 +239,8 @@ def quick_gates(listing: dict[str, Any], profile: dict[str, Any] | None, mission
     ex = is_excluded(listing.get("make"), listing.get("model"), state.get("active_exclusions", []))
     if ex:
         out.append(f"excluded: {ex}")
+    if mission in (state.get("inactive_missions") or []):
+        out.append(f"inactive: {mission.replace('_', ' ')}")
     trans = (listing.get("transmission") or "").lower()
     if mission in MANUAL_REQUIRED_MISSIONS and trans == "automatic" and not (profile or {}).get("automatic_ok"):
         out.append("automatic (manual brief)")

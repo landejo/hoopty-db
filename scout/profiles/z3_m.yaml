@@ -53,7 +53,7 @@ checks:
   - {key: mods_quality, label: "Modifications / suspension quality"}
   - {key: records_major, label: "Documented service history (bearings, VANOS, cooling)"}
 mission_default: future_keeper
-risk_reserve: 2500
+risk_reserve: 3500
 automatic_ok: false
 catchup_notes: >
   Cooling regardless of mileage; S54 rod bearings; VANOS; motor/trans mounts;

@@ -268,7 +268,8 @@ def _capture_warning(listing: dict[str, Any]) -> str:
 
 
 def _profile_text(profile: dict[str, Any]) -> str:
-    keys = ("label", "framing", "weak_points", "immediate_repairs", "repairs_12mo", "market_notes", "catchup_notes")
+    keys = ("label", "framing", "weak_points", "immediate_repairs", "repairs_12mo", "market_notes", "catchup_notes",
+            "dealbreakers")   # 1.10.0: the model's dealbreakers now reach the assessor
     return "\n".join(f"{k}: {profile.get(k)}" for k in keys if profile.get(k))
 
 

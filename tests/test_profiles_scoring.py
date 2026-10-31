@@ -36,6 +36,16 @@ def test_locality_hint():
     assert locality_hint("") is None
 
 
+def test_locality_hint_home_and_state_parsing():
+    # 1.10.0: home is Pacific Grove; the state after the last comma decides, not a substring.
+    assert locality_hint("Pacific Grove, CA") == 5 and locality_hint("Seaside, CA 93955") == 5
+    assert locality_hint("Costa Mesa, CA 92627") == 4 and locality_hint("California") == 4
+    assert locality_hint("Carmel, IN") == 1 and locality_hint("Oakland, ME") == 1   # not the Bay Area
+    assert locality_hint("Albany, New York") == 1 and locality_hint("Hartford, Connecticut") == 1
+    assert locality_hint("Montreal, Quebec, Canada") == 1 and locality_hint("Honolulu, HI") == 2
+    assert locality_hint("Reno, NV") == 4 and locality_hint("Las Vegas, NV") == 3
+
+
 def test_market_stats_and_percentile():
     comps = [{"sold_price": 30000, "availability": "sold", "mileage": 100000},
              {"sold_price": 40000, "availability": "sold", "mileage": 60000},
@@ -59,11 +69,11 @@ def test_preliminary_score_separates_similar_cars():
     remote_auto_pricey, b2 = preliminary_score({**base, "id": 5, "transmission": "Automatic", "price": 17500, "location": "Boston, MA", "vin": None}, prof, DEFAULT_STATE, fair)
     same_but_remote, b3 = preliminary_score({**base, "id": 6, "location": "Boston, MA"}, prof, DEFAULT_STATE, fair)
     assert local_cheap > same_but_remote > remote_auto_pricey
-    assert local_cheap - remote_auto_pricey >= 25          # real distance, not 3.9 vs 3.8
+    assert local_cheap - remote_auto_pricey >= 20          # real distance, not 3.9 vs 3.8 (1.10.0: distance counts less)
     assert b1["price_value"]["points"] >= 9 and b2["price_value"]["points"] <= 4   # cheap vs pricey, market-relative only
     assert b2["mission_fit"]["points"] <= 3 and b1["mission_fit"]["points"] >= 11
     assert b1["documentation"]["points"] == 17                                        # 6/10 * 2.5 + VIN, no pre-cap
-    assert b1["logistics"]["points"] == 10 and b3["logistics"]["points"] == 2
+    assert b1["logistics"]["points"] == 10 and b3["logistics"]["points"] == 8   # 1.10.0: distance is a cost, not a red flag
     assert sum(v["max"] for v in b1.values()) == 100
 
 

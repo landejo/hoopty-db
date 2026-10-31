@@ -191,10 +191,10 @@ def assess(listing: dict[str, Any], profile: dict[str, Any], evidence: EvidenceI
     # First pass without the cost gate, then costs, then the cost gate.
     prov = vin_history.get("provenance") or {}
     gates = evaluate_gates(listing, profile, evidence, mission, state, provenance=prov)
-    costs = compute_costs(listing, profile, evidence, gates, state, fair, mission)
+    costs = compute_costs(listing, profile, evidence, gates, state, fair, mission, stage)
     gates = evaluate_gates(listing, profile, evidence, mission, state, all_in_high=costs.all_in_high, provenance=prov,
                            all_in_mid=(costs.all_in_low + costs.all_in_high) // 2)
-    costs = compute_costs(listing, profile, evidence, gates, state, fair, mission)
+    costs = compute_costs(listing, profile, evidence, gates, state, fair, mission, stage)
     from scout.policy.state import budget_for
     budget = budget_for(state, mission)
     cap = budget.get("defeats_purpose_all_in")

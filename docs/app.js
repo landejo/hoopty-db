@@ -190,7 +190,7 @@
   function scoreOf(l) { return l.assessment?.score?.total ?? null; }
   // Fit (policy/fit.py): how good a candidate the car looks on what is knowable now, 0-100.
   function fitOf(l) { return l.fit?.total ?? null; }
-  const FIT_LABELS = { value: "Value vs walk-away", history: "Owners, accidents, title", records: "Records", mileage: "Mileage", spec: "Spec & gearbox", condition: "Condition evidence", distance: "Distance" };
+  const FIT_LABELS = { value: "Value vs walk-away", history: "Owners, accidents, title", records: "Records", mileage: "Mileage", spec: "Spec & gearbox", condition: "Condition evidence", distance: "Distance", upkeep: "Upkeep cost" };
   function fitTip(l) { const f = l.fit; return f ? Object.keys(FIT_LABELS).filter((k) => k in f.parts).map((k) => `${FIT_LABELS[k]} ${Math.round(f.parts[k])}/${f.max[k]}: ${f.notes[k]}`).join("\n") : ""; }
   function fitBadge(l) { const v = fitOf(l); return `<span class="badge fit ${v >= 75 ? "hi" : v >= 60 ? "mid" : "lo"}" title="Fit ${v}/100\n${esc(fitTip(l))}">${v}</span><b class="score-tag" title="System Assessment score /100 (evidence so far; drives the verdict)">S ${scoreOf(l)}</b>`; }
   function verdictOf(l) { return l.assessment?.verdict || null; }   // the System Assessment's verdict
@@ -414,7 +414,10 @@
         if (bs != null) return 1;
         return (calibrated(b) ?? -1) - (calibrated(a) ?? -1);
       },
+      // 1.10.0: an excluded model or an inactive mission (Do not pursue) sinks below the rest.
       fit: (a, b) => {
+        const dnp = (l) => (l.assessment?.verdict === "Do not pursue" ? 1 : 0);
+        if (dnp(a) !== dnp(b)) return dnp(a) - dnp(b);
         const af = fitOf(a), bf = fitOf(b);
         if (af != null && bf != null) return (bf - af) || ((scoreOf(b) ?? 0) - (scoreOf(a) ?? 0));
         if (af != null) return -1;

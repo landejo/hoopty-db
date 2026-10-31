@@ -27,7 +27,8 @@ def comp_keys(profile_key: str) -> list[str]:
     return [profile_key]
 
 
-_OPEN_BODY = ("roadster", "convertible", "cabrio", "spyder", "targa")
+# 1.10.0: "retractable" (an RF, "Retractable Fastback") is an open car; it had no class and fell out of RF comps.
+_OPEN_BODY = ("roadster", "convertible", "cabrio", "spyder", "targa", "retractable")
 _CLOSED_BODY = ("coupe", "hatch", "sedan", "wagon", "suv")
 
 
@@ -130,6 +131,21 @@ ROOF_PREMIUM_BOUNDS = (1.0, 1.35)
 _RF_RE = re.compile(r"\bRF\b|retractable fastback")
 _HARDTOP_RE = re.compile(r"\bPRHT\b|power[- ]retractable hard ?top|retractable hard ?top|hard ?top convertible|convertible hard ?top", re.I)
 _SOFT_RE = re.compile(r"\bsoft[- ]?top\b|\bcloth (convertible )?top\b|z-fold", re.I)
+
+
+# Engine era (1.10.0, Jason 2026-10-31): a mid-generation engine change is a step, not the
+# smooth per-year rate. The ND Miata went from 155 to 181 hp for 2019, so a 2017 RF is
+# valued against 2016-2018 sales and a 2019 against 2019+ when each era has >= ERA_MIN_SAME.
+ERA_SPLIT_YEAR = {"mazda_mx_5_miata_nd": (2019, "2016-2018 155 hp", "2019+ 181 hp")}
+ERA_MIN_SAME = 3
+
+
+def era(r: dict[str, Any]) -> str | None:
+    """The engine era's label for a profile with a split, else None."""
+    split = ERA_SPLIT_YEAR.get(r.get("profile_key") or "")
+    if not split or not r.get("year"):
+        return None
+    return split[2] if int(r["year"]) >= split[0] else split[1]
 
 
 def roof_type(r: dict[str, Any]) -> str | None:
@@ -267,6 +283,14 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
         same_roof = [r for r in pool_rows if roof_of[id(r)] == lroof] if lroof else []
         if len(same_roof) >= ROOF_MIN_SAME:
             pool_rows = same_roof
+        lera = era(listing)
+        same_era = [r for r in pool_rows if era(r) == lera] if lera else []
+        era_note = None
+        if len(same_era) >= ERA_MIN_SAME:
+            pool_rows = same_era
+            era_note = f"same engine era ({lera})"
+        elif lera:
+            era_note = f"too few {lera} sales, other era year-adjusted"
         segmented, relaxed, level = _relax(pool_rows, listing)
         if failed_all:
             years, need_body, need_trans = level
@@ -310,7 +334,7 @@ def fair_value(listing: dict[str, Any], rows: list[dict[str, Any]], now: date | 
         klass = f"{bc}-class" if bc else "any body"
         yr_note = (f"year-adjusted {rate:+.1%}/yr ({rate_src})"
                    if listing.get("year") and any(r.get("year") and r["year"] != listing["year"] for r in recent) else None)
-        note_bits = [f"{n} {'sales' if basis == 'sold' else 'asking prices'}", klass, yr_span, "mileage-adjusted"] + ([yr_note] if yr_note else []) + ([roof_note] if roof_note else [])
+        note_bits = [f"{n} {'sales' if basis == 'sold' else 'asking prices'}", klass, yr_span, "mileage-adjusted"] + ([yr_note] if yr_note else []) + ([roof_note] if roof_note else []) + ([era_note] if era_note else [])
         return {
             "mid": int(round(mid)), "low": int(round(low)), "high": int(round(high)), "n": n,
             "basis": basis, "relaxed": relaxed, "note": ", ".join(note_bits), "year_rate": round(rate, 4),

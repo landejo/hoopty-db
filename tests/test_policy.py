@@ -192,8 +192,9 @@ def test_documented_local_beats_exciting_remote():
     b = assess(remote, _profile("z3_30i"), ev_remote, STATE)
     assert a.score.total > b.score.total
     assert a.verdict in {"Pursue", "Pursue conditionally"}
-    assert b.verdict in {"Maybe / verify", "Reject"}  # thin evidence + two unresolved items never reaches Pursue
-    assert b.score.emotional_spec_fit == 10 and b.score.logistics <= 4  # rare colour earns its points and no more
+    assert b.verdict != "Pursue"  # thin evidence + two unresolved items never reaches Pursue
+    # 1.10.0: distance is a cost, not a cap; the rare colour earns its spec points and no more
+    assert b.score.emotional_spec_fit == 10 and b.score.logistics == 9
     assert b.costs.transport == 1900 and a.costs.transport == 0
 
 
@@ -448,3 +449,38 @@ def test_saturn_is_excluded_and_the_z4_reopened():
     exclusions = DEFAULT_STATE.get("active_exclusions", [])
     assert is_excluded("Saturn", "Sky Redline", exclusions) and not is_excluded("BMW", "Z4 3.0i", exclusions)
     assert not is_excluded("BMW", "Z3 3.0i", exclusions)
+
+
+# 1.10.0 (Jason 2026-10-31): only the fun daily and the Z3 keeper are live; other missions are not pursued.
+def test_inactive_mission_is_do_not_pursue():
+    st = {**STATE, "inactive_missions": ["pragmatic_bridge", "utility_capability"]}
+    a = assess(_listing(), _profile("z3_30i"), _ev(critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}),
+               st, mission="utility_capability")
+    assert a.verdict == "Do not pursue" and any(g.key == "mission_inactive" for g in a.gates)
+    b = assess(_listing(), _profile("z3_30i"), _ev(critical={"rear_structure": "satisfied", "cooling_history": "satisfied"}),
+               st, mission="enthusiast_bridge")
+    assert b.verdict != "Do not pursue"
+
+
+# 1.10.0: more than two owners or an accident caps mission fit (heavy penalty, not a reject).
+def test_owners_or_accident_cap_mission_fit():
+    ev = lambda: _ev(fit=10, critical={"rear_structure": "satisfied", "cooling_history": "satisfied"})
+    clean = assess(_listing(num_owners=1, accidents="no"), _profile("z3_30i"), ev(), STATE)
+    owners = assess(_listing(num_owners=4, accidents="no"), _profile("z3_30i"), ev(), STATE)
+    crash = assess(_listing(num_owners=1, accidents="yes"), _profile("z3_30i"), ev(), STATE)
+    assert clean.score.mission_fit > 6 and owners.score.mission_fit == 6 and crash.score.mission_fit == 6
+    assert owners.verdict != "Reject" and crash.verdict != "Reject"
+
+
+# 1.10.0: before seller contact, a missing model-critical document is a question, not money off the walk-away.
+def test_missing_documents_cost_no_reserve_before_contact():
+    ev = _ev(critical={"rear_structure": "missing", "cooling_history": "missing"})
+    early = assess(_listing(), _profile("z3_30i"), ev, STATE, stage="listing")
+    later = assess(_listing(), _profile("z3_30i"), ev, STATE, stage="docs")
+    base = _profile("z3_30i")["risk_reserve"]
+    assert early.costs.risk_reserve == base and later.costs.risk_reserve == base + 2000
+
+
+def test_profile_dealbreakers_reach_the_assessor():
+    from scout.ai.assess import _profile_text
+    assert "Engine displacement below 3.0L" in _profile_text(_profile("z3_30i"))

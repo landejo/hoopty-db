@@ -47,6 +47,9 @@ MILEAGE_FIT_CAPS: dict[str, list[tuple[int, int]]] = {
     "future_keeper": [(150_000, 6), (120_000, 9)],
 }
 
+# 1.10.0: mission-fit cap for more than two owners or a reported accident (heavy penalty, not a reject).
+HISTORY_FIT_CAP = 6
+
 # §9 confidence: below this, verdict should rarely exceed Maybe / verify.
 CONFIDENCE_PROVISIONAL = 50
 
@@ -62,9 +65,6 @@ EVIDENCE_SOURCES = [
     "seller_comment", "seller_claim", "ai_inference",
 ]
 FACT_STATUSES = ["verified", "claimed", "inferred", "unknown"]
-
-# Logistics cap by locality band (scoring.locality_hint: 5 = Monterey/Bay ... 1 = Northeast).
-LOGISTICS_CAP_BY_BAND: dict[int | None, int] = {5: 10, 4: 9, 3: 7, 2: 5, 1: 4, None: 6}
 
 # Relisted with a markup above this fraction of the last known sale, with no
 # documented transformation, caps price_value.

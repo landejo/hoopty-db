@@ -15,8 +15,17 @@ from typing import Any
 from scout.policy.preferences import MANUAL_REQUIRED_MISSIONS
 from scout.scoring import locality_hint
 
-FIT_POINTS = {"value": 25, "history": 20, "records": 10, "mileage": 15, "spec": 15, "condition": 7, "distance": 8}
+# 1.10.0: distance 8 -> 3 (transport is already in the walk-away), spec 15 -> 18, mileage 15 -> 12,
+# and upkeep 5 (the model's typical repair reserve: a Miata costs less to keep than a Z3).
+FIT_POINTS = {"value": 25, "history": 20, "records": 10, "mileage": 12, "spec": 18, "condition": 7, "distance": 3,
+              "upkeep": 5}
 assert sum(FIT_POINTS.values()) == 100
+
+# Jason, 2026-10-31: more than two owners or a reported accident is a heavy penalty, not a
+# reject; such cars sit well below clean ones. Taken off the total, on top of the history part.
+HISTORY_PENALTY = {"owners_over_2": 8, "accident": 8}
+# Model repair reserve that scores full / zero upkeep.
+UPKEEP_SCALE = (1500, 4000)
 
 # Miles that score full / zero for the mileage part, by mission (a GX lives longer).
 MILEAGE_SCALE = {"utility_capability": (60_000, 220_000)}
@@ -89,6 +98,8 @@ def accident_points(status: str, value: str) -> tuple[int, str]:
     serious = [m for m in _SERIOUS_RE.finditer(t) if not _negated(t[:m.start()])]
     if serious:
         return 0, "serious accident on record"
+    if re.search(r"\b[1-9]\d* (reported )?accidents?\b", t) and not _negated(t[:re.search(r"\b[1-9]\d* (reported )?accidents?\b", t).start()]):
+        return 2, "accident on record"   # "1 accident reported; 'No damage reported'" (#812) is not clean
     if _CLEAN_RE.search(t) and not re.search(r"\b(minor|moderate)[- ](damage|collision|accident)|damage reported \d|accidents? reported on|reports '", t):
         return 8, "no accidents reported"
     if re.search(r"no major (accidents?|damage)", t):
@@ -129,9 +140,10 @@ def mileage_points(listing: dict[str, Any], mission: str | None) -> tuple[float,
 
 
 def spec_points(listing: dict[str, Any], assessment: dict[str, Any], mission: str | None) -> tuple[float, str]:
-    """The assessment's spec/enthusiasm rating (10) + the manual where the mission wants one (5)."""
+    """The assessment's spec/enthusiasm rating (13) + the manual where the mission wants one (5)."""
     rating = (((assessment.get("evidence") or {}).get("ratings") or {}).get("emotional_spec_fit") or {}).get("rating")
-    spec = 10 * (rating / 10) if rating is not None else 5
+    top = FIT_POINTS["spec"] - 5
+    spec = top * (rating / 10) if rating is not None else top / 2
     trans = (listing.get("transmission") or _fact(assessment, "transmission")[1] or "").lower()
     if (mission or "") in MANUAL_REQUIRED_MISSIONS:
         gear = 5 if "manual" in trans else 0 if trans else 2.5
@@ -165,11 +177,36 @@ def condition_points(assessment: dict[str, Any]) -> tuple[float, str]:
 
 def distance_points(listing: dict[str, Any]) -> tuple[float, str]:
     band = locality_hint(listing.get("location"))
-    v = {5: 1.0, 4: 0.85, 3: 0.6, 2: 0.4, 1: 0.25}.get(band, 0.5)
+    v = {5: 1.0, 4: 0.85, 3: 0.7, 2: 0.6, 1: 0.6}.get(band, 0.6)
     return FIT_POINTS["distance"] * v, {5: "local", 4: "in California", 3: "West", 2: "far", 1: "Northeast"}.get(band, "location unknown")
 
 
-def fit_score(listing: dict[str, Any], assessment: dict[str, Any] | None) -> dict[str, Any] | None:
+def upkeep_points(profile: dict[str, Any] | None) -> tuple[float, str]:
+    """Typical cost to keep the model, from its profile's repair reserve."""
+    reserve = (profile or {}).get("risk_reserve")
+    if not reserve:
+        return FIT_POINTS["upkeep"] * 0.5, "upkeep unknown"
+    lo, hi = UPKEEP_SCALE
+    return FIT_POINTS["upkeep"] * _lerp(reserve, lo, hi, 1.0, 0.0), f"repair reserve ${int(reserve):,}"
+
+
+def history_penalty(listing: dict[str, Any], assessment: dict[str, Any]) -> tuple[int, str]:
+    """Points off the total for more than two owners or a reported accident (0 if clean or unknown)."""
+    st, v = _fact(assessment, "owners")
+    m = _OWNERS_RE.match(v) if st != "unknown" else None
+    n = int(m.group(1)) if m else listing.get("num_owners")
+    st, v = _fact(assessment, "accident_history")
+    acc, _ = accident_points(st, v or listing.get("accidents") or "")
+    pen, why = 0, []
+    if n and n > 2:
+        pen += HISTORY_PENALTY["owners_over_2"]; why.append(f"{n} owners")
+    if acc <= 3 or listing.get("accidents") == "yes":
+        pen += HISTORY_PENALTY["accident"]; why.append("accident on record")
+    return pen, " and ".join(why)
+
+
+def fit_score(listing: dict[str, Any], assessment: dict[str, Any] | None,
+              profile: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """{"total": 0-100, "parts": {name: points}, "notes": {name: why}} or None without an assessment."""
     if not assessment:
         return None
@@ -182,8 +219,14 @@ def fit_score(listing: dict[str, Any], assessment: dict[str, Any] | None) -> dic
         "records": records_points(assessment),
         "condition": condition_points(assessment),
         "distance": distance_points(listing),
+        "upkeep": upkeep_points(profile),
     }
-    return {"total": int(round(sum(p for p, _ in parts.values()))),
+    pen, pen_why = history_penalty(listing, assessment)
+    notes = {k: n for k, (_, n) in parts.items()}
+    if pen:
+        notes["history"] += f" (−{pen} off the total: {pen_why})"
+    return {"total": max(0, int(round(sum(p for p, _ in parts.values()) - pen))),
             "parts": {k: round(p, 1) for k, (p, _) in parts.items()},
+            "penalty": pen,
             "max": FIT_POINTS,
-            "notes": {k: n for k, (_, n) in parts.items()}}
+            "notes": notes}

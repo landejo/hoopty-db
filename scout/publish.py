@@ -153,6 +153,7 @@ def build_export() -> dict[str, Any]:
     errors = db.last_errors()
     docs = db.documents_by_listing()
     timelines: dict[int, list] = {}
+    profile_by_key = {p["key"]: p for p in db.list_profiles()}
     for l in listings:
         if l.get("vehicle_id"):
             if l["vehicle_id"] not in timelines:
@@ -160,7 +161,7 @@ def build_export() -> dict[str, Any]:
             l["timeline"] = timelines[l["vehicle_id"]]
         a = assessments.get(l["id"])
         l["assessment"] = scrub_assessment(a) if a else None
-        l["fit"] = fit_score(l, a)
+        l["fit"] = fit_score(l, a, profile_by_key.get(l.get("profile_key")))
         l["last_error"] = errors.get(l["id"])
         l["documents"] = docs.get(l["id"], [])   # metadata only; document text stays local
         report = [d["text"] for d in db.list_documents(l["id"]) if d["kind"] == "carfax"] if any(d["kind"] == "carfax" for d in l["documents"]) else []

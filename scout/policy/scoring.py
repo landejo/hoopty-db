@@ -6,10 +6,9 @@ from typing import Any
 from scout.evidence import COND_GAIN_CAP, COND_GAIN_PER_ITEM, DOC_GAIN_CAP, GAIN_PER_ITEM, classify
 from scout.policy.preferences import (
     CATEGORY_POINTS, CONFIDENCE_PROVISIONAL, REJECT_FLOOR_NOTHING_OBSERVED, DOC_CAP_CONDITIONAL_MISSING, DOC_CAP_HARD_MISSING,
-    LOGISTICS_CAP_BY_BAND, MILEAGE_FIT_CAPS, RELIST_MARKUP_FLAG, RELIST_PRICE_VALUE_CAP, SCORE_BANDS, VERDICT_RANK,
+    HISTORY_FIT_CAP, MILEAGE_FIT_CAPS, RELIST_MARKUP_FLAG, RELIST_PRICE_VALUE_CAP, SCORE_BANDS, VERDICT_RANK,
 )
 from scout.policy.schema import CostBreakdown, EvidenceInterpretation, Gate, Score
-from scout.scoring import locality_hint
 
 DECISION_FACTS = {"title_status", "accident_history", "records_available", "mileage", "vin", "owners"}
 
@@ -31,12 +30,8 @@ def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: 
             pts["documentation"] = DOC_CAP_CONDITIONAL_MISSING
             caps.append(f"documentation capped at {DOC_CAP_CONDITIONAL_MISSING}: model-specific evidence unresolved")
 
-    # Logistics never exceeds what the location allows.
-    band = locality_hint(listing.get("location"))
-    lcap = LOGISTICS_CAP_BY_BAND.get(band, LOGISTICS_CAP_BY_BAND[None])
-    if pts["logistics"] > lcap:
-        pts["logistics"] = lcap
-        caps.append(f"logistics capped at {lcap}: location band {band or 'unknown'}")
+    # 1.10.0: no logistics cap by distance. Transport is already a cost in the all-in
+    # and the walk-away; the logistics rating is about inspection access.
 
     # Mission fit: price over the mission's budget cannot score as a good fit (1.8.0: every mission).
     from scout.policy.state import budget_for
@@ -69,6 +64,12 @@ def compute_score(evidence: EvidenceInterpretation, gates: list[Gate], listing: 
                 pts["mission_fit"] = cap
                 caps.append(f"mission fit capped at {cap}: {miles:,} miles is over {over:,} for a {mission.replace('_', ' ')}")
             break
+    # 1.10.0: more than two owners or a reported accident is a heavy penalty (Jason, 2026-10-31).
+    owners = listing.get("num_owners") or 0
+    if (owners > 2 or listing.get("accidents") == "yes") and pts["mission_fit"] > HISTORY_FIT_CAP:
+        pts["mission_fit"] = HISTORY_FIT_CAP
+        why = " and ".join(w for w, on in ((f"{owners} owners", owners > 2), ("an accident on record", listing.get("accidents") == "yes")) if on)
+        caps.append(f"mission fit capped at {HISTORY_FIT_CAP}: {why}")
     if mission == "pragmatic_bridge" and pts["mission_fit"] > 11:
         pts["mission_fit"] = 11
         caps.append("mission fit capped at 11: pragmatic bridge solves the immediate problem, not the enthusiast brief")

@@ -79,3 +79,35 @@ def test_fit_spreads_cars_the_assessment_score_bunches():
     weak = fit_score(_l(price=23000, miles=120000, loc="Boston, MA"),
                      _a(price=23000, owners="5", accident="Accident or damage reported"))
     assert good["total"] - weak["total"] >= 40
+
+
+def test_more_than_two_owners_or_an_accident_is_a_heavy_penalty():
+    # 1.10.0, Jason 2026-10-31: heavy penalty, not a reject; such cars sit well below clean ones.
+    clean = fit_score(_l(), _a())
+    three = fit_score(_l(), _a(owners="3"))
+    crash = fit_score(_l(), _a(accident="Accident or damage reported"))
+    assert three["penalty"] == 8 and crash["penalty"] == 8 and clean["penalty"] == 0
+    assert clean["total"] - three["total"] >= 12 and clean["total"] - crash["total"] >= 12
+    assert "accident on record" in crash["notes"]["history"]
+    # Two owners is a small step down from one, not a penalty.
+    assert fit_score(_l(), _a(owners="2"))["penalty"] == 0
+
+
+def test_upkeep_favours_the_cheaper_model_to_keep():
+    miata = fit_score(_l(), _a(), {"risk_reserve": 1200})["parts"]["upkeep"]
+    z3 = fit_score(_l(), _a(), {"risk_reserve": 2500})["parts"]["upkeep"]
+    assert miata == FIT_POINTS["upkeep"] and 0 < z3 < miata
+    assert fit_score(_l(), _a())["parts"]["upkeep"] == FIT_POINTS["upkeep"] * 0.5   # no profile: unknown
+
+
+def test_distance_is_a_small_part_of_fit():
+    local = fit_score(_l(loc="Pacific Grove, CA"), _a())["parts"]["distance"]
+    far = fit_score(_l(loc="Alexandria, VA"), _a())["parts"]["distance"]
+    assert local == FIT_POINTS["distance"] == 3 and local - far <= 1.5
+
+
+def test_a_counted_accident_is_not_read_as_clean():
+    # #812's Carfax line: the count wins over the "No damage reported" phrase after it.
+    assert accident_points("claimed", "1 accident reported; 'No damage reported'")[0] == 2
+    assert accident_points("claimed", "0 accidents reported")[0] == 8
+    assert fit_score(_l(), _a(accident="1 accident reported; 'No damage reported'"))["penalty"] == 8
