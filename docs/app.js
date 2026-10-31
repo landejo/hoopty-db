@@ -414,10 +414,11 @@
         if (bs != null) return 1;
         return (calibrated(b) ?? -1) - (calibrated(a) ?? -1);
       },
-      // 1.10.0: an excluded model or an inactive mission (Do not pursue) sinks below the rest.
+      // 1.10.0: a Reject sinks below the rest, and an excluded model or inactive mission
+      // (Do not pursue) below that (Jason 2026-10-31).
       fit: (a, b) => {
-        const dnp = (l) => (l.assessment?.verdict === "Do not pursue" ? 1 : 0);
-        if (dnp(a) !== dnp(b)) return dnp(a) - dnp(b);
+        const sink = (l) => ({ "Reject": 1, "Do not pursue": 2 }[l.assessment?.verdict] || 0);
+        if (sink(a) !== sink(b)) return sink(a) - sink(b);
         const af = fitOf(a), bf = fitOf(b);
         if (af != null && bf != null) return (bf - af) || ((scoreOf(b) ?? 0) - (scoreOf(a) ?? 0));
         if (af != null) return -1;
