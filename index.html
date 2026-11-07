@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hoopty-Matic</title>
+<meta name="theme-color" content="#10131A">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="#/"><span class="mark" aria-hidden="true"></span>Hoopty-Matic</a>
+    <nav class="nav" id="nav">
+      <a href="#/" data-route="board">Board</a>
+      <a href="#/market" data-route="market">Market</a>
+      <a href="#/profiles" data-route="profiles">Profiles</a>
+      <a href="#/settings" data-route="settings">Policy</a>
+    </nav>
+    <span class="spacer"></span>
+    <label for="search" class="visually-hidden">Search listings</label>
+    <input class="search" id="search" type="search" placeholder="Search make, model, location, notes…">
+    <span class="mode-pill" id="mode">loading…</span>
+    <button class="btn sm" id="publish" hidden title="Publish the board to GitHub Pages now (it also auto-publishes after a sitting)">Publish</button>
+    <button class="iconbtn" id="theme" title="Toggle theme">◐</button>
+  </div>
+</header>
+<div id="taskbar" class="taskbar" hidden></div>
+<main class="wrap" id="app">
+  <div class="skeleton" aria-hidden="true">
+    <div class="skeleton-hero"></div>
+    <div class="skeleton-grid">
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+    </div>
+    <p class="muted" style="text-align:center;margin-top:20px">Loading the board…</p>
+  </div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
